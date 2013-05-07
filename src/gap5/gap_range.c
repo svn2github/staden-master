@@ -454,7 +454,7 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 	}
 	    
 	/* Generate line data */
-	tl->col[1] = col;
+	tl->col[0] = tl->col[1] = tl->col[2] = col;
 	tl->x[0]   = sta;
 	/* range in col 0 */
 	tl->x[1]   = sta;

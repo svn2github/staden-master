@@ -64,8 +64,6 @@ typedef struct TemplateDisplayItem {
     int inconsistent_col;
     int fwd_col;
     int rev_col;
-    int fwd_col3;
-    int rev_col3;
     int background;
     
     int ntl;
@@ -793,7 +791,6 @@ static void redraw_template_image(TemplateDisplayItem *tdi, Display *display) {
     int force_change = tdi->force_redraw;
     int mode;
     double ax, bx, ay, by;
-    int fwd_col, rev_col;
     int half_height;
     int i;
     int ymin = INT_MAX;
@@ -825,9 +822,6 @@ static void redraw_template_image(TemplateDisplayItem *tdi, Display *display) {
 	force_change = 1;
     }
     
-    fwd_col = tdi->yzoom >= 150 ? tdi->fwd_col3 : tdi->fwd_col;
-    rev_col = tdi->yzoom >= 150 ? tdi->rev_col3 : tdi->rev_col;
-    
     /* world to pixmap conversion values */
     if (tdi->wx1 - tdi->wx0 == 0) return;
     
@@ -838,7 +832,7 @@ static void redraw_template_image(TemplateDisplayItem *tdi, Display *display) {
     by = tdi->wy0;    
     
     /* 1) Compute X */
-    tdi->ntl = gap_range_x(tdi->gr, ax, bx, fwd_col, rev_col, 
+    tdi->ntl = gap_range_x(tdi->gr, ax, bx, tdi->fwd_col, tdi->rev_col, 
 			   tdi->single_col, tdi->span_col, tdi->inconsistent_col,
 			   force_change, tdi->reads_only);
 			    
