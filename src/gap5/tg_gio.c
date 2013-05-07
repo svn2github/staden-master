@@ -1,6 +1,6 @@
 #if !defined(__MINGW32__) && !defined(_MSC_VER)
 /* Uncomment to enable .log files */
-#   define DO_LOGGING
+/* #   define DO_LOGGING */
 #endif
 #include <assert.h>
 #include <string.h>
