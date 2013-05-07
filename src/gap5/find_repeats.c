@@ -403,27 +403,27 @@ find_repeats(GapIO *io,
 	for ( i = dirn > 0 ? 0 : num_f_matches; i < lim; i++ ) {
 	    int j1, j2, offset1, offset2, pad1, pad2;
 	    
-	    pad1 = depad_to_pad[pos1[i]];
+	    pad1 = depad_to_pad[pos1[i] - 1];
 	    j1 = contig_listel_from_con_pos(contig_list,
 					    number_of_contigs, pad1);
 	    assert(j1 >= 0);
 	    offset1 = contig_list[j1].contig_start
-		- contig_list[j1].contig_start_offset - 1;
+		- contig_list[j1].contig_start_offset;
 	    
 	    matches[i].c1 = contig_list[j1].contig_number;
 	    matches[i].pos1 = pad1 + offset1;
-	    matches[i].end1 = depad_to_pad[pos1[i] + len[i] - 1] + offset1;
+	    matches[i].end1 = depad_to_pad[pos1[i] - 1 + len[i] - 1] + offset1;
 	    
-	    pad2 = depad_to_pad[pos2[i]];
+	    pad2 = depad_to_pad[pos2[i] - 1];
 	    j2 = contig_listel_from_con_pos(contig_list,
 					    number_of_contigs, pad2);
 	    assert(j2 >= 0);
 	    offset2 = contig_list[j2].contig_start
-		- contig_list[j2].contig_start_offset - 1;
+		- contig_list[j2].contig_start_offset;
 	    
 	    matches[i].c2 = contig_list[j2].contig_number * dirn;
 	    matches[i].pos2 = pad2 + offset2;
-	    matches[i].end2 = depad_to_pad[pos2[i] + len[i] - 1] + offset2;
+	    matches[i].end2 = depad_to_pad[pos2[i] - 1 + len[i] - 1] + offset2;
 	    matches[i].length = matches[i].score = len[i];
 	    matches[i].read = 0;
 	    matches[i].rpos = 0;

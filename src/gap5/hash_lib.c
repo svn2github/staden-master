@@ -2371,12 +2371,14 @@ static int match_fwd_back(int word_len,
     i1 = p1-1;
     i2 = p2-1;
     if (i1 < i2) {
-	while (i1 >= 0 && s1[i1] == s2[i2]) {
+	/* FIXME: It would be much better if sequences from multiple contigs
+	   were separated by NULs, instead of <name.####----> */
+	while (i1 >= 0 && s1[i1] == s2[i2] && s1[i1] != '>') {
 	    i1--;
 	    i2--;
 	}
     } else {
-	while (i2 >= 0 && s1[i1] == s2[i2]) {
+	while (i2 >= 0 && s1[i1] == s2[i2] && s1[i1] != '>') {
 	    i1--;
 	    i2--;
 	}
@@ -2388,10 +2390,10 @@ static int match_fwd_back(int word_len,
     i1 = p1 + word_len;
     i2 = p2 + word_len;
     if (l1-i1 < l2-i2) {
-	while (i1 < l1 && s1[i1] == s2[i2])
+	while (i1 < l1 && s1[i1] == s2[i2] && s1[i1] != '<')
 	    i1++,i2++;
     } else {
-	while (i2 < l2 && s1[i1] == s2[i2])
+	while (i2 < l2 && s1[i1] == s2[i2] && s1[i1] != '<')
 	    i1++,i2++;
     }
     l += i1 - p1;
@@ -2773,26 +2775,27 @@ gap_realloc_matches (int **seq1_match,
 		     int **len_match,
 		     int *max_matches) 
 {
-    int increment = 1000;
+    int new_sz = *max_matches < 16 ? 16 : *max_matches + *max_matches / 2;
+    int *new_match;
 
-    *max_matches += increment;
-
-    if (NULL == (*seq1_match = (int *)xrealloc(*seq1_match, 
-					      *max_matches * sizeof(int)))) {
+    if (NULL == (new_match = xrealloc(*seq1_match, new_sz * sizeof(int)))) { 
 	return -1;
     }
-    if (NULL == (*seq2_match = (int *)xrealloc(*seq2_match, 
-					      *max_matches * sizeof(int)))) {
+    *seq1_match = new_match;
+
+    if (NULL == (new_match = xrealloc(*seq2_match, new_sz * sizeof(int)))) {
 	return -1;
     }
+    *seq2_match = new_match;
 
     /* len_match is not always needed */
     if (len_match != NULL) {
-	if (NULL == (*len_match = (int *)xrealloc(*len_match, 
-						 *max_matches * sizeof(int)))) {
+	if (NULL == (new_match = xrealloc(*len_match, new_sz * sizeof(int)))) {
 	    return -1;
 	}
+	*len_match = new_match;
     }
+    *max_matches = new_sz;
     return 0;
 }
 
@@ -2989,8 +2992,10 @@ int reps_nocount(Hash *h,
 	    (void) make_reverse ( seq2_match_pos, match_length,
 				 h->matches, h->seq2_len, offset); 	
 	}
+	/* Redundant (and broken on reverse strand) ?
 	(void) remdup ( seq1_match_pos, seq2_match_pos, match_length, offset, 
 			&h->matches );
+	*/
     }
 
     return h->matches;

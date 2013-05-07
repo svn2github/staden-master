@@ -123,21 +123,19 @@ int repeat_search (
 		   ) {
 
     int n_matches,seq2_len,nres;
-    char *seq2,sense;
-    Hash *h;
-    char *depadded_seq;
+    char *seq2 = NULL, sense;
+    Hash *h = NULL;
+    char *depadded_seq = NULL;
     int depadded_len;
-    int *depad_to_pad;
+    int *depad_to_pad = NULL;
     int i;
     int word_size;
 
     /* Depad sequence */
     if (NULL == (depad_to_pad = (int *)xmalloc(sizeof(int) * seq1_len)))
 	return -1;
-    if (NULL == (depadded_seq = (char *)xmalloc(seq1_len+1))) {
-	xfree(depad_to_pad);
-	return -1;
-    }
+    if (NULL == (depadded_seq = (char *)xmalloc(seq1_len+1)))
+	goto fail;
     copy_seq(depadded_seq, seq1, seq1_len);
     depadded_len = seq1_len;
     depad_seq(depadded_seq, &depadded_len, depad_to_pad);
@@ -157,10 +155,7 @@ int repeat_search (
     if ( init_hash8n ( seq1_len, seq2_len, word_size,
 		       max_mat, min_match,
 		       HASH_JOB_DIAG | HASH_JOB_COUNTLESS, &h )) {
-	free_hash8n(h);
-	xfree(depadded_seq);
-	xfree(depad_to_pad);
-	return -2;
+	goto fail;
     }
 	
     h->seq1 = seq1;
@@ -168,9 +163,7 @@ int repeat_search (
 
     if ( hash_seqn ( h, 1)) {
 	verror(ERR_WARN, "hash_seqn", "sequence too short");
-	xfree(depadded_seq);
-	xfree(depad_to_pad);
-	return -1;
+	goto fail;
     }
     (void) store_hashn_nocount ( h );
 
@@ -184,13 +177,12 @@ int repeat_search (
 
 	if ( hash_seqn ( h, 2)) {
 	    verror(ERR_WARN, "hash_seqn", "sequence too short");
-	    free_hash8n ( h );
-	    xfree(depadded_seq);
-	    xfree(depad_to_pad);
-	    return -1;
+	    goto fail;
 	}
 	sense = 'f';
 	n_matches = reps_nocount ( h, seq1_match, seq2_match, len_match, 0, sense);
+	if (n_matches < 0)
+	    goto fail;
 	*num_f_matches = n_matches;
 	nres += n_matches;
 
@@ -202,10 +194,7 @@ int repeat_search (
     if ( mode & 2 )  {
 
 	if ( ! (seq2 = (char *) xmalloc ( sizeof(char)*(seq1_len) ))) {
-	    free_hash8n ( h );
-	    xfree(depadded_seq);
-	    xfree(depad_to_pad);
-	    return -1;
+	    goto fail;
 	}
 
 	(void) copy_seq ( seq2, seq1, seq1_len );
@@ -216,15 +205,14 @@ int repeat_search (
 
 	if ( hash_seqn ( h, 2)) {
 	    verror(ERR_WARN, "hash_seqn", "sequence too short");
-	    free_hash8n ( h );
-	    if (seq2) xfree(seq2);
-	    xfree(depadded_seq);
-	    xfree(depad_to_pad);
-	    return -1;
+	    goto fail;
 	}
 
 	sense = 'r';
 	n_matches = reps_nocount ( h, seq1_match, seq2_match, len_match, nres, sense);
+	if (n_matches < 0)
+	    goto fail;
+
 	*num_r_matches = n_matches;
 	n_matches += nres;
     }
@@ -252,6 +240,13 @@ int repeat_search (
     xfree(depad_to_pad);
 
     return n_matches;
+
+ fail:
+    if (NULL != depadded_seq) xfree(depadded_seq);
+    if (NULL != depad_to_pad) xfree(depad_to_pad);
+    if (NULL != seq2)         xfree(seq2);
+    if (NULL != h)            free_hash8n(h);
+    return -1;
 }
 
 int repeat_search_depadded(int mode,         /* 1=f, 2=r, 3=b */
@@ -305,6 +300,7 @@ int repeat_search_depadded(int mode,         /* 1=f, 2=r, 3=b */
 
 	counts[dirn] = reps_nocount(h, seq1_match, seq2_match, len_match,
 				    counts[0], dirn == 0 ? 'f' : 'r');
+	if (counts[dirn] < 0) goto out;
     }
     
     retval = counts[0] + counts[1];
