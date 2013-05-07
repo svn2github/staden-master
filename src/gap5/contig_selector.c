@@ -752,7 +752,7 @@ update_contig_selector(Tcl_Interp *interp,
     cs->world->total->x1 = 1;
     cs->world->total->x2 = CalcTotalContigLen(io);
     cs->world->total->y1 = 1;
-    cs->world->total->y2 = CalcTotalContigLen(io);
+    cs->world->total->y2 = x2;
 
     if (lengthZoom(cs->zoom) <= 1) {
 
