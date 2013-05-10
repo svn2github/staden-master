@@ -89,7 +89,7 @@ void error_sig(int sig) {
 }
 
 static void xperror_out_func(char *name, char *str) {
-    verror(ERR_FATAL, name, str);
+    verror(ERR_FATAL, name, "%s", str);
 }
 
 /* NOT FATAL */

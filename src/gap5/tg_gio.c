@@ -29,11 +29,11 @@
 /* Open/close/commit */
 
 void xperror_fatal(char *name, char *str) {
-    verror(ERR_FATAL, name, str);
+    verror(ERR_FATAL, name, "%s", str);
 }
 
 void xperror_warn(char *name, char *str) {
-    verror(ERR_WARN, name, str);
+    verror(ERR_WARN, name, "%s", str);
 }
 
 static int db_version = DB_VERSION;

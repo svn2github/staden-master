@@ -57,7 +57,7 @@
 #include "restriction_enzymes.h"
 
 #include "sam_index.h"
-#include "bam.h"
+#include <io_lib/bam.h>
 #include "fasta.h"
 
 #ifdef VALGRIND

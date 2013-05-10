@@ -426,7 +426,10 @@ dheap_t *heap_create(char *file) {
 	pool[i] = 0;
     }
 
-    write(fd, pool, 8*NPOOLS);
+    if (8*NPOOLS != write(fd, pool, 8*NPOOLS)) {
+	close(fd);
+	return NULL;
+    }
     close(fd);
 
     return heap_load(file, O_RDWR);

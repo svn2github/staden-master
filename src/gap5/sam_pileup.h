@@ -1,7 +1,7 @@
 #ifndef _PILEUP_H_
 #define _PILEUP_H_
 
-#include "bam.h"
+#include <io_lib/bam.h>
 
 typedef struct pileup {
     struct pileup *next;  // A link list, for active seqs
