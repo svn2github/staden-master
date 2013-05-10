@@ -16,7 +16,7 @@
 #include "sam_index.h"
 #include "dstring.h"
 #include "tagdb.h"
-#include "bam.h"
+#include <io_lib/bam.h>
 #include "active_tags.h"
 
 /* Sequence formats */
@@ -301,15 +301,10 @@ static int export_header_sam(GapIO *io, bam_file_t *bf,
 			     int cc, contig_list_t *cv,
 			     int fixmates) {
     int i;
-    dstring_t *ds;
-
-    /* Construct a header string */
-    ds = dstring_create(NULL);
-    if (!ds)
-	return -1;
+    char len_buf[100];
 
     /* Generated in sorted order, adhering to version 1.4 */
-    dstring_appendf(ds, "@HD\tVN:1.4\tSO:coordinate\n");
+    bf->header = sam_hdr_parse("@HD\tVN:1.4\tSO:coordinate", 0);
 
     /* Inefficient as we have to loop twice - here and when outputting reads */
     if (fixmates) {
@@ -329,7 +324,9 @@ static int export_header_sam(GapIO *io, bam_file_t *bf,
 	    len = c->end;
 	    if (c->start <= 0)
 		len += 1-c->start;
-	    dstring_appendf(ds, "@SQ\tSN:%s\tLN:%d\n",  c->name, len);
+
+	    sprintf(len_buf, "%d", len);
+	    sam_hdr_add(bf->header, "SQ", "SN", c->name, "LN", len_buf, NULL);
 	}
     } else {
 	for (i = 0; i < cc; i++) {
@@ -342,7 +339,9 @@ static int export_header_sam(GapIO *io, bam_file_t *bf,
 	    len = c->end;
 	    if (c->start <= 0)
 		len += 1-c->start;
-	    dstring_appendf(ds, "@SQ\tSN:%s\tLN:%d\n",  c->name, len);
+
+	    sprintf(len_buf, "%d", len);
+	    sam_hdr_add(bf->header, "SQ", "SN", c->name, "LN", len_buf, NULL);
 	}
     }
 
@@ -351,27 +350,23 @@ static int export_header_sam(GapIO *io, bam_file_t *bf,
 	tg_rec lrec = arr(tg_rec, io->library, i);
 	library_t *lib = cache_search(io, GT_Library, lrec);
 	if (lib->name) {
-	dstring_appendf(ds, "@RG\tID:%s\tSM:%s\tLB:%s\n",
-		    lib->name, "unknown", lib->name);
+	    sam_hdr_add(bf->header, "RG",
+			"ID", lib->name, 
+			"SM", "unknown",
+			"LB", lib->name,
+			NULL);
 	} else {
 	    char buf[100];
 	    sprintf(buf, "rg#%"PRIrec, lib->rec);
-	    dstring_appendf(ds, "@RG\tID:SM:%s\t%s\tLB:%s\n",
-			    buf, "unknown", buf);
+	    sam_hdr_add(bf->header, "RG",
+			"ID", buf,
+			"SM", "unknown",
+			"LB", buf,
+			NULL);
 	}
     }
 
-    /* Copy it into the bam header and parse it to populate refs[] array */
-    if (bf->header)
-	free(bf->header);
-    bf->header = strdup(dstring_str(ds));
-    bf->header_len = strlen(bf->header);
-    
-    dstring_destroy(ds);
-
-    if (-1 == bam_parse_header(bf))
-	return -1;
-
+    /* Write it, also populates refs and other internal arrays */
     bam_write_header(bf);
 
     return 0;
@@ -591,57 +586,20 @@ static void sam_export_cons_tag(GapIO *io, bam_file_t *bf, fifo_t *fi,
 				contig_t *c, int offset,
 				int depad, char *cons,
 				int *npad, int *pad_to) {
-    static unsigned char *bam = NULL;
-    static size_t bam_alloc = 0;
-    int bam_idx, bam_len;
+    static bam_seq_t *bam = NULL;
+
     static dstring_t *ds = NULL;
     uint32_t cigar;
     anno_ele_t *a = (anno_ele_t *)cache_search(io, GT_AnnoEle, fi->r.rec);
-    int start, end, i;
+    int start, end;
     char type[5];
-
-#define BAM_EXTEND(sz)					      \
-    do {						      \
-	while (bam_alloc < bam_idx + (sz)) {		      \
-	    bam_alloc *= 2;				      \
-	    bam = realloc(bam, bam_alloc);		      \
-	    if (bam == NULL) {				      \
-		abort();				      \
-		fprintf(stderr, "Error allocating memory\n"); \
-	    }						      \
-        }						      \
-    } while (0)
-
-#define BAM_AUX_Z(type, str, len);           \
-    do {				     \
-	size_t l = (len);		     \
-	BAM_EXTEND(l+4);		     \
-	bam[bam_idx++] = type[0];	     \
-	bam[bam_idx++] = type[1];	     \
-	bam[bam_idx++] = 'Z';		     \
-	memcpy(&bam[bam_idx], (str), l);     \
-	bam_idx += l;			     \
-	bam[bam_idx++] = 0;                  \
-    } while (0)
-
-    /* Initial allocation of bam string and dstring */
-    bam_len = 2 + 9*36 + 4 + 1 + 1;
-    if (bam_alloc < bam_len) {
-	bam_alloc = bam_len;
-	bam = realloc(bam, bam_alloc);
-    }
-
-    if (ds)
-	dstring_empty(ds);
-    else
-	ds = dstring_create(NULL);
 
     /* Depad coords */
     start = fi->r.start;
     end   = fi->r.end;
 
     if (depad) {
-	int np2;
+	int np2, i;
 
 	/* pos is currently padded */
 	for (i = *pad_to; i < start; i++) {
@@ -661,23 +619,12 @@ static void sam_export_cons_tag(GapIO *io, bam_file_t *bf, fifo_t *fi,
     }
 
 
-    /* sometimes 784? bottom strand ones? */
-    /* Basic SAM record */
-    cigar = ((end-start+1)<<4) | BAM_CMATCH;
-    bam_idx = bam_construct_seq((bam_seq_t *) bam, bam_alloc,
-				"*", 1,
-				768,
-				bam_name2ref(bf, c->name),
-				start + offset,
-				start, end,
-				255,
-				1, &cigar,
-				-1, 0, 0,
-				0, "", "");
-    //dstring_appendf(ds, "*\t768\t%s\t%d\t255\t%dM\t*\t0\t0\t*\t*\t",
-    //                c->name, start + offset, end - start + 1);
-    
     /* Annotation itself. */
+    if (ds)
+	dstring_empty(ds);
+    else
+	ds = dstring_create(NULL);
+
     dstring_appendf(ds, "%c;", a->direction);
     dstring_append_hex_encoded(ds, type2str(fi->r.mqual, type), ";|");
     if (a->comment && *a->comment) {
@@ -685,16 +632,23 @@ static void sam_export_cons_tag(GapIO *io, bam_file_t *bf, fifo_t *fi,
 	dstring_append_hex_encoded(ds, a->comment, ";|");
     }
 
-    BAM_AUX_Z("CT", dstring_str(ds), dstring_length(ds));
+    /* sometimes 784? bottom strand ones? */
+    /* Basic SAM record */
+    cigar = ((end-start+1)<<4) | BAM_CMATCH;
+    bam_construct_seq(&bam, dstring_length(ds)+5,
+		      "*", 1,
+		      768,
+		      sam_hdr_name2ref(bf->header, c->name),
+		      start + offset,
+		      end   + offset,
+		      255,
+		      1, &cigar,
+		      -1, 0, 0,
+		      0, "", "");
 
-    //dstring_append_char(ds, '\n');
-    //fputs(dstring_str(ds), fp);
-
-    BAM_EXTEND(1); bam[bam_idx] = 0; // terminate aux list.
-    ((bam_seq_t *)bam)->blk_size = &bam[bam_idx] -
-	(unsigned char *)&((bam_seq_t *)bam)->ref;
+    bam_aux_add_data(&bam, "CT", 'Z', dstring_length(ds)+1, dstring_str(ds));
     
-    bam_put_seq(bf, (bam_seq_t *) bam);
+    bam_put_seq(bf, bam);
 }
 
 /*
@@ -727,9 +681,8 @@ static void sam_export_seq(GapIO *io, bam_file_t *bf,
     char rg_buf[1024];
     int first_tag = 1;
     int *depad_map = NULL;
-    static unsigned char *bam = NULL;
-    static size_t bam_alloc = 0;
-    int bam_idx = 0, bam_len, start, end;
+    static bam_seq_t *bam = NULL;
+    int start, end;
     int ref_id, mate_ref_id;
     fifo_t *last, *ti;
 
@@ -959,29 +912,21 @@ static void sam_export_seq(GapIO *io, bam_file_t *bf,
 
 
     /* Create BAM struct */
-    bam_len = tname_len + len + (len+1)/2 + 9*36 + ncigar_tmp*4;
-
-    /* Initial allocation of bam string */
-    if (bam_alloc < bam_len) {
-	bam_alloc = bam_len;
-	bam = realloc(bam, bam_alloc);
-    }
-
-    ref_id = bam_name2ref(bf, c->name);
+    ref_id = sam_hdr_name2ref(bf->header, c->name);
     mate_ref_id = (mate_ref[0] == '=' && mate_ref[1] == '\0')
-	? ref_id : bam_name2ref(bf, mate_ref);
-    bam_idx = bam_construct_seq((bam_seq_t *) bam, bam_alloc,
-				tname, tname_len,
-				flag,
-				ref_id,
-				pos+offset,
-				start, end,
-				mqual,
-				ncigar_tmp, cigar_tmp,
-				mate_ref_id,
-				iend,
-				isize,
-				len, S, Q);
+	? ref_id : sam_hdr_name2ref(bf->header, mate_ref);
+    bam_construct_seq(&bam, 0,
+		      tname, tname_len,
+		      flag,
+		      ref_id,
+		      pos+offset,
+		      end+offset,
+		      mqual,
+		      ncigar_tmp, cigar_tmp,
+		      mate_ref_id,
+		      iend,
+		      isize,
+		      len, S, Q);
 
     /*--- Aux strings */
     if (s->parent_type == GT_Library) {
@@ -994,21 +939,16 @@ static void sam_export_seq(GapIO *io, bam_file_t *bf,
 	else
 	    sprintf(rg_buf, "rg#%"PRIrec, lib->rec);
 
-	BAM_AUX_Z("RG", rg_buf, strlen(rg_buf));
+	bam_aux_add_data(&bam, "RG", 'Z', strlen(rg_buf)+1, rg_buf);
     }
 
     if (tname_len != s->name_len) {
-	sprintf(rg_buf, "\tFS:Z:%.*s",
-		s->name_len - tname_len,
-		s->name + tname_len);
-
-	BAM_AUX_Z("FS", s->name + tname_len, s->name_len - tname_len);
+	bam_aux_add_data(&bam, "FS", 'Z', s->name_len - tname_len + 1,
+			 s->name + tname_len);
     }
 
     if (s->aux_len) {
-	BAM_EXTEND(s->aux_len);
-	memcpy(&bam[bam_idx], s->sam_aux, s->aux_len);
-	bam_idx += s->aux_len;
+	bam_add_raw(&bam, s->aux_len, s->sam_aux);
     }
 
     /*--- Attach tags for this sequence too */
@@ -1114,9 +1054,10 @@ static void sam_export_seq(GapIO *io, bam_file_t *bf,
 	    ti = fifo_queue_head(tq);
 	}
     }
-    if (!first_tag) {
-	BAM_AUX_Z("PT", dstring_str(ds), dstring_length(ds));
-    }
+    if (!first_tag)
+	bam_aux_add_data(&bam, "PT", 'Z', dstring_length(ds)+1,
+			 dstring_str(ds));
+
     if (depad_map)
 	free(depad_map);
 
@@ -1126,11 +1067,7 @@ static void sam_export_seq(GapIO *io, bam_file_t *bf,
     //fputs(dstring_str(ds), fp);
 
     /*--- Finally output it */
-    BAM_EXTEND(1); bam[bam_idx] = 0; // terminate aux list.
-    ((bam_seq_t *)bam)->blk_size = &bam[bam_idx] -
-	(unsigned char *)&((bam_seq_t *)bam)->ref;
-
-    bam_put_seq(bf, (bam_seq_t *) bam);
+    bam_put_seq(bf, bam);
 
     if (s != sorig)
 	free(s);

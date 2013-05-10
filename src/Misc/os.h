@@ -336,6 +336,15 @@ typedef int4 int_fl;		/* f_implicit */
 #define False 0
 #define True 1
 
+/*-----------------------------------------------------------------------------
+ * Allow for unaligned memory access. This is used in BAM code as the packed
+ * structure has 4-byte cigar ints after the variable length name.
+ *
+ * Consider using AX_CHECK_ALIGNED_ACCESS_REQUIRED in autoconf.
+ */
+#if defined(__i386__) || defined(__i386) || defined(__amd64__) || defined(__amd64) || defined(__x86_64__) || defined(__x86_64) || defined(__i686__) || defined(__i686)
+#  define ALLOW_UAC
+#endif
 
 /*
  * Our new swap runs at the same speed on Ultrix, but substantially faster

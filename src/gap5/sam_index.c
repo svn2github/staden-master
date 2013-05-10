@@ -1061,7 +1061,7 @@ char *bam_aux_filter(bam_seq_t *b, char **types, int ntypes, int *len) {
  * Creates a new contig and updates the bam_io_t struct.
  */
 void bio_new_contig(bam_io_t *bio, int tid) {
-    char *cname = bio->fp->ref[tid].name;
+    char *cname = bio->fp->header->ref[tid].name;
 
     printf("\n++Processing contig %d / %s\n", tid, cname);
 	
@@ -1111,15 +1111,22 @@ int bio_add_unmapped(bam_io_t *bio, bam_seq_t *b) {
     }
 
     /* Fetch read-group and pretend it's a library for now */
+    stech = STECH_UNKNOWN;
     if ((LB = bam_aux_find(b, "RG"))) {
-	tag_list_t *rg_tag = bam_find_rg(bio->fp, LB);
-	stech = rg_tag ? stech_str2int(rg_tag->value) : STECH_UNKNOWN;
-    } else {
-	LB = bio->fn;
-	stech = STECH_UNKNOWN;
+	SAM_RG *rg_tag = sam_hdr_find_rg(bio->fp->header, ++LB);
+	if (rg_tag) {
+	    SAM_hdr_tag *t = sam_hdr_find_key(bio->fp->header,
+					      rg_tag->ty, LB, NULL);
+	    if (t)
+		stech = stech_str2int(t->str);
+	}
     }
+    if (!LB)
+	LB = bio->fn;
 
     suffix = bam_aux_find(b, "FS");
+    if (suffix)
+	suffix++;
 
     hd.p = NULL;
     hi = HacheTableAdd(bio->libs, (char *)LB, strlen(LB), hd, &new);
@@ -1322,6 +1329,7 @@ static char *parse_bam_PT_tag(char *str, int *start, int *end, char *dir,
     if (!*str)
 	return NULL;
 
+    str++; /* skip Z type */
     if (3 != sscanf(str, "%d;%d;%c;%n", start, end, dir, &n))
 	goto error;
     str += n;
@@ -1389,6 +1397,8 @@ static char *parse_bam_CT_tag(char *str, char *dir,
 
     if (!*str)
 	return NULL;
+
+    str++; /* Skip Z type */
 
     *dir = *str++;
     if (! (*str && *str == ';'))
@@ -1489,15 +1499,22 @@ int bio_del_seq(bam_io_t *bio, pileup_t *p) {
 	goto anno_only; /* Yes I know! The code needs splitting up */
 
     /* Fetch read-group and pretend it's a library for now */
+    stech = STECH_UNKNOWN;
     if ((LB = bam_aux_find(b, "RG"))) {
-	tag_list_t *rg_tag = bam_find_rg(bio->fp, LB);
-	stech = rg_tag ? stech_str2int(rg_tag->value) : STECH_UNKNOWN;
-    } else {
-	LB = bio->fn;
-	stech = STECH_UNKNOWN;
+	SAM_RG *rg_tag = sam_hdr_find_rg(bio->fp->header, ++LB);
+	if (rg_tag) {
+	    SAM_hdr_tag *t = sam_hdr_find_key(bio->fp->header,
+					      rg_tag->ty, LB, NULL);
+	    if (t)
+		stech = stech_str2int(t->str);
+	}
     }
+    if (!LB)
+	LB = bio->fn;
 
     suffix = bam_aux_find(b, "FS");
+    if (suffix)
+	suffix++;
 
     hd.p = NULL;
     hi = HacheTableAdd(bio->libs, (char *)LB, strlen(LB), hd, &new);

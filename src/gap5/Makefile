@@ -100,7 +100,6 @@ TG_INDEX=\
 	maqmap.o \
 	sam_index.o \
 	sam_pileup.o \
-	bam.o \
 	ace.o \
 	caf.o \
 	fasta.o \
@@ -427,9 +426,6 @@ baf.o: $(SRCROOT)/gap5/tg_tcl.h
 baf.o: $(SRCROOT)/gap5/tg_track.h
 baf.o: $(SRCROOT)/gap5/tg_utils.h
 baf.o: $(SRCROOT)/gap5/zfio.h
-bam.o: $(SRCROOT)/Misc/os.h
-bam.o: $(PWD)/staden_config.h
-bam.o: $(SRCROOT)/gap5/bam.h
 break_contig.o: $(SRCROOT)/Misc/array.h
 break_contig.o: $(SRCROOT)/Misc/misc.h
 break_contig.o: $(SRCROOT)/Misc/os.h
@@ -1172,7 +1168,6 @@ export_contigs.o: $(SRCROOT)/Misc/xerror.h
 export_contigs.o: $(PWD)/staden_config.h
 export_contigs.o: $(SRCROOT)/gap5/active_tags.h
 export_contigs.o: $(SRCROOT)/gap5/b+tree2.h
-export_contigs.o: $(SRCROOT)/gap5/bam.h
 export_contigs.o: $(SRCROOT)/gap5/consensus.h
 export_contigs.o: $(SRCROOT)/gap5/export_contigs.h
 export_contigs.o: $(SRCROOT)/gap5/g-alloc.h
@@ -2001,7 +1996,6 @@ newgap5_cmds.o: $(SRCROOT)/gap5/active_tags.h
 newgap5_cmds.o: $(SRCROOT)/gap5/afg.h
 newgap5_cmds.o: $(SRCROOT)/gap5/b+tree2.h
 newgap5_cmds.o: $(SRCROOT)/gap5/baf.h
-newgap5_cmds.o: $(SRCROOT)/gap5/bam.h
 newgap5_cmds.o: $(SRCROOT)/gap5/break_contig.h
 newgap5_cmds.o: $(SRCROOT)/gap5/caf.h
 newgap5_cmds.o: $(SRCROOT)/gap5/check_assembly.h
@@ -2384,7 +2378,6 @@ sam_index.o: $(SRCROOT)/Misc/xalloc.h
 sam_index.o: $(SRCROOT)/Misc/xerror.h
 sam_index.o: $(PWD)/staden_config.h
 sam_index.o: $(SRCROOT)/gap5/b+tree2.h
-sam_index.o: $(SRCROOT)/gap5/bam.h
 sam_index.o: $(SRCROOT)/gap5/consensus.h
 sam_index.o: $(SRCROOT)/gap5/depad_seq_tree.h
 sam_index.o: $(SRCROOT)/gap5/g-alloc.h
@@ -2420,7 +2413,6 @@ sam_index.o: $(SRCROOT)/gap5/tg_tcl.h
 sam_index.o: $(SRCROOT)/gap5/tg_track.h
 sam_index.o: $(SRCROOT)/gap5/tg_utils.h
 sam_pileup.o: $(PWD)/staden_config.h
-sam_pileup.o: $(SRCROOT)/gap5/bam.h
 sam_pileup.o: $(SRCROOT)/gap5/sam_pileup.h
 shuffle_pads.o: $(SRCROOT)/Misc/array.h
 shuffle_pads.o: $(SRCROOT)/Misc/misc.h
@@ -2806,6 +2798,21 @@ tg_iface_g.o: $(SRCROOT)/Misc/os.h
 tg_iface_g.o: $(SRCROOT)/Misc/tree.h
 tg_iface_g.o: $(SRCROOT)/Misc/xalloc.h
 tg_iface_g.o: $(SRCROOT)/Misc/xerror.h
+tg_iface_g.o: $(SRCROOT)/build.i386/lzma-inst/include/lzma.h
+tg_iface_g.o: $(SRCROOT)/build.i386/lzma-inst/include/lzma/base.h
+tg_iface_g.o: $(SRCROOT)/build.i386/lzma-inst/include/lzma/bcj.h
+tg_iface_g.o: $(SRCROOT)/build.i386/lzma-inst/include/lzma/block.h
+tg_iface_g.o: $(SRCROOT)/build.i386/lzma-inst/include/lzma/check.h
+tg_iface_g.o: $(SRCROOT)/build.i386/lzma-inst/include/lzma/container.h
+tg_iface_g.o: $(SRCROOT)/build.i386/lzma-inst/include/lzma/delta.h
+tg_iface_g.o: $(SRCROOT)/build.i386/lzma-inst/include/lzma/filter.h
+tg_iface_g.o: $(SRCROOT)/build.i386/lzma-inst/include/lzma/hardware.h
+tg_iface_g.o: $(SRCROOT)/build.i386/lzma-inst/include/lzma/index.h
+tg_iface_g.o: $(SRCROOT)/build.i386/lzma-inst/include/lzma/index_hash.h
+tg_iface_g.o: $(SRCROOT)/build.i386/lzma-inst/include/lzma/lzma.h
+tg_iface_g.o: $(SRCROOT)/build.i386/lzma-inst/include/lzma/stream_flags.h
+tg_iface_g.o: $(SRCROOT)/build.i386/lzma-inst/include/lzma/version.h
+tg_iface_g.o: $(SRCROOT)/build.i386/lzma-inst/include/lzma/vli.h
 tg_iface_g.o: $(PWD)/staden_config.h
 tg_iface_g.o: $(SRCROOT)/gap5/b+tree2.h
 tg_iface_g.o: $(SRCROOT)/gap5/g-alloc.h
@@ -2850,7 +2857,6 @@ tg_index.o: $(SRCROOT)/gap5/ace.h
 tg_index.o: $(SRCROOT)/gap5/afg.h
 tg_index.o: $(SRCROOT)/gap5/b+tree2.h
 tg_index.o: $(SRCROOT)/gap5/baf.h
-tg_index.o: $(SRCROOT)/gap5/bam.h
 tg_index.o: $(SRCROOT)/gap5/caf.h
 tg_index.o: $(SRCROOT)/gap5/fasta.h
 tg_index.o: $(SRCROOT)/gap5/g-alloc.h
@@ -3000,6 +3006,7 @@ tg_register.o: $(SRCROOT)/gap5/tg_tcl.h
 tg_register.o: $(SRCROOT)/gap5/tg_track.h
 tg_register.o: $(SRCROOT)/gap5/tg_utils.h
 tg_register.o: $(SRCROOT)/tk_utils/tcl_utils.h
+tg_register.o: $(SRCROOT)/tk_utils/text_output.h
 tg_scaffold.o: $(SRCROOT)/Misc/array.h
 tg_scaffold.o: $(SRCROOT)/Misc/misc.h
 tg_scaffold.o: $(SRCROOT)/Misc/os.h

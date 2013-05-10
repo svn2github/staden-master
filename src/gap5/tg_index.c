@@ -43,7 +43,7 @@
 #include "fasta.h"
 
 #include "sam_index.h"
-#include "bam.h"
+#include <io_lib/bam.h>
 #include "afg.h"
 
 
