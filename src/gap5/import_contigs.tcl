@@ -144,7 +144,7 @@ proc ImportSequences2 { old_io f job } {
     set infile [getFname_in_name $f.infile]
     if { ![file readable $infile]} {
 	tk_messageBox -icon error -type ok -title "Can't read file" \
-		-message "Couldn't open $infile"
+		-message "Couldn't open $infile" -parent $f
 	ClearBusy
 	return
     }
@@ -159,17 +159,28 @@ proc ImportSequences2 { old_io f job } {
 	set io $new_io
     }
 
+    destroy $f
+
     vmessage "Importing reads..."
 
-    log_call import_reads              \
-	-io $io               \
-	-file $infile         \
-	-format $fmt          \
-	-append 1             \
-	-merge_contigs $merge \
-	-repad $repad         \
-	-store_refpos $refpos \
-	-remove_dups $rmdup
+    if { [ catch { log_call import_reads              \
+		       -io $io               \
+		       -file $infile         \
+		       -format $fmt          \
+		       -append 1             \
+		       -merge_contigs $merge \
+		       -repad $repad         \
+		       -store_refpos $refpos \
+		       -remove_dups $rmdup } ]
+     } {
+	verror ERR_WARN "ImportSequences" "Import failed"
+	tk_messageBox -icon error -type ok -title "Import failed" \
+		-message "Error detected while importing reads."
+	$io flush
+	ClearBusy
+	PostLoadSetup
+	return
+    }
 
     vmessage "Flushing..."
     $io flush
@@ -178,6 +189,4 @@ proc ImportSequences2 { old_io f job } {
 
     ClearBusy
     PostLoadSetup
-
-    destroy $f
 }

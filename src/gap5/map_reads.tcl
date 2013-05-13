@@ -42,8 +42,6 @@
 }
 
 proc MapReads_tidyup {prefix} {
-    return 1
-
     foreach fn [glob $prefix.*] {
 	file delete $fn
     }
@@ -213,8 +211,6 @@ proc MapReads_bwa_aln2 {io w} {
 	    ClearBusy
 	    return [MapReads_tidyup $prefix]
 	}
-	ClearBusy
-	return [MapReads_tidyup $prefix]
     }
 
     # Convert to bam and sort
@@ -229,14 +225,20 @@ proc MapReads_bwa_aln2 {io w} {
     
     # Import
     vmessage "Importing reads..."
-    log_call import_reads \
-	-io $io \
-	-append 1 \
-	-merge_contigs 1 \
-	-repad 1 \
-	-file $prefix.srt.bam \
-	-format bam \
-	-index_names $no_tree
+    if { [ catch { log_call import_reads \
+		       -io $io \
+		       -append 1 \
+		       -merge_contigs 1 \
+		       -repad 1 \
+		       -file $prefix.srt.bam \
+		       -format bam \
+		       -index_names $no_tree } ]
+     } {
+	verror ERR_WARN "MapReads_bwa_aln" "Import failed"
+	$io flush
+	ClearBusy
+	return [MapReads_tidyup $prefix]
+    }
 
     # Process failures from SAM file. Convert back to fasta or fastq.
     # $w.out_format: 1=fasta, 2=fastq
@@ -398,14 +400,21 @@ proc MapReads_bwa_bwasw2 {io w} {
     }
     
     # Import
-    log_call import_reads \
-	-io $io \
-	-append 1 \
-	-merge_contigs 1 \
-	-repad 1 \
-	-file $prefix.srt.bam \
-	-format bam \
-	-index_names $no_tree
+    vmessage "Importing reads..."
+    if { [ catch { log_call import_reads \
+		       -io $io \
+		       -append 1 \
+		       -merge_contigs 1 \
+		       -repad 1 \
+		       -file $prefix.srt.bam \
+		       -format bam \
+		       -index_names $no_tree } ]
+     } {
+	verror ERR_WARN "MapReads_bwa_bwasw" "Import failed"
+	$io flush
+	ClearBusy
+	return [MapReads_tidyup $prefix]
+    }
 
     # Process failures from SAM file. Convert back to fasta or fastq.
     # $w.out_format: 1=fasta, 2=fastq

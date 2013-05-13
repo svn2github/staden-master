@@ -1583,7 +1583,8 @@ static void tk_redisplaySeqSequences(edview *xx, rangec_t *r, int nr) {
 
 		    nline[0] = dir;
 		    if (nl > 0)
-			memcpy(&nline[1], s->name + xx->names_xPos, nl);
+			memcpy(&nline[1], s->name + xx->names_xPos,
+			       nl < MAX_NAME_WIDTH-1 ? nl : MAX_NAME_WIDTH-1);
 
 		    t = sequence_get_template_info(xx->io, sorig, NULL, NULL);
 		    nink[0].sh = sh_bg;

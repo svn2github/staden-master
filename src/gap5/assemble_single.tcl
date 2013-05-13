@@ -66,18 +66,25 @@ proc AssemblySingle2 {io w} {
     destroy $w
     SetBusy
 
-    log_call import_reads \
-	-io $io \
-	-append 1 \
-	-file $fn \
-	-format $format \
-	-index_names 1
-
-    ContigSelector $io
-    ContigInitReg $io
+    if { [ catch { log_call import_reads \
+		       -io $io \
+		       -append 1 \
+		       -file $fn \
+		       -format $format \
+		       -index_names 1 } ]
+     } {
+	verror ERR_WARN "AssemblySingle" "Import failed"
+	tk_messageBox -icon error -type ok -title "Import failed" \
+		-message "Error detected while importing reads."
+	$io flush
+	ClearBusy
+	PostLoadSetup
+	return
+    }
 
     catch {glob file delete $prefix.fastq}
 
+    $io flush
     ClearBusy
     PostLoadSetup
 }

@@ -431,9 +431,11 @@ void create_new_contig(GapIO *io, contig_t **c, char *cname, int merge) {
 	int cname_count = 0;
 
 	/* Not merging, so avoid duplicating contig name */
-	strncpy(cname2, cname, 1024);
+	snprintf(cname2, sizeof(cname2), "%.*s",
+		 (int) sizeof(cname2) - 16, cname);
 	while ((*c = find_contig_by_name(io, cname2))) {
-	    sprintf(cname2, "%s:%d", cname, ++cname_count);
+	    snprintf(cname2, sizeof(cname2), "%.*s:%d",
+		     (int) sizeof(cname2) - 16, cname, ++cname_count);
 	}
 
 	if (strcmp(cname, cname2)) {

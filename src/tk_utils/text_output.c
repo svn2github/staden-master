@@ -916,10 +916,13 @@ int tcl_log_vmessage(ClientData clientData, Tcl_Interp *interp,
 void UpdateTextOutput() {
     //    while (Tcl_DoOneEvent(TCL_WINDOW_EVENTS | TCL_IDLE_EVENTS | TCL_DONT_WAIT)
     //	   != 0)
-
-    while (Tcl_DoOneEvent(TCL_ALL_EVENTS | TCL_DONT_WAIT)
-	   != 0)
-	;
+    if (win_init) {
+	while (Tcl_DoOneEvent(TCL_ALL_EVENTS | TCL_DONT_WAIT)
+	       != 0)
+	    ;
+    } else {
+	fflush(stdout);
+    }
 }
 
 /*
