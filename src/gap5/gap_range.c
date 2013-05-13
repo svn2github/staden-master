@@ -256,16 +256,21 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
     double max_height = 0;
     int lib_type;
     HacheTable *h;
+    contig_t *c;
 
     if (!is_filter_change(gr) && !force)
 	return gr->ntl;
+
+    if (!(c = cache_search(gr->io, GT_Contig, gr->crec)))
+	return 0;
+    cache_incr(gr->io, c);
 
     update_filter(gr);
     gr->ntl = 0;
     memset(gr->depth, 0, gr->width * sizeof(gap_depth_t));
 
     h = HacheTableCreate(256, HASH_POOL_ITEMS | HASH_DYNAMIC_SIZE);
-	
+
     for (i = 0; i < gr->nr; i++) {
 	int sta, end;
 	int r_sta, r_end;
@@ -319,10 +324,15 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 	    }
 		
 	    /* accurate drawing, this will slow things down */
-	    if (gr->new_filter.accuracy) {
-		/* Pair was off-screen, so get more accurate results */
-		if (r->pair_timestamp < gr->io->db->timestamp)
+	    if (r->pair_timestamp < gr->io->db->timestamp) {
+		if (gr->new_filter.accuracy) {
+		    /* Pair was off-screen, so get more accurate results */
 		    sequence_get_range_pair_position(gr->io, r);
+		} else if (r->pair_ind == -1 && r->pair_contig == gr->crec) {
+		    /* Same contig, but out of date. Check boundary */
+		    if (r->pair_start > c->end || r->pair_end < c->start)
+			r->pair_contig = 0;
+		}
 	    }
 
 	    //span = (gr->crec != r->pair_contig) ? r->pair_contig : 0;
@@ -517,6 +527,8 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 
 	gr->ntl++;
     }
+
+    cache_decr(gr->io, c);
 
     if (h)
 	HacheTableDestroy(h, 0);

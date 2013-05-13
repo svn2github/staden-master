@@ -1700,6 +1700,9 @@ static void pair_rangec(GapIO *io, tg_rec crec, rangec_t *r, int count) {
 	    r[p].pair_mqual  = r[i].mqual;
 	    r[p].pair_contig = crec;
 
+	    r[i].pair_timestamp = gio_base(io)->db->timestamp;
+	    r[p].pair_timestamp = gio_base(io)->db->timestamp;
+
 	    if (((r[i].flags & GRANGE_FLAG_COMP1) != 0) ^ r[i].comp) {
 		r[i].flags |=  GRANGE_FLAG_COMP1;
 		r[p].flags |=  GRANGE_FLAG_COMP2;
