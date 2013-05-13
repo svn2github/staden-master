@@ -34,8 +34,8 @@ proc ImportSequences { io job } {
 
 	lappend to_pack $f.new_contigs_btn $f.repad_btn
     } else {
-	global $f.browsed_name
-	set $f.browsed_name ""
+	global $f.browsed_path
+	set $f.browsed_path ""
 
 	frame $f.database
 	xentry $f.database.entry -label "Database name" -width 15
