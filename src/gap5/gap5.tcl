@@ -427,6 +427,12 @@ proc CreateMain { } {
     }
     vmessage "Gap5 has started up in '$mode' mode. To select another menu level," 
     vmessage "please use the 'Configure menus' command in the 'Options' menu."
+    vmessage ""
+    vmessage "Please consider citing Gap5 in any work you do where Gap5 has played"
+    vmessage "a key role.   dx.doi.org/doi:10.1093/bioinformatics/btq268\n"
+    vmessage "  Bonfield, J.K. and Whitwham, A."
+    vmessage "  Gap5 - editing the billion fragment sequence assembly."
+    vmessage "  Bioinformatics (2010) 26 (14): 1699-1703. "
 }
 #end CreateMain
 
