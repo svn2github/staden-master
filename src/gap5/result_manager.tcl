@@ -114,7 +114,7 @@ proc result_list_update {io} {
     # Add items to the list
     foreach i $list {
 	set cl ""
-	foreach cn [lindex $i 2] {
+	foreach cn [lindex $i 0] {
 	    lappend cl "\#[lindex $cn 0]"
 	}
         set ti [result_time -io $io -id [lindex $i 0]]
