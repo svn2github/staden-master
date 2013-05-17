@@ -927,10 +927,12 @@ static void update_consensus_tags(GapIO *io, int cnum, MALIGN *malign) {
  * the same region. (Functionality first, efficiency later.)
  */
 static void tag_shift_for_insert(GapIO *io, tg_rec crec, tg_rec srec,
-				 int start, int end, int pos, tg_rec brec) {
+				 int start, int len, int pos, tg_rec brec,
+				 int dist) {
     contig_iterator *ci;
     rangec_t *r;
     contig_t *c = cache_search(io, GT_Contig, crec);;
+    int end = start + len-1;
 
     //printf("> tag in seq %"PRIrec" at %d+%d\n", srec, start, pos);
 
@@ -952,8 +954,8 @@ static void tag_shift_for_insert(GapIO *io, tg_rec crec, tg_rec srec,
 	    continue;
 
 	bin_remove_item(io, &c, GT_AnnoEle, r->rec);
-	r2.start    = (r->start >= start+pos) ? r->start+1 : r->start;
-	r2.end      = r->end+1;
+	r2.start    = (r->start >= start+pos) ? r->start+dist : r->start;
+	r2.end      = r->end+dist;
 	r2.mqual    = r->mqual;
 	r2.rec      = r->rec;
 	r2.pair_rec = r->pair_rec;
@@ -975,10 +977,12 @@ static void tag_shift_for_insert(GapIO *io, tg_rec crec, tg_rec srec,
 }
 
 static void tag_shift_for_delete(GapIO *io, tg_rec crec, tg_rec srec,
-				 int start, int end, int pos, tg_rec brec) {
+				 int start, int len, int pos, tg_rec brec,
+				 int dist) {
     contig_iterator *ci;
     rangec_t *r;
     contig_t *c = cache_search(io, GT_Contig, crec);;
+    int end = start + len-1;
 
     //printf("< tag in seq %"PRIrec" at %d\n", srec, pos);
 
@@ -1000,8 +1004,8 @@ static void tag_shift_for_delete(GapIO *io, tg_rec crec, tg_rec srec,
 	    continue;
 
 	bin_remove_item(io, &c, GT_AnnoEle, r->rec);
-	r2.start    = (r->start > start+pos) ? r->start-1 : r->start;
-	r2.end      = r->end-1;
+	r2.start    = (r->start > start+pos) ? r->start-dist : r->start;
+	r2.end      = r->end-dist;
 	r2.mqual    = r->mqual;
 	r2.rec      = r->rec;
 	r2.pair_rec = r->pair_rec;
@@ -1078,7 +1082,7 @@ void update_io(GapIO *io, tg_rec cnum, MALIGN *malign, Array indels) {
     for (cl = malign->contigl; cl; cl = cl->next) {
 	seq_t *s, *sorig;
 	int len, update_range = 0;
-	int shift;
+	int shift, orig_start;
 
 	rnum = cl->id;
 	
@@ -1089,6 +1093,8 @@ void update_io(GapIO *io, tg_rec cnum, MALIGN *malign, Array indels) {
 	    complement_seq_t(s);
 
 	len = s->right - s->left + 1;
+
+	sequence_get_position(io, s->rec, NULL, &orig_start, NULL, NULL);
 
 	/* Check if sequence has changed. If so assign a new one */
 	if (cl->mseg->length != len ||
@@ -1131,8 +1137,9 @@ void update_io(GapIO *io, tg_rec cnum, MALIGN *malign, Array indels) {
 		if (s->seq[i] == '*') {
 		    i++;
 		    tag_shift_for_delete(io, cnum, rnum, cl->mseg->offset,
-					 cl->mseg->length, i+np--,
-					 s->bin);
+					 s->right - s->left + 1,
+					 i+np-- - (s->left-1),
+					 s->bin, 1);
 		    /*
 		    if (io_length(io, rnum) < 0) {
 			tag_shift_for_delete(io, rnum, r.length - i + 1);
@@ -1162,8 +1169,9 @@ void update_io(GapIO *io, tg_rec cnum, MALIGN *malign, Array indels) {
 		    newconf[j] = MIN(ql, qr); /* min conf of neighbours */
 		    j++;
 		    tag_shift_for_insert(io, cnum, rnum, cl->mseg->offset,
-					 cl->mseg->length, i+ ++np,
-					 s->bin);
+					 cl->mseg->length,
+					 i+ ++np - (s->left-1),
+					 s->bin, 1);
 		    /*
 		    if (io_length(io, rnum) < 0) {
 			tag_shift_for_insert(io, rnum, r.length - i + 1);
@@ -1183,8 +1191,9 @@ void update_io(GapIO *io, tg_rec cnum, MALIGN *malign, Array indels) {
 		if (s->seq[i] == '*') {
 		    i++;
 		    tag_shift_for_delete(io, cnum, rnum, cl->mseg->offset,
-					 cl->mseg->length, i+np--,
-					 s->bin);
+					 s->right - s->left + 1,
+					 i+np-- - (s->left-1),
+					 s->bin, 1);
 		    /*
 		    if (io_length(io, rnum) < 0) {
 			tag_shift_for_delete(io, rnum, r.length - i + 1);
@@ -1277,6 +1286,7 @@ void update_io(GapIO *io, tg_rec cnum, MALIGN *malign, Array indels) {
 
 	if (update_range) {
 	    int bin_changed = 0;
+	    int dist;
 
 	    /* Get old range and pair data */
 	    s = sorig;
@@ -1284,8 +1294,20 @@ void update_io(GapIO *io, tg_rec cnum, MALIGN *malign, Array indels) {
 	    r = *arrp(range_t, bin->rng, s->bin_index);
 	    assert(r.rec == s->rec);
 
+	    dist =  cl->mseg->offset + 1 - shift - orig_start;
+	    if (dist > 0) {
+		tag_shift_for_insert(io, cnum, rnum,
+				     orig_start, ABS(s->len)+dist,
+				     0, s->bin, dist);
+	    } else if (dist < 0) {
+		tag_shift_for_delete(io, cnum, rnum,
+				     orig_start+dist, ABS(s->len)-dist,
+				     0, s->bin, -dist);
+	    }
+
 	    /* Update range, tedious and slow way */
 	    bin_remove_item(io, &c, GT_Seq, s->rec);
+
 	    r.start = cl->mseg->offset + 1 - shift;
 	    r.end   = r.start + ABS(s->len) - 1;
 	    bin = bin_add_range(io, &c, &r, &r_out, NULL, 0);
