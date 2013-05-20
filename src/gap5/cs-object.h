@@ -29,6 +29,7 @@
 
 #define OBJ_FLAG_HIDDEN		(1 << 0)
 #define OBJ_FLAG_VISITED	(1 << 1)
+#define OBJ_FLAG_JOINED         (1 << 2)
 
 /*
  * ============================================================================
@@ -170,7 +171,7 @@ typedef struct mobj_repeat_t {
     int match_type;
     void (*reg_func)(GapIO *io, tg_rec contig, void *fdata,
 		     reg_data *jdata);
-} mobj_repeat, mobj_template, mobj_find_oligo;
+} mobj_repeat, mobj_read_pair, mobj_find_oligo;
 
 typedef struct mobj_fij_t {
     int num_match;
@@ -186,6 +187,8 @@ typedef struct mobj_fij_t {
     int match_type;
     void (*reg_func)(GapIO *io, tg_rec contig, void *fdata,
 		     reg_data *jdata);
+    float max_mismatch;
+    int min_length;
 } mobj_fij;
 
 typedef struct mobj_checkass_t {
@@ -208,7 +211,13 @@ typedef struct mobj_checkass_t {
     int cutoffs;
 } mobj_checkass;
 
-
+typedef union {
+    mobj_repeat     repeat;
+    mobj_read_pair  read_pair;
+    mobj_find_oligo find_oligo;
+    mobj_fij        fij;
+    mobj_checkass   checkass;
+} mobj_generic;
 
 /*
  * ============================================================================

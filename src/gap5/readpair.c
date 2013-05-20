@@ -41,7 +41,7 @@
  * 'obj' is a match contained within the 'repeat' list.
  */
 void *readpair_obj_func(int job, void *jdata, obj_read_pair *obj,
-			mobj_template *template) {
+			mobj_read_pair *template) {
     static char buf[200];
     obj_cs *cs;
     int cs_id;
@@ -164,7 +164,7 @@ void *readpair_obj_func(int job, void *jdata, obj_read_pair *obj,
 }
 
 void readpair_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
-    mobj_template *r = (mobj_template *)fdata;
+    mobj_read_pair *r = (mobj_read_pair *)fdata;
     obj_cs *cs;
     int cs_id;
 
@@ -283,7 +283,7 @@ void readpair_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
  */
 int PlotTempMatches(GapIO *io, read_pair_t *rp) {
     int id;
-    mobj_template *template;
+    mobj_read_pair *template;
     obj_read_pair *matches;
     int n_matches = 0;
     int max_matches = 64; /* dynamically grows */
@@ -292,7 +292,7 @@ int PlotTempMatches(GapIO *io, read_pair_t *rp) {
     if (!rp)
 	return 0;
 
-    if (NULL == (template = (mobj_template *)xmalloc(sizeof(mobj_template))))
+    if (NULL == (template = (mobj_read_pair *)xmalloc(sizeof(mobj_read_pair))))
 	return -1;
     if (NULL == (matches = (obj_read_pair *)xmalloc(max_matches *
 						    sizeof(obj_read_pair))))

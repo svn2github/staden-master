@@ -454,28 +454,37 @@ proc FIJ_OK_Pressed { f io infile1 id1 infile2 id2 blocks min_overlap
 
 
     SetBusy
-    log_call find_internal_joins -io $io \
-	    -min_overlap $min_overlap \
-	    -max_pmismatch $max_mis \
-	    -word_length $word_length \
-	    -max_prob $max_prob\
-	    -min_match $min_match \
-	    -band $band_size \
-	    -win_size $win_size \
-	    -max_dashes $max_dash \
-	    -min_conf $min_conf \
-	    -use_conf $use_conf \
-	    -use_hidden $use_hidden \
-	    -max_display $max_align_length \
-	    -fast_mode $fast_mode \
-	    -filter_words $filter_words \
-	    -rp_mode $rp_mode_str \
-	    -rp_end_size $rp_end_size \
-	    -rp_min_mq $rp_min_mq \
-	    -rp_min_freq $rp_min_freq \
-	    -rp_libraries $rp_libs \
-	    -contigs1 $list1 \
-	    -contigs2 $list2
+    set id [log_call find_internal_joins -io $io \
+		-min_overlap $min_overlap \
+		-max_pmismatch $max_mis \
+		-word_length $word_length \
+		-max_prob $max_prob\
+		-min_match $min_match \
+		-band $band_size \
+		-win_size $win_size \
+		-max_dashes $max_dash \
+		-min_conf $min_conf \
+		-use_conf $use_conf \
+		-use_hidden $use_hidden \
+		-max_display $max_align_length \
+		-fast_mode $fast_mode \
+		-filter_words $filter_words \
+		-rp_mode $rp_mode_str \
+		-rp_end_size $rp_end_size \
+		-rp_min_mq $rp_min_mq \
+		-rp_min_freq $rp_min_freq \
+		-rp_libraries $rp_libs \
+		-contigs1 $list1 \
+		-contigs2 $list2]
+
+    if {$id > 0} {
+	# Draw it too
+	result_notify \
+	    -io $io \
+	    -id $id \
+	    -type GENERIC \
+	    -args "{task TASK_CS_PLOT}"
+    }
 
     ClearBusy
 }

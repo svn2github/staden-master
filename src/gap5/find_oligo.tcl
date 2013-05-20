@@ -197,14 +197,23 @@ proc FindOligo_OK_Pressed {io f infile id sel_mode mis_match seq cons_or_seq hid
 
     # If repeats are found, this also sets the tag_list variable
     SetBusy
-    log_call find_oligo -io $io \
-            -min_pmatch $mis_match \
-	    -contigs $list \
-	    -seq $sequence \
-	    -tag_types $active_tags \
-	    -file $fastafn \
-    	    -consensus_only $cons_only \
-    	    -cutoffs $use_hidden
+    set id [log_call find_oligo -io $io \
+		-min_pmatch $mis_match \
+		-contigs $list \
+		-seq $sequence \
+		-tag_types $active_tags \
+		-file $fastafn \
+		-consensus_only $cons_only \
+		-cutoffs $use_hidden]
+
+    if {$id >= 0} {
+	# Draw it too
+	result_notify \
+	    -io $io \
+	    -id $id \
+	    -type GENERIC \
+	    -args "{task TASK_CS_PLOT}"
+    }
     ClearBusy
 }
 

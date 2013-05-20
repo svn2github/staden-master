@@ -15,11 +15,14 @@
 #include "editor_view.h"
 #include "tk-io-reg.h"
 #include "readpair.h"
+#include "editor_join.h"
 #include "io_lib/hash_table.h"
 
 static int counter;
 static int counter_max;
 static mobj_fij *global_match;
+
+static int auto_join(GapIO *io, mobj_fij *r);
 
 void *fij_obj_func(int job, void *jdata, obj_fij *obj,
 		      mobj_fij *fij) {
@@ -185,14 +188,14 @@ void fij_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
     case REG_JOIN_TO:
 
 	csmatch_join_to(io, contig, &jdata->join, (mobj_repeat *)r,
-			csplot_hash, cs->window);
+			csplot_hash, cs ? cs->window : NULL);
 	break;
 
 
     case REG_COMPLEMENT:
 
 	csmatch_complement(io, contig, (mobj_repeat *)r,
-			   csplot_hash, cs->window);
+			   csplot_hash, cs ? cs->window : NULL);
 	break;
 
 
@@ -255,19 +258,21 @@ void fij_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
     case REG_NUMBER_CHANGE:
 
 	csmatch_renumber(io, contig, jdata->number.number,
-			 (mobj_repeat *)r, csplot_hash, cs->window);
+			 (mobj_repeat *)r, csplot_hash,
+			 cs ? cs->window : NULL);
 	break;
 
     case REG_ORDER:
 #ifdef DEBUG
 	printf("find internal joins REG_ORDER\n");
 #endif
-	csmatch_replot(io, (mobj_repeat *)r, csplot_hash, cs->window);
+	csmatch_replot(io, (mobj_repeat *)r, csplot_hash,
+		       cs ? cs->window : NULL);
 	break;
 
     case REG_QUIT:
 
-	csmatch_remove(io, cs->window,
+	csmatch_remove(io, cs ? cs->window : NULL,
 		       (mobj_repeat *)r,
 		       csplot_hash);
 	break;
@@ -275,12 +280,35 @@ void fij_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
     case REG_DELETE:
 
 	csmatch_contig_delete(io, (mobj_repeat *)r, contig,
-			      cs->window, csplot_hash);
+			      cs ? cs->window : NULL, csplot_hash);
 	break;
 
     case REG_LENGTH:
-	csmatch_replot(io, (mobj_repeat *)r, csplot_hash, cs->window);
+	csmatch_replot(io, (mobj_repeat *)r, csplot_hash,
+		       cs ? cs->window : NULL);
 	break;
+
+    case REG_GENERIC:
+	switch (jdata->generic.task) {
+	    int ret;
+
+	case TASK_CS_PLOT:
+	    PlotRepeats(io, (mobj_repeat *)r);
+	    Tcl_VarEval(GetInterp(), "CSLastUsed ", CPtr2Tcl(r), NULL);
+	    break;
+
+	case TASK_CS_SAVE:
+	    ret = csmatch_save(r, "/tmp/plot.out");
+	    vTcl_SetResult(GetInterp(), "%d", ret);
+	    break;
+
+	case TASK_CS_LOAD:
+	    break;
+
+	case TASK_AUTO_JOIN:
+	    auto_join(io, r);
+	    break;
+	}
     }
 }
 
@@ -601,12 +629,11 @@ fij(fij_arg *fij_args,
     FIJMatch->current = -1;
     FIJMatch->reg_func = fij_callback;
     FIJMatch->match_type = REG_TYPE_FIJ;
+    FIJMatch->max_mismatch = fij_args->max_mis;
+    FIJMatch->min_length = fij_args->min_match;
 
     /* Sort matches */
     qsort(FIJMatch->match, FIJMatch->num_match, sizeof(obj_fij), sort_func);
-
-    PlotRepeats(io, (mobj_repeat *)FIJMatch);
-    Tcl_VarEval(GetInterp(), "CSLastUsed ", CPtr2Tcl(FIJMatch), NULL);
 
     /*
      * Register find internal joins with each of the contigs used.
@@ -616,11 +643,12 @@ fij(fij_arg *fij_args,
 	id = register_id();
 	contig_register(io, 0, fij_callback, (void *)FIJMatch, id,
 			REG_REQUIRED | REG_DATA_CHANGE | REG_OPS |
-			REG_NUMBER_CHANGE | REG_ORDER, REG_TYPE_FIJ);
+			REG_NUMBER_CHANGE | REG_ORDER | REG_GENERIC,
+			REG_TYPE_FIJ);
 	update_results(io);
     }
 
-    retval = 0;
+    retval = id;
     FIJMatch = NULL; /* So we don't free it below */
  out:
     if (NULL != FIJMatch) {
@@ -662,5 +690,146 @@ buffij(tg_rec c1, int pos1, int end1,
 						    counter_max *
 						    sizeof(obj_fij));
     }
+}
 
+/*
+ * Automatically attempt to join the FIJ results 'result_id'.
+ * This is based around the edJoinAlign() function in editor_join.c.
+ *
+ * Returns -1 on failure
+ *          0 on success
+ */
+static int auto_join(GapIO *io, mobj_fij *r) {
+    int i, j, nr, nr_orig;
+    char PAD_SYM = '.';
+
+    if (!r)
+	return -1;
+
+    vfuncheader("Auto-Join");
+
+    nr_orig = r->num_match;
+    for (i = j = 0; i < r->num_match; j++, i++) {
+	obj_fij *m = &r->match[i];
+	alignment_t *a;
+	int l1, r1, l2, r2; /* contig used extents */
+	int left1,right1;
+	int left2,right2;
+	int offset, ret;
+	int overlapLength;
+	int len1,len2;
+	int shift, extra;
+
+	vmessage("Processing join %d of %d: =%+"PRIrec" vs =%+"PRIrec"\n",
+		 j+1, nr_orig, m->c1, m->c2);
+
+	if (m->c1 < 0)
+	    if (-1 == complement_contig(io, -m->c1))
+		return -1;
+
+	if (m->c2 < 0)
+	    if (-1 == complement_contig(io, -m->c2))
+		return -1;
+
+	if (m->c1 < 0 || m->c2 < 0) {
+	    /* Should never happen */
+	    vmessage("Contig still not complemented - aborting\n");
+	    continue;
+	}
+
+	/* Pick consensus regions to align over - adds a bit more */
+	/* See edJoinAlign in editor_join.c */
+	consensus_valid_range(io, ABS(m->c1), &l1, &r1);
+	consensus_valid_range(io, ABS(m->c2), &l2, &r2);
+
+	offset = (m->pos1 - l1) - (m->pos2 - l2);
+
+	/* Possibly recompute overlap length - start/ends may have changed */
+	if (m->flags & OBJ_FLAG_JOINED) {
+	    int len = MIN(r1 - m->pos1, r2 - m->pos2);
+	    left1 = m->pos1; right1 = left1 + len;
+	    left2 = m->pos2; right2 = left2 + len;
+	} else {
+	    left1 = m->pos1; right1 = m->end1;
+	    left2 = m->pos2; right2 = m->end2;
+	}
+
+	overlapLength = MAX(right1 - left1+1, right2 - left2+1);
+	if (overlapLength <= 0) {
+	    vmessage("Skipping as contigs seem to no longer overlap.\n");
+	    continue;
+	}
+
+	/* Add on extra data either end to allow for padding */
+	extra = set_band_blocks(overlapLength, overlapLength)/2;
+
+	if ((left1  -= extra) < l1) left1  = l1;
+	if ((left2  -= extra) < l2) left2  = l2;
+	if ((right1 += extra) > r1) right1 = r1;
+	if ((right2 += extra) > r2) right2 = r2;
+
+	len1 = right1 - left1+1;
+	len2 = right2 - left2+1;
+
+	if (len1 <= 0 || len2 <= 0) {
+	    vmessage("Skipping due to negative contig overlaps.\n");
+	    continue;
+	}
+
+	/* Do the actual alignment */
+	a = align_contigs(io, ABS(m->c1), left1, len1,
+			  io, ABS(m->c2), left2, len2,
+			  0, 0);
+
+	if (!a) {
+	    verror(ERR_WARN, "auto_join",
+		   "Failed to align =%"PRIrec" with =%"PRIrec"\n",
+		   ABS(m->c1), ABS(m->c2));
+	    continue;
+	}
+
+	/* Check the alignment is still acceptable */
+	if (a->match_len < r->min_length) {
+	    vmessage("Skipping join as match too short.\n");
+	    alignment_free(a);
+	    continue;
+	}
+
+	if (100 - 100.0*a->match_count / a->match_len > r->max_mismatch) {
+	    vmessage("Skipping join as percentage mismatch too high.\n");
+	    alignment_free(a);
+	    continue;
+	}
+
+	/* Apply the edits */
+	align_apply_edits(io, ABS(m->c1), io, ABS(m->c2), a);
+
+	/* And finally make the join */
+	offset = left2 + a->shift - left1;
+	vmessage("Join at offset %d\n", offset);
+
+	alignment_free(a);
+
+	nr = r->num_match;
+	if (offset > 0) {
+	    if (-1 == join_contigs(io, ABS(m->c2), ABS(m->c1), offset)) {
+		vmessage("Join_contigs() failed\n");
+		continue;
+	    }
+	} else {
+	    if (-1 == join_contigs(io, ABS(m->c1), ABS(m->c2), -offset)) {
+		vmessage("Join_contigs() failed\n");
+		continue;
+	    }
+	}
+	
+	if (nr == 1)
+	    break; // r will have been deallocated.
+
+	i--;
+    }
+
+    vmessage("\nMade %d of %d joins found\n", nr_orig-i, nr_orig);
+
+    return 0;
 }

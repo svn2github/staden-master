@@ -14,24 +14,6 @@ typedef struct contig_pair {
     tg_rec c2;
 } contig_pair;
 
-typedef struct fij_opts_t {
-    int mask;
-    int min_overlap;
-    double max_percent_mismatch;
-    int word_len;
-    double max_prob;
-    int min_match;
-    int band;
-    int window_len;
-    int max_unknown;
-    double min_conf;
-    int use_conf;
-    int use_hidden;
-    int max_alignment;
-    int fast_mode;
-    double filter_words;
-} fij_opts_t;
-
 int
 fij(fij_arg *fij_args,
     int num_contigs1,

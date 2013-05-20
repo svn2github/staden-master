@@ -306,11 +306,11 @@ void find_oligo_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata)
 	if (r->all_hidden)
 	    jdata->get_ops.ops = "PLACEHOLDER\0PLACEHOLDER\0Information\0"
 		"PLACEHOLDER\0Hide all\0Reveal all\0Sort Matches\0"
-		    "SEPARATOR\0Remove\0";
+		    "Save Matches\0SEPARATOR\0Remove\0";
 	else
 	    jdata->get_ops.ops = "Use for 'Next'\0Reset 'Next'\0Information\0"
 		"Configure\0Hide all\0Reveal all\0Sort Matches\0"
-		    "SEPARATOR\0Remove\0";
+		    "Save Matches\0SEPARATOR\0Remove\0";
 	break;
 
 
@@ -342,7 +342,18 @@ void find_oligo_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata)
 	    csmatch_reset_hash(csplot_hash, (mobj_repeat *)r);
 	    r->current = -1;
 	    break;
-	case 7: /* Remove */
+	case 7: /* Save matches */ {
+	    char *fn;
+	    Tcl_Eval(GetInterp(), "tk_getSaveFile");
+	    fn = Tcl_GetStringResult(GetInterp());
+	    if (fn && *fn) {
+		if (csmatch_save(r, fn) == -1) {
+		    Tcl_Eval(GetInterp(), "tk_messageBox -type error -icon error -message \"Failed to save file\"");
+		}
+	    }
+	    break;
+	}
+	case 8: /* Remove */
 	    csmatch_remove(io, cs->window,
 			   (mobj_find_oligo *)r,
 			   csplot_hash);
@@ -385,9 +396,32 @@ void find_oligo_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata)
     case REG_LENGTH:
 	csmatch_replot(io, (mobj_find_oligo *)r, csplot_hash, cs->window);
 	break;
+
+    case REG_GENERIC:
+	switch (jdata->generic.task) {
+	    int ret;
+
+	case TASK_CS_PLOT:
+	    PlotRepeats(io, (mobj_repeat *)r);
+	    Tcl_VarEval(GetInterp(), "CSLastUsed ", CPtr2Tcl(r), NULL);
+	    break;
+
+	case TASK_CS_SAVE:
+	    ret = csmatch_save(r, "/tmp/plot.out");
+	    vTcl_SetResult(GetInterp(), "%d", ret);
+	    break;
+
+	case TASK_CS_LOAD:
+	    break;
+	}
     }
 }
 
+/*
+ * Returns registration ID on success
+ *         -2 for no results found
+ *         -1 on failure
+ */
 int
 RegFindOligo(GapIO *io,
 	     int type,
@@ -405,7 +439,7 @@ RegFindOligo(GapIO *io,
     int i, id;
 
     if (0 == n_matches)
-	return 0;
+	return  -2;
 
     if (NULL == (find_oligo = (mobj_find_oligo *)xmalloc(sizeof(mobj_find_oligo))))
 	return -1;
@@ -483,9 +517,6 @@ RegFindOligo(GapIO *io,
     qsort(find_oligo->match, find_oligo->num_match, sizeof(obj_match),
 	  sort_func);
 
-    PlotRepeats(io, find_oligo);
-    Tcl_VarEval(GetInterp(), "CSLastUsed ", CPtr2Tcl(find_oligo), NULL);
-
     /*
      * Register the find oligo search with each of the contigs used.
      * Currently we assume that this is all.
@@ -493,10 +524,11 @@ RegFindOligo(GapIO *io,
     id = register_id();
     contig_register(io, 0, find_oligo_callback, (void *)find_oligo, id,
 		    REG_REQUIRED | REG_DATA_CHANGE | REG_OPS |
-		    REG_NUMBER_CHANGE | REG_ORDER, REG_TYPE_OLIGO);
+		    REG_NUMBER_CHANGE | REG_ORDER | REG_GENERIC,
+		    REG_TYPE_OLIGO);
     update_results(io);
 
-    return 0;
+    return id;
 }
 
 /*
@@ -1019,7 +1051,7 @@ find_oligos(GapIO *io,
 	    int consensus_only,
 	    int in_cutoff)
 {
-    int i;
+    int i, id = -1;
     int *pos1 = NULL;
     int *pos2 = NULL;
     int *score = NULL;
@@ -1094,8 +1126,8 @@ find_oligos(GapIO *io,
 				score, length, c1, c2, max_matches,
 				consensus_only, in_cutoff);
 	list_remove_duplicates("seq_hits");
-	if (-1 == RegFindOligo(io, SEQUENCE, pos1, pos2, score, length, c1,
-			       c2, n_matches))
+	if (-1 == (id = RegFindOligo(io, SEQUENCE, pos1, pos2, score, length,
+				     c1, c2, n_matches)))
 	    goto error;
     } else {
 	/*
@@ -1121,7 +1153,7 @@ find_oligos(GapIO *io,
     xfree(pos2);
     xfree(score);
     xfree(length);
-    return 0;
+    return id;
 
  error:
     if (c1)

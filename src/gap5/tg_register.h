@@ -57,7 +57,6 @@
 #define REG_CHILD_EDIT	       (1<<22)
 #define REG_RENAME	       (1<<23)
 
-
 /*
  * Useful flags (musn't coincide with the job numbers)
  */

@@ -6,6 +6,12 @@
 #include "canvas_box.h"
 
 #define TASK_CS_REDRAW       0
+#define TASK_CS_PLOT         1
+#define TASK_CS_SAVE         2
+#define TASK_CS_LOAD         3
+
+// For FIJ
+#define TASK_AUTO_JOIN       4
 
 extern HTablePtr csplot_hash[HASHMODULUS];
 

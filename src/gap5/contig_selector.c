@@ -83,6 +83,9 @@ PlotRepeats(GapIO *io,
     cs_id = type_to_result(io, REG_TYPE_CONTIGSEL, 0);
     cs = result_data(io, cs_id);
 
+    if (!cs)
+	return;
+
     for (i = 0; i < repeat->num_match; i++){
 	obj_match *match = (obj_match *)&repeat->match[i];
 	tg_rec rec;

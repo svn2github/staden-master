@@ -13,16 +13,17 @@
 #include "hash_lib.h"
 #include "align.h"
 #include "dna_utils.h"
+#include "align_lib.h"
 
 #include "dis_readings.h"
 
 /* Add 'num' pads into the consensus for editor 'xx' at position 'pos'. */
-static void add_pads(edview *xx, contig_t **ctg, int pos, int num)
+static void add_pads(GapIO *io, contig_t **ctg, int pos, int num)
 {
     if (num < 0)
 	return;
 
-    contig_insert_bases(xx->io, ctg, pos, '*', -1, num);
+    contig_insert_bases(io, ctg, pos, '*', -1, num);
 }
 
 /*
@@ -59,7 +60,7 @@ rsalign2myers(char *seq1, int len1, char *seq2, int len2, char pad_sym) {
     return res;
 }
 
-int align_contigs (OVERLAP *overlap, int fixed_left, int fixed_right) {
+static int align_contigs2(OVERLAP *overlap, int fixed_left, int fixed_right) {
 
 #define DO_BLOCKS 100
 #define OK_MATCH 80
@@ -193,53 +194,70 @@ int align_contigs (OVERLAP *overlap, int fixed_left, int fixed_right) {
 }
 
 /*
- * The guts of the join editor "align" function.
- * *shift returns how much we move xx1@pos1 relative to xx0@pos0. If it's
- * positive we move it right, if it's negative we move it left.
+ * Common portions of alignment construction, used by both the contig
+ * editor Align button and the auto-FIJ code.
+ *
+ * We need two GapIO as inside the editor we maybe aligned edited data.
+ * The shift value returned indicates how much we moved the editors by
+ * (pos0/1,len0/1 should be set to allow some leeway for indels).
+ *
+ * We return an alignment_t struct containing the main alignment result.
+ * Free this after usage with alignment_free().
+ *
+ * Returns the alignment buffer on success.
+ *         NULL on failure
  */
-static int align(edview *xx0, int pos0, int len0,
-		 edview *xx1, int pos1, int len1,
-		 int fixed_left, int fixed_right,
-		 int *shift)
-{
+void alignment_free(alignment_t *a) {
+    if (!a)
+	return;
 
-    char *ol0,*ol1, *cons0, *cons1;
+    if (a->dp0)
+	free(a->dp0);
+    if (a->dp1)
+	free(a->dp1);
+    if (a->res)
+	free(a->res);
+
+    free(a);
+}
+
+alignment_t *align_contigs(GapIO *io0, tg_rec c0, int pos0, int len0,
+			   GapIO *io1, tg_rec c1, int pos1, int len1,  
+			   int fixed_left,
+			   int fixed_right) {
+    alignment_t *a = calloc(1, sizeof(*a));
+    char *ol0,*ol1;
     OVERLAP *overlap;
     char PAD_SYM = '.';
-    int  *depad_to_pad0, *dp0, *depad_to_pad1, *dp1;
-    int *S, *res;
-    int off0 = 0, off1 = 0;
     int left0 = 0, left1 = 0;
 
-    vfuncheader("Align contigs (join editor)");
+    if (!a)
+	return NULL;
 
     /* Memory allocation */
     ol0 = (char *) xmalloc(len0+1);
     ol1 = (char *) xmalloc(len1+1);
-    cons0 = (char *) xmalloc(len0+1);
-    cons1 = (char *) xmalloc(len1+1);
-    dp0 = depad_to_pad0 = (int *)xmalloc((len0+1) * sizeof(int));
-    dp1 = depad_to_pad1 = (int *)xmalloc((len1+1) * sizeof(int));
+    a->dp0 = a->depad_to_pad0 = (int *)xmalloc((len0+1) * sizeof(int));
+    a->dp1 = a->depad_to_pad1 = (int *)xmalloc((len1+1) * sizeof(int));
+    a->pos0 = pos0; a->pos1 = pos1;
+    a->len0 = len0; a->len1 = len1;
 
     /* Compute the consensus */
-    calculate_consensus_simple(xx0->io, xx0->cnum, pos0, pos0+len0, ol0, NULL);
-    calculate_consensus_simple(xx1->io, xx1->cnum, pos1, pos1+len1, ol1, NULL);
-
-    memcpy(cons0, ol0, len0+1);
-    memcpy(cons1, ol1, len1+1);
+    calculate_consensus_simple(io0, c0, pos0, pos0+len0, ol0, NULL);
+    calculate_consensus_simple(io1, c1, pos1, pos1+len1, ol1, NULL);
 
     /* Strip the pads from the consensus */
-    depad_seq(ol0, &len0, depad_to_pad0);
-    depad_seq(ol1, &len1, depad_to_pad1);
+    depad_seq(ol0, &a->len0, a->depad_to_pad0);
+    depad_seq(ol1, &a->len1, a->depad_to_pad1);
 
-    if (NULL == (overlap = create_overlap())) return -1;
-    init_overlap (overlap, ol0, ol1, len0, len1);
+    if (NULL == (overlap = create_overlap()))
+	return NULL;
+    init_overlap (overlap, ol0, ol1, a->len0, a->len1);
 
-    if(-1 == align_contigs (overlap, fixed_left, fixed_right)) {
-	xfree(ol0);
-	xfree(ol1);
+    if(-1 == align_contigs2(overlap, fixed_left, fixed_right)) {
+	alignment_free(a);
 	destroy_overlap(overlap);
-	return -1;
+	return NULL;
     }
 
     /*
@@ -247,40 +265,40 @@ static int align(edview *xx0, int pos0, int len0,
     overlap->seq2_out[overlap->right+1] = 0;
     */
 
-    S = res = rsalign2myers(overlap->seq1_out, strlen(overlap->seq1_out),
-			    overlap->seq2_out, strlen(overlap->seq2_out),
-			    PAD_SYM);
+    a->S = a->res = rsalign2myers(overlap->seq1_out, strlen(overlap->seq1_out),
+				  overlap->seq2_out, strlen(overlap->seq2_out),
+				  PAD_SYM);
 
     /* Clip left end */
-    if (*S != 0) {
+    if (*a->S != 0) {
 	/* Pad at start, so shift contigs */
-	if (*S < 0) {
-	    left0 = -*S; /* used for display only */
-	    depad_to_pad0 += -*S;
-	    off0 = depad_to_pad0[0];
-	    pos0 += off0;
-	    *shift = -off0;
-	    len0 -= -*S;
+	if (*a->S < 0) {
+	    left0 = -*a->S; /* used for display only */
+	    a->depad_to_pad0 += -*a->S;
+	    a->off0  = a->depad_to_pad0[0];
+	    a->pos0 += a->off0;
+	    a->shift = -a->off0;
+	    a->len0 -= -*a->S;
 	} else {
-	    left1 = *S; /* used for display only */
-	    depad_to_pad1 += *S;
-	    off1 = depad_to_pad1[0];
-	    pos1 += off1;
-	    *shift = off1;
-	    len1 -= *S;
+	    left1 = *a->S; /* used for display only */
+	    a->depad_to_pad1 += *a->S;
+	    a->off1  = a->depad_to_pad1[0];
+	    a->pos1 += a->off1;
+	    a->shift = a->off1;
+	    a->len1 -= *a->S;
 	}
-	S++;
+	a->S++;
     } else {
-	*shift = 0;
+	a->shift = 0;
     }
 
     /* Clip right end */
     {
 	/* FIXME: should this be shadowed or not? */
 	int pos0 = 0, pos1 = 0;
-	int *s = S;
+	int *s = a->S;
 
-	while (pos0 < len0 && pos1 < len1) {
+	while (pos0 < a->len0 && pos1 < a->len1) {
 	    if (*s < 0) {
 		pos0 -= *s;
 	    } else if (*s > 0) {
@@ -294,98 +312,139 @@ static int align(edview *xx0, int pos0, int len0,
 	}
 
 	if (*s < 0)
-	    len0 += *s;
+	    a->len0 += *s;
 	else if (*s > 0)
-	    len1 -= *s;
+	    a->len1 -= *s;
     }
 
     /* Display the alignment. */
     {
 	char *exp0, *exp1;
-	int exp_len0, exp_len1;
+	int exp_len0, exp_len1, i, match_count;
 	char name0[100];
 	char name1[100];
 
-	exp0 = (char *) xmalloc(len0+len1+1);
-	exp1 = (char *) xmalloc(len0+len1+1);
+	exp0 = (char *) xmalloc(a->len0+a->len1+1);
+	exp1 = (char *) xmalloc(a->len0+a->len1+1);
 
-	sprintf(name0, "%"PRIrec, xx0->cnum);
-	sprintf(name1, "%"PRIrec, xx1->cnum);
-	cexpand(ol0+left0, ol1+left1, len0, len1,
+	sprintf(name0, "%"PRIrec, c0);
+	sprintf(name1, "%"PRIrec, c1);
+	cexpand(ol0+left0, ol1+left1, a->len0, a->len1,
 		exp0, exp1, &exp_len0, &exp_len1, 
-		ALIGN_J_SSH | ALIGN_J_PADS, S);
-	list_alignment(exp0, exp1, name0, name1, pos0, pos1, "");
+		ALIGN_J_SSH | ALIGN_J_PADS, a->S);
+	for (match_count = i = 0; i < exp_len0; i++) {
+	    if (same_char(exp0[i], exp1[i]))
+		match_count++;
+	}
+	a->match_len   = exp_len0;
+	a->match_count = match_count;
+
+	list_alignment(exp0, exp1, name0, name1, a->pos0, a->pos1, "");
 
 	xfree(exp0);
 	xfree(exp1);
     }
 
-    /*************************************************************************/
-    /* Now actually make the edits, keeping track of old and new pads. */
-    {
-	int depad_pos0 = 0, depad_pos1 = 0;
-	int curr_pad0;  /* Current padded position in seq 0 */
-	int curr_pad1;  /* Current padded position in seq 1 */
-	int extra_pads; /* Difference between padded positions */
-	int last_pad0 = -1;
-	int last_pad1 = -1;
-	int inserted_bases0 = 0;
-	int inserted_bases1 = 0;
-	contig_t *ctg0, *ctg1;
-
-	ctg0 = cache_search(xx0->io, GT_Contig, xx0->cnum);
-	cache_incr(xx0->io, ctg0);
-
-	ctg1 = cache_search(xx1->io, GT_Contig, xx1->cnum);
-	cache_incr(xx1->io, ctg1);
-
-	while (depad_pos0 < len0 && depad_pos1 < len1) {
-	    if (*S < 0) {
-		depad_pos0 -= *S;
-	    } else if (*S > 0) {
-		depad_pos1 += *S;
-	    }
-
-	    if (depad_pos0 >= len0 || depad_pos1 >= len1)
-		break;
-
-	    curr_pad0 = depad_to_pad0[depad_pos0]-off0;
-	    curr_pad1 = depad_to_pad1[depad_pos1]-off1;
-
-	    extra_pads = (curr_pad1 - last_pad1) - (curr_pad0 - last_pad0);
-
-	    if (extra_pads < 0) { /* Add to seq 0 */
-		add_pads(xx1, &ctg1,
-			 pos1 + curr_pad1 + inserted_bases1, -extra_pads);
-		inserted_bases1 -= extra_pads;
-	    } else if (extra_pads > 0) { /* Add to seq 1 */
-		add_pads(xx0, &ctg0,
-			 pos0 + curr_pad0 + inserted_bases0,  extra_pads);
-		inserted_bases0 += extra_pads;
-	    }
-	    
-	    last_pad0 = curr_pad0;
-	    last_pad1 = curr_pad1;
-
-	    if (*S == 0) {
-		depad_pos0++;
-		depad_pos1++;
-	    }
-
-	    S++;
-	}
-
-	cache_decr(xx0->io, ctg0);
-	cache_decr(xx1->io, ctg1);
-    }
-    /*************************************************************************/
-
-    xfree(res);
     xfree(ol0);
     xfree(ol1);
-    xfree(dp0);
-    xfree(dp1);
     destroy_overlap(overlap);
+
+    return a;
+}
+
+int align_apply_edits(GapIO *io0, tg_rec c0,
+		      GapIO *io1, tg_rec c1,
+		      alignment_t *a) {
+    int depad_pos0 = 0, depad_pos1 = 0;
+    int curr_pad0;  /* Current padded position in seq 0 */
+    int curr_pad1;  /* Current padded position in seq 1 */
+    int extra_pads; /* Difference between padded positions */
+    int last_pad0 = -1;
+    int last_pad1 = -1;
+    int inserted_bases0 = 0;
+    int inserted_bases1 = 0;
+    contig_t *ctg0, *ctg1;
+    int *S = a->S;
+    int *depad_to_pad0 = a->depad_to_pad0;
+    int *depad_to_pad1 = a->depad_to_pad1;
+    int off0 = a->off0;
+    int off1 = a->off1;
+    int pos0 = a->pos0;
+    int pos1 = a->pos1;
+    int len0 = a->len0;
+    int len1 = a->len1;
+
+    ctg0 = cache_search(io0, GT_Contig, c0);
+    cache_incr(io0, ctg0);
+
+    ctg1 = cache_search(io1, GT_Contig, c1);
+    cache_incr(io1, ctg1);
+
+    while (depad_pos0 < len0 && depad_pos1 < len1) {
+	if (*S < 0) {
+	    depad_pos0 -= *S;
+	} else if (*S > 0) {
+	    depad_pos1 += *S;
+	}
+
+	if (depad_pos0 >= len0 || depad_pos1 >= len1)
+	    break;
+
+	curr_pad0 = depad_to_pad0[depad_pos0]-off0;
+	curr_pad1 = depad_to_pad1[depad_pos1]-off1;
+
+	extra_pads = (curr_pad1 - last_pad1) - (curr_pad0 - last_pad0);
+
+	if (extra_pads < 0) { /* Add to seq 0 */
+	    add_pads(io1, &ctg1,
+		     pos1 + curr_pad1 + inserted_bases1, -extra_pads);
+	    inserted_bases1 -= extra_pads;
+	} else if (extra_pads > 0) { /* Add to seq 1 */
+	    add_pads(io0, &ctg0,
+		     pos0 + curr_pad0 + inserted_bases0,  extra_pads);
+	    inserted_bases0 += extra_pads;
+	}
+	    
+	last_pad0 = curr_pad0;
+	last_pad1 = curr_pad1;
+
+	if (*S == 0) {
+	    depad_pos0++;
+	    depad_pos1++;
+	}
+
+	S++;
+    }
+
+    cache_decr(io0, ctg0);
+    cache_decr(io1, ctg1);
+}
+
+/*
+ * The guts of the join editor "align" function.
+ * *shift returns how much we move xx1@pos1 relative to xx0@pos0. If it's
+ * positive we move it right, if it's negative we move it left.
+ */
+static int align(edview *xx0, int pos0, int len0,
+		 edview *xx1, int pos1, int len1,
+		 int fixed_left, int fixed_right,
+		 int *shift)
+{
+    alignment_t *a;
+
+    vfuncheader("Align contigs (join editor)");
+
+    a = align_contigs(xx0->io, xx0->cnum, pos0, len0,
+		      xx1->io, xx1->cnum, pos1, len1,
+		      fixed_left, fixed_right);
+    if (!a)
+	return -1;
+    *shift = a->shift;
+
+    /* Now actually make the edits, keeping track of old and new pads. */
+    align_apply_edits(xx0->io, xx0->cnum, xx1->io, xx1->cnum, a);
+
+    alignment_free(a);
 
     return 0;
 }
@@ -516,9 +575,11 @@ int edJoinAlign(edview *xx, int fixed_left, int fixed_right) {
 
     xx->link->lockOffset = xx2[1]->displayPos - xx2[0]->displayPos;
 
+    if (xx2[0]->r) { free(xx2[0]->r); xx2[0]->r = NULL; }
     xx2[0]->refresh_flags = ED_DISP_ALL;
     edview_redraw(xx2[0]);
 
+    if (xx2[1]->r) { free(xx2[1]->r); xx2[1]->r = NULL; }
     xx2[1]->refresh_flags = ED_DISP_ALL;
     edview_redraw(xx2[1]);
 

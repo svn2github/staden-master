@@ -1306,7 +1306,7 @@ tcl_find_internal_joins(ClientData clientData, Tcl_Interp *interp,
 {
     contig_list_t *contig_array1 = NULL;
     contig_list_t *contig_array2 = NULL;
-    int num_contigs1 = 0, num_contigs2 = 0;
+    int num_contigs1 = 0, num_contigs2 = 0, id = -1;
     fij_arg args;
     Tcl_DString input_params;
     char *name1;
@@ -1318,7 +1318,7 @@ tcl_find_internal_joins(ClientData clientData, Tcl_Interp *interp,
 	{"-mask",	  ARG_STR,  1, "none", offsetof(fij_arg, mask_str)},
 	{"-min_overlap",  ARG_INT,  1, "20",   offsetof(fij_arg, min_overlap)},
 	{"-max_pmismatch",ARG_FLOAT,1, "30.0", offsetof(fij_arg, max_mis)},
-	{"-word_length",  ARG_INT,  1, "4",    offsetof(fij_arg, word_len)},
+	{"-word_length",  ARG_INT,  1, "12",   offsetof(fij_arg, word_len)},
 	{"-max_prob",     ARG_FLOAT,1, "1.0e-8",  offsetof(fij_arg, max_prob)},
 	{"-min_match",    ARG_INT,  1, "20",   offsetof(fij_arg, min_match)},
 	{"-band",         ARG_INT,  1, "10",   offsetof(fij_arg, band)},
@@ -1437,8 +1437,8 @@ tcl_find_internal_joins(ClientData clientData, Tcl_Interp *interp,
     args.rp_library  = libraries ? ArrayBase(tg_rec, libraries) : NULL;
     args.rp_nlibrary = libraries ? ArrayMax(libraries) : 0;
 
-    if (fij(&args, num_contigs1, contig_array1,
-	    num_contigs2, contig_array2) < 0 ) {
+    if ((id = fij(&args, num_contigs1, contig_array1,
+		  num_contigs2, contig_array2)) < 0 ) {
 	verror(ERR_WARN,
 	       "Find internal joins", "Failure in Find Internal Joins");
 	SetActiveTags("");
@@ -1446,6 +1446,8 @@ tcl_find_internal_joins(ClientData clientData, Tcl_Interp *interp,
 	xfree(contig_array2);
 	return TCL_OK;
     }
+
+    vTcl_SetResult(interp, "%d", id);
 
     SetActiveTags("");
     xfree(contig_array1);
@@ -1457,7 +1459,7 @@ tcl_find_internal_joins(ClientData clientData, Tcl_Interp *interp,
 } /* end FIJ */
 
 int tcl_complement_contig(ClientData clientData, Tcl_Interp *interp,
-		       int objc, Tcl_Obj *CONST objv[])
+			  int objc, Tcl_Obj *CONST objv[])
 {
     int rargc, i;
     contig_list_t *rargv;
@@ -1798,6 +1800,7 @@ tcl_find_oligo(ClientData clientData,
     int num_contigs = 0;
     Tcl_DString input_params;
     char *name1;
+    int id;
 
     cli_args a[] = {
 	{"-io",		ARG_IO,	  1, NULL,  offsetof(oligo_arg, io)},
@@ -1857,16 +1860,18 @@ tcl_find_oligo(ClientData clientData,
     }
 
     if (args.file && *args.file) {
-	if (-1 == find_oligo_file(args.io, num_contigs, contig_array,
-				  args.mis_match, args.file,
-				  args.consensus_only, args.cutoffs))
+	if (-1 == (id = find_oligo_file(args.io, num_contigs, contig_array,
+					args.mis_match, args.file,
+					args.consensus_only, args.cutoffs)))
 	    verror(ERR_FATAL, "find oligos", "could not search");
     } else {
-	if (-1 == find_oligos(args.io, num_contigs, contig_array,
-			      args.mis_match, args.seq,
-			      args.consensus_only, args.cutoffs))
+	if (-1 == (id = find_oligos(args.io, num_contigs, contig_array,
+				    args.mis_match, args.seq,
+				    args.consensus_only, args.cutoffs)))
 	    verror(ERR_FATAL, "find oligos", "out of memory");
     }
+
+    vTcl_SetResult(interp, "%d", id);
 
     SetActiveTags("");
     if (contig_array)

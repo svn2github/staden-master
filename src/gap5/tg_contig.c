@@ -760,6 +760,7 @@ int contig_insert_bases(GapIO *io, contig_t **c, int pos, char base, int conf,
 			int nbases) {
     return contig_insert_base_common(io, c, pos, base, conf, nbases)
 	>= 0 ? 0 : -1;
+    return 0;
 }
 
 /*

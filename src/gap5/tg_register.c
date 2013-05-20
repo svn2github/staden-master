@@ -1056,10 +1056,11 @@ int type_to_result(GapIO *io, int type, tg_rec contig) {
     contig_reg_t **res = get_reg_by_type(io, type, &nres);
     int id = -1;
 
-    if (nres) {
+    if (nres)
 	id = res[0]->id;
+    
+    if (res)
 	free(res);
-    }
 
     return id;
 }

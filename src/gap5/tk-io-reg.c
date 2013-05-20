@@ -12,6 +12,7 @@
 #include "tclXkeylist.h"
 #include "canvas_box.h"
 #include "io_utils.h" /* get_gel_num, rnumtocnum, chain_left */
+#include "contig_selector.h"
 
 static void reg_init_args(char *args);
 static char *reg_get_arg(char *name);
@@ -660,6 +661,18 @@ static int reg_str2task(char *str) {
     if (strcmp(str, "TASK_TEMPLATE_REDRAW") == 0)
 	return TASK_TEMPLATE_REDRAW;
 #endif
+
+    if (strcmp(str, "TASK_CS_REDRAW") == 0)
+	return TASK_CS_REDRAW;
+    if (strcmp(str, "TASK_CS_PLOT") == 0)
+	return TASK_CS_PLOT;
+    if (strcmp(str, "TASK_CS_SAVE") == 0)
+	return TASK_CS_SAVE;
+    if (strcmp(str, "TASK_CS_LOAD") == 0)
+	return TASK_CS_LOAD;
+
+    if (strcmp(str, "TASK_AUTO_JOIN") == 0)
+	return TASK_AUTO_JOIN;
 
     return -1;
 }

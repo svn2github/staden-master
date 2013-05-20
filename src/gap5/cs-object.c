@@ -225,7 +225,8 @@ void obj_remove(Tcl_Interp *interp, char *cs_plot, obj_match *obj,
     memmove(obj, obj+1, (--r->num_match - (obj - r->match)) * sizeof(*obj));
 
     if (r->num_match > 0) {
-	PlotRepeats(r->io, r);
+	if (cs_plot)
+	    PlotRepeats(r->io, r);
     } else {
 	csmatch_remove(r->io, cs_plot, r, T);
     }
@@ -254,7 +255,7 @@ int obj_get_next(mobj_repeat *mobj) {
 
 /*
  * Handle a REG_JOIN_TO request for match objects
- * 'r' isn't always a mobj_repeat, but sometimes a mobj_template or
+ * 'r' isn't always a mobj_repeat, but sometimes a mobj_read_pair or
  * mobj_fij. For the time being though these are all equivalent.
  */
 void csmatch_join_to(GapIO *io, tg_rec contig, reg_join *j, mobj_repeat *r,
@@ -270,6 +271,7 @@ void csmatch_join_to(GapIO *io, tg_rec contig, reg_join *j, mobj_repeat *r,
 	    r->match[i].end1 += j->offset;
 	    r->match[i].c1 = r->match[i].c1 > 0
 		? j->contig : -j->contig;
+	    r->match[i].flags |= OBJ_FLAG_JOINED;
 	}
 
 	if (ABS(r->match[i].c2) == contig) {
@@ -277,6 +279,7 @@ void csmatch_join_to(GapIO *io, tg_rec contig, reg_join *j, mobj_repeat *r,
 	    r->match[i].end2 += j->offset;
 	    r->match[i].c2 = r->match[i].c2 > 0
 		? j->contig : -j->contig;
+	    r->match[i].flags |= OBJ_FLAG_JOINED;
 	}
 
 	/* For FIJ: remove match if moved onto diagonal */
@@ -291,8 +294,10 @@ void csmatch_join_to(GapIO *io, tg_rec contig, reg_join *j, mobj_repeat *r,
     }
 
     if (r->num_match > 0) {
-	DeleteRepeats(GetInterp(), r, cs_plot, T);
-	PlotRepeats(io, r);
+	if (cs_plot) {
+	    DeleteRepeats(GetInterp(), r, cs_plot, T);
+	    PlotRepeats(io, r);
+	}
     } else {
 	csmatch_remove(io, cs_plot, r, T);
     }
@@ -330,10 +335,10 @@ void csmatch_complement(GapIO *io, tg_rec contig, mobj_repeat *r,
 	}
     }
 
-    /* FIXME */
-    DeleteRepeats(GetInterp(), r, cs_plot, T);
-
-    PlotRepeats(io, r);
+    if (cs_plot) {
+	DeleteRepeats(GetInterp(), r, cs_plot, T);
+	PlotRepeats(io, r);
+    }
 
     return;
 }
@@ -368,7 +373,8 @@ void csmatch_remove(GapIO *io, char *cs_plot,
     //    int c;
 
     /* Delete from the canvas and hash table */
-    DeleteRepeats(GetInterp(), reg_dat, cs_plot, T);
+    if (cs_plot)
+	DeleteRepeats(GetInterp(), reg_dat, cs_plot, T);
 
     /*
      * Remove from the registration lists.
@@ -378,16 +384,18 @@ void csmatch_remove(GapIO *io, char *cs_plot,
     //	contig_deregister(io, c, reg_dat->reg_func, reg_dat);
     contig_deregister(io, 0, reg_dat->reg_func, reg_dat);
 
-    /*
-     * Pop down configuration window if visible
-     */
-    if (TCL_OK != Tcl_VarEval(GetInterp(), "cs_config_quit ", cs_plot, " ",
-			      reg_dat->tagname, NULL)) {
-	puts(GetInterpResult());
-    }
+    if (cs_plot) {
+	/*
+	 * Pop down configuration window if visible
+	 */
+	if (TCL_OK != Tcl_VarEval(GetInterp(), "cs_config_quit ", cs_plot, " ",
+				  reg_dat->tagname, NULL)) {
+	    puts(GetInterpResult());
+	}
 
-    /* Inform contig selector next button */
-    Tcl_VarEval(GetInterp(), "CSLastUsedFree ", CPtr2Tcl(reg_dat), NULL);
+	/* Inform contig selector next button */
+	Tcl_VarEval(GetInterp(), "CSLastUsedFree ", CPtr2Tcl(reg_dat), NULL);
+    }
 
     update_results(reg_dat->io);
 
@@ -517,10 +525,10 @@ void csmatch_renumber(GapIO *io, tg_rec old_contig, tg_rec new_contig,
 	    r->match[i].c2 = r->match[i].c2 > 0 ? new_contig : -new_contig;
     }
 
-    /* FIXME */
-    DeleteRepeats(GetInterp(), r, cs_plot, T);
-
-    PlotRepeats(io, r);
+    if (cs_plot) {
+	DeleteRepeats(GetInterp(), r, cs_plot, T);
+	PlotRepeats(io, r);
+    }
 
     return;
 }
@@ -529,9 +537,10 @@ void csmatch_renumber(GapIO *io, tg_rec old_contig, tg_rec new_contig,
  * Replot match objects, eg when a contig length has changed.
  */
 void csmatch_replot(GapIO *io, mobj_repeat *r, HTablePtr T[], char *cs_plot) {
-    /* FIXME */
-    DeleteRepeats(GetInterp(), r, cs_plot, T);
-    PlotRepeats(io, r);
+    if (cs_plot) {
+	DeleteRepeats(GetInterp(), r, cs_plot, T);
+	PlotRepeats(io, r);
+    }
 
     return;
 }
@@ -559,10 +568,10 @@ void csmatch_contig_delete(GapIO *io, mobj_repeat *r, tg_rec contig,
     }
     r->num_match = n;
 
-    /* FIXME */
-    DeleteRepeats(GetInterp(), r, cs_plot, T);
-
-    PlotRepeats(io, r);
+    if (cs_plot) {
+	DeleteRepeats(GetInterp(), r, cs_plot, T);
+	PlotRepeats(io, r);
+    }
 
     return;
 }
@@ -579,4 +588,83 @@ void csmatch_reset_next(mobj_repeat *r) {
 	r->match[i].flags &= ~OBJ_FLAG_VISITED;
     }
     r->current = -1;
+}
+
+
+/*
+ * Saves a cs-match object array to disk.
+ * Cast the actual type into the mobj_generic union. All share the same
+ * start so we use m->match_type to detect the internal format.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int csmatch_save(mobj_generic *m, char *fn) {
+    int i;
+    FILE *fp = fopen(fn, "w");
+
+    if (!fp)
+	return -1;
+
+    /* Consider using callback function for this per object type? */
+    switch (m->repeat.match_type) {
+    case REG_TYPE_FIJ:
+	fprintf(fp, "G5_PLOT FIND_INTERNAL_JOINS\n");
+	break;
+    case REG_TYPE_READPAIR:
+	fprintf(fp, "G5_PLOT FIND_READ_PAIRS\n");
+	break;
+    case REG_TYPE_REPEAT:
+	fprintf(fp, "G5_PLOT FIND_REPEATS\n");
+	break;
+    case REG_TYPE_CHECKASS:
+	fprintf(fp, "G5_PLOT CHECK_ASSEMBLY\n");
+	break;
+    case REG_TYPE_OLIGO:
+	fprintf(fp, "G5_PLOT FIND_OLIGOS\n");
+	break;
+    default:
+	return -1;
+    }
+
+    switch (m->repeat.match_type) {
+    case REG_TYPE_FIJ: {
+	obj_fij *o = m->fij.match;
+	for (i = 0; i < m->fij.num_match; i++, o++) {
+	    fprintf(fp, "%"PRId64" %d %"PRId64" %d %d %d %f\n",
+		    o->c1, o->pos1, o->c2, o->pos2, o->length,
+		    o->score, o->percent / 10000.0);
+
+	}
+	break;
+    }
+
+    case REG_TYPE_CHECKASS:
+    case REG_TYPE_REPEAT:
+    case REG_TYPE_OLIGO:  {
+	obj_match *o = m->repeat.match;
+	for (i = 0; i < m->repeat.num_match; i++, o++) {
+	    fprintf(fp, "%"PRId64" %d %"PRId64" %d %d %"PRId64" %"PRId64" %d\n",
+		    o->c1, o->pos1, o->c2, o->pos2, o->length,
+		    o->rpos, o->read, o->score);
+
+	}
+	break;
+    }
+
+    case REG_TYPE_READPAIR: {
+	obj_read_pair *o = (obj_read_pair *)m->read_pair.match;
+	for (i = 0; i < m->read_pair.num_match; i++, o++) {
+	    fprintf(fp, "%"PRId64" %d %"PRId64" %d %d %"PRId64" %"PRId64" %d %d\n",
+		    o->c1, o->pos1, o->c2, o->pos2, o->length,
+		    o->read1, o->read2, o->mq1, o->mq2);
+	}
+	break;
+    }
+
+    default:
+	return -1;
+    }
+
+    return fclose(fp);
 }
