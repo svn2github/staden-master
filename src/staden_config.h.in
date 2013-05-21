@@ -9,6 +9,9 @@
 /* Define to 1 if fseeko (and presumably ftello) exists and is declared. */
 #undef HAVE_FSEEKO
 
+/* Define if the C compiler supports inline */
+#undef HAVE_INLINE
+
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
@@ -221,3 +224,9 @@
 
 /* Define curl_free() as free() if our version of curl lacks curl_free. */
 #undef curl_free
+
+/* Define to `__inline__' or `__inline' if that's what the C compiler
+   calls it, or to nothing if 'inline' is not supported under any name.  */
+#ifndef __cplusplus
+#undef inline
+#endif

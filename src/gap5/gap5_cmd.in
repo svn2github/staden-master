@@ -72,4 +72,4 @@ STADEN_PREPEND=1;                             export STADEN_PREPEND
 . "$STADENROOT"/share/staden/staden.profile
 
 # Find tclsh vs tclsh8.5
-exec @TCLSH_PROG@ "$STADTCL/gap5/gap5_export.tcl" ${@+"$@"}
+exec @TCLSH_PROG@ "$STADTCL/gap5/gap5_cmd.tcl" ${@+"$@"}

@@ -218,15 +218,11 @@ install:
 	cp tg_index.bin $(INSTALLBIN)
 	$(INSTALL) tg_index $(INSTALLBIN)
 	$(INSTALL) tg_view $(INSTALLBIN)
-	$(INSTALL) gap5_consensus gap5_export gap5_check gap5_shuffle_pads \
-	    $(INSTALLBIN)
+	$(INSTALL) gap5_cmd $(INSTALLBIN)
 
 distsrc: distsrc_dirs
-	cp $(S)/*.[ch] $(S)/*.tcl $(S)/tclIndex $(S)/Makefile $(S)/gap5 \
-	   $(S)/gap5rc $(S)/gap5rc_menu_full $(S)/gap5_export \
-	   $(S)/gap5_consensus $(S)/tg_index $(S)/tg_view $(S)/gap5_check \
-	   $(S)/gap5_shuffle_pads \
-	   $(DIRNAME)
+	cp $(S)/*.[ch] $(S)/*.tcl $(S)/*.in $(S)/tclIndex $(S)/Makefile 
+	   $(S)/gap5rc $(S)/gap5rc_menu_full $(DIRNAME)
 
 # DO NOT DELETE THIS LINE -- make depend depends on it.
 
