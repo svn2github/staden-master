@@ -63,6 +63,11 @@ repeat: \
 	id="ALUS" : \
 	bg=green
 
+# For marking joins made
+"Auto-join": \
+	id="JOIN": \
+	bg=SpringGreen4: \
+
 #
 # The following are for marking cases when the cutoff is known
 # to be vector. Find internal joins will not look at cutoffs

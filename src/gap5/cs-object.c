@@ -282,6 +282,10 @@ void csmatch_join_to(GapIO *io, tg_rec contig, reg_join *j, mobj_repeat *r,
 	    r->match[i].flags |= OBJ_FLAG_JOINED;
 	}
 
+	if (ABS(r->match[i].c1) == j->contig ||
+	    ABS(r->match[i].c2) == j->contig)
+	    r->match[i].flags |= OBJ_FLAG_JOINED;
+
 	/* For FIJ: remove match if moved onto diagonal */
 	if (r->match_type == REG_TYPE_FIJ &&
 	    r->match[i].c1 == r->match[i].c2) {

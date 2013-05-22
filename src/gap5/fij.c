@@ -713,8 +713,8 @@ static int auto_join(GapIO *io, mobj_fij *r) {
 	obj_fij *m = &r->match[i];
 	alignment_t *a;
 	int l1, r1, l2, r2; /* contig used extents */
-	int left1,right1;
-	int left2,right2;
+	int left1,right1,oleft1,oright1;
+	int left2,right2,oleft2,oright2;
 	int offset, ret;
 	int overlapLength;
 	int len1,len2;
@@ -747,11 +747,11 @@ static int auto_join(GapIO *io, mobj_fij *r) {
 	/* Possibly recompute overlap length - start/ends may have changed */
 	if (m->flags & OBJ_FLAG_JOINED) {
 	    int len = MIN(r1 - m->pos1, r2 - m->pos2);
-	    left1 = m->pos1; right1 = left1 + len;
-	    left2 = m->pos2; right2 = left2 + len;
+	    oleft1 = left1 = m->pos1; oright1 = right1 = left1 + len;
+	    oleft2 = left2 = m->pos2; oright2 = right2 = left2 + len;
 	} else {
-	    left1 = m->pos1; right1 = m->end1;
-	    left2 = m->pos2; right2 = m->end2;
+	    oleft1 = left1 = m->pos1; oright1 = right1 = m->end1;
+	    oleft2 = left2 = m->pos2; oright2 = right2 = m->end2;
 	}
 
 	overlapLength = MAX(right1 - left1+1, right2 - left2+1);
@@ -812,22 +812,40 @@ static int auto_join(GapIO *io, mobj_fij *r) {
 
 	nr = r->num_match;
 	if (offset > 0) {
+	    contig_t *c;
+	    tg_rec crec = ABS(m->c2);
+
 	    if (-1 == join_contigs(io, ABS(m->c2), ABS(m->c1), offset)) {
 		vmessage("Join_contigs() failed\n");
 		continue;
 	    }
+
+	    c = cache_search(io, GT_Contig, crec);
+	    printf("Add to =%"PRIrec" at %d..%d\n", c->rec, oleft2, oright2);
+	    anno_ele_add(io, GT_Contig, c->rec, 0, str2type("JOIN"), 
+			 "", oleft2, oright2, ANNO_DIR_NUL);
 	} else {
+	    contig_t *c;
+	    tg_rec crec = ABS(m->c1);
+
 	    if (-1 == join_contigs(io, ABS(m->c1), ABS(m->c2), -offset)) {
 		vmessage("Join_contigs() failed\n");
 		continue;
 	    }
+
+	    c = cache_search(io, GT_Contig, crec);
+	    printf("Add to =%"PRIrec" at %d..%d\n", c->rec, oleft1, oright1);
+	    anno_ele_add(io, GT_Contig, c->rec, 0, str2type("JOIN"), 
+			 "", oleft1, oright1, ANNO_DIR_NUL);
 	}
-	
+
 	if (nr == 1)
 	    break; // r will have been deallocated.
 
 	i--;
     }
+
+    cache_flush(io);
 
     vmessage("\nMade %d of %d joins found\n", nr_orig-i, nr_orig);
 
