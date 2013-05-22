@@ -1,7 +1,7 @@
 #ifndef _PILEUP_H_
 #define _PILEUP_H_
 
-#include <io_lib/bam.h>
+#include <io_lib/scram.h>
 
 typedef struct pileup {
     struct pileup *next;  // A link list, for active seqs
@@ -31,12 +31,12 @@ typedef struct pileup {
     char padding;         // True if the base was added due to another seq
 } pileup_t;
 
-int pileup_loop(bam_file_t *fp,
+int pileup_loop(scram_fd *fp,
 		int (*seq_init)(void *client_data,
-				bam_file_t *fp,
+				scram_fd *fp,
 				pileup_t *p),
 		int (*seq_add)(void *client_data,
-			       bam_file_t *fp,
+			       scram_fd *fp,
 			       pileup_t *p,
 			       int depth,
 			       int pos,

@@ -552,6 +552,10 @@ int tg_index_file_type (char *fn) {
 	    0 == strcmp(suffix, "SAM"))
 	    return 's';
 	
+	if (0 == strcmp(suffix, "cram") ||
+	    0 == strcmp(suffix, "CRAM"))
+	    return 'e';
+
 	if (0 == strcmp(suffix, "ace") ||
 	    0 == strcmp(suffix, "ace.gz") ||
 	    0 == strcmp(suffix, "ACE"))
@@ -600,6 +604,9 @@ int tg_index_file_type (char *fn) {
 
     if (0 == strncmp(data, "BAM\001", 4))
 	return 'b'; /* bam */
+
+    if (0 == strncmp(data, "CRAM", 4))
+	return 'e'; /* cram */
 
     if (0 == strncmp(data, "AS ", 3))
 	return 'A'; /* ace */

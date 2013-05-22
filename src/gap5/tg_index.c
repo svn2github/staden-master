@@ -59,14 +59,15 @@ void usage(void) {
     fprintf(stderr, "      -f                   Input is FASTA format\n");
     fprintf(stderr, "      -F                   Input is FASTQ format\n");
     fprintf(stderr, "      -b                   Input is BAM format\n");
-    fprintf(stderr, "      -s                   Input is SAM format (with @SQ headers)\n");
+    fprintf(stderr, "      -s                   Input is SAM format\n");
+    fprintf(stderr, "      -e                   Input is CRAM format\n");
 /*    fprintf(stderr, "      -V                   Input is AFG (Velvet)format\n"); */
     fprintf(stderr, "\n");
-    fprintf(stderr, "      -u                   Also store unmapped reads           (SAM/BAM only)\n");
-    fprintf(stderr, "      -x                   Also store auxillary records        (SAM/BAM only)\n");
-    fprintf(stderr, "      -r                   Store reference-position data (on)  (SAM/BAM only)\n");
-    fprintf(stderr, "      -R                   Don't store reference-position data (SAM/BAM only)\n");
-    fprintf(stderr, "      -D                   Do not remove duplicates (SAM/BAM only)\n");
+    fprintf(stderr, "      -u                   Also store unmapped reads           ({S,B,CR}AM only)\n");
+    fprintf(stderr, "      -x                   Also store auxillary records        ({S,B,CR}AM only)\n");
+    fprintf(stderr, "      -r                   Store reference-position data (on)  ({S,B,CR}AM only)\n");
+    fprintf(stderr, "      -R                   Don't store reference-position data ({S,B,CR}AM only)\n");
+    fprintf(stderr, "      -D                   Do not remove duplicates ({S,B,CR}AM only)\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "      -p                   Link read-pairs together (default on)\n");
     fprintf(stderr, "      -P                   Do not link read-pairs together\n");
@@ -172,6 +173,7 @@ int main(int argc, char **argv) {
 	case 'b':
 	case 'C':
 	case 'V':
+	case 'e':
 	    a.fmt = opt;
 	    break;
 
@@ -359,6 +361,11 @@ int main(int argc, char **argv) {
 	case 's':	
 	    printf("Processing SAM file %s\n", argv[optind]);
 	    err = parse_sam(io, argv[optind++], &a) ? 1 : 0;
+	    break;
+
+	case 'e':	
+	    printf("Processing CRAM file %s\n", argv[optind]);
+	    err = parse_cram(io, argv[optind++], &a) ? 1 : 0;
 	    break;
 
 	case 'F':

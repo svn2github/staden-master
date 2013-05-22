@@ -279,12 +279,12 @@ static int get_next_base(pileup_t *p, int pos, int nth, int *is_insert) {
  * Returns 0 on success
  *        -1 on failure
  */
-int pileup_loop(bam_file_t *fp,
+int pileup_loop(scram_fd *fp,
 		int (*seq_init)(void *client_data,
-				bam_file_t *fp,
+				scram_fd *fp,
 				pileup_t *p),
 		int (*seq_add)(void *client_data,
-			       bam_file_t *fp,
+			       scram_fd *fp,
 			       pileup_t *p,
 			       int depth,
 			       int pos,
@@ -307,19 +307,16 @@ int pileup_loop(bam_file_t *fp,
 	bam_seq_t *b;
 	int pos, last_in_contig;
 
-	//r = (bam_next_seq(fp, &pnew->b) > 0) ? 1 : -1;
-	r = bam_next_seq(fp, &pnew->b);
+	r = scram_next_seq(fp, &pnew->b);
 	if (r == -1) {
-	    fprintf(stderr, "bam_next_seq() failure on line %d\n", fp->line);
-	    return -1;
+	    if (!scram_eof(fp)) {
+		fprintf(stderr, "scam_next_seq() failure on line %d.\n",
+			scram_line(fp));
+		return -1;
+	    }
 	}
 
-	r = (r > 0) ? 1 : -1;
 	b = pnew->b;
-
-	/* Force realloc */
-	fp->bs = NULL;
-	fp->bs_size = 0;
 
 	//r = samread(fp, pnew->b);
 	if (r >= 0) {
@@ -472,8 +469,8 @@ int pileup_loop(bam_file_t *fp,
 	    p->seq_offset = -1;
 	    p->first_del  = 1;
 	    p->b_strand   = bam_strand(p->b) ? 1 : 0;
-	    p->b_qual     = bam_qual(p->b);
-	    p->b_seq      = bam_seq(p->b);
+	    p->b_qual     = (unsigned char *)bam_qual(p->b);
+	    p->b_seq      = (unsigned char *)bam_seq(p->b);
 
 	    if (seq_init) {
 		int v;
@@ -595,7 +592,7 @@ void strand_init(void) {
 
 /* MAX_DEPTH only has a consequence on the example / test dump output */
 #define MAX_DEPTH 4096
-static int sam_pileup(void *cd, bam_file_t *fp, pileup_t *p,
+static int sam_pileup(void *cd, scram_fd *fp, pileup_t *p,
 		      int depth, int pos, int nth) {
     char seq[MAX_DEPTH*3], *sp = seq, qual[MAX_DEPTH], *qp = qual;
     char buf[MAX_DEPTH*2+100], *cp = buf;
@@ -636,7 +633,7 @@ static int sam_pileup(void *cd, bam_file_t *fp, pileup_t *p,
     return 0;
 }
 
-static int basic_pileup(void *cd, bam_file_t *fp, pileup_t *p,
+static int basic_pileup(void *cd, scram_fd *fp, pileup_t *p,
 			int depth, int pos, int nth) {
     char seq[MAX_DEPTH*3], *sp = seq, qual[MAX_DEPTH], *qp = qual;
     char buf[MAX_DEPTH*4+100], *cp = buf, *rp;
@@ -671,13 +668,13 @@ static int basic_pileup(void *cd, bam_file_t *fp, pileup_t *p,
     return 0;
 }
 
-int null_pileup(void *cd, bam_file_t *fp, pileup_t *p,
+int null_pileup(void *cd, scram_fd *fp, pileup_t *p,
 		int depth, int pos, int nth) {
     return 0;
 }
 
 int main(int argc, char **argv) {
-    bam_file_t *fp;
+    scram_fd *fp;
 
     if (argc != 3) {
 	fprintf(stderr, "sam_pileup filename mode\n");
@@ -686,7 +683,7 @@ int main(int argc, char **argv) {
 
     strand_init();
 
-    fp = bam_open(argv[1], argv[2]);
+    fp = scram_open(argv[1], argv[2]);
     if (!fp) {
 	perror(argv[1]);
 	return 1;
@@ -696,7 +693,7 @@ int main(int argc, char **argv) {
     //pileup_loop(fp, NULL, sam_pileup, fp);
     //pileup_loop(fp, NULL, null_pileup, NULL);
 
-    bam_close(fp);
+    scsram_close(fp);
     return 0;
 }
 #endif

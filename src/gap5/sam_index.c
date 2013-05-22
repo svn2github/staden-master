@@ -44,7 +44,7 @@ typedef struct rec_list {
 
 typedef struct {
     GapIO *io;
-    bam_file_t *fp;
+    scram_fd *fp;
     char *fn;
     bio_seq_t *seqs;
     bio_seq_t *free_seq;
@@ -1061,7 +1061,7 @@ char *bam_aux_filter(bam_seq_t *b, char **types, int ntypes, int *len) {
  * Creates a new contig and updates the bam_io_t struct.
  */
 void bio_new_contig(bam_io_t *bio, int tid) {
-    char *cname = bio->fp->header->ref[tid].name;
+    char *cname = scram_get_header(bio->fp)->ref[tid].name;
 
     printf("\n++Processing contig %d / %s\n", tid, cname);
 	
@@ -1113,9 +1113,9 @@ int bio_add_unmapped(bam_io_t *bio, bam_seq_t *b) {
     /* Fetch read-group and pretend it's a library for now */
     stech = STECH_UNKNOWN;
     if ((LB = bam_aux_find(b, "RG"))) {
-	SAM_RG *rg_tag = sam_hdr_find_rg(bio->fp->header, ++LB);
+	SAM_RG *rg_tag = sam_hdr_find_rg(scram_get_header(bio->fp), ++LB);
 	if (rg_tag) {
-	    SAM_hdr_tag *t = sam_hdr_find_key(bio->fp->header,
+	    SAM_hdr_tag *t = sam_hdr_find_key(scram_get_header(bio->fp),
 					      rg_tag->ty, LB, NULL);
 	    if (t)
 		stech = stech_str2int(t->str);
@@ -1329,7 +1329,6 @@ static char *parse_bam_PT_tag(char *str, int *start, int *end, char *dir,
     if (!*str)
 	return NULL;
 
-    str++; /* skip Z type */
     if (3 != sscanf(str, "%d;%d;%c;%n", start, end, dir, &n))
 	goto error;
     str += n;
@@ -1397,8 +1396,6 @@ static char *parse_bam_CT_tag(char *str, char *dir,
 
     if (!*str)
 	return NULL;
-
-    str++; /* Skip Z type */
 
     *dir = *str++;
     if (! (*str && *str == ';'))
@@ -1501,9 +1498,9 @@ int bio_del_seq(bam_io_t *bio, pileup_t *p) {
     /* Fetch read-group and pretend it's a library for now */
     stech = STECH_UNKNOWN;
     if ((LB = bam_aux_find(b, "RG"))) {
-	SAM_RG *rg_tag = sam_hdr_find_rg(bio->fp->header, ++LB);
+	SAM_RG *rg_tag = sam_hdr_find_rg(scram_get_header(bio->fp), ++LB);
 	if (rg_tag) {
-	    SAM_hdr_tag *t = sam_hdr_find_key(bio->fp->header,
+	    SAM_hdr_tag *t = sam_hdr_find_key(scram_get_header(bio->fp),
 					      rg_tag->ty, LB, NULL);
 	    if (t)
 		stech = stech_str2int(t->str);
@@ -1717,6 +1714,7 @@ int bio_del_seq(bam_io_t *bio, pileup_t *p) {
 	anno_ele_t *e;
 	bin_index_t *bin;
 
+	tags++;
 	while (NULL != (tags = parse_bam_PT_tag(tags, &start, &end, &dir,
 						&type, &type_len,
 						&text, &text_len))) {
@@ -1802,6 +1800,7 @@ int bio_del_seq(bam_io_t *bio, pileup_t *p) {
 	start = bs->pos;
 	end   = bs->pos + bs->seq_len-1;
 
+	tags++;
 	while (NULL != (tags = parse_bam_CT_tag(tags, &dir,
 						&type, &type_len,
 						&text, &text_len))) {
@@ -1939,7 +1938,7 @@ int bio_del_seq(bam_io_t *bio, pileup_t *p) {
  *         1 to accept seq
  *        -1 on error
  */
-static int sam_check_unmapped(void *cd, bam_file_t *fp, pileup_t *p) {
+static int sam_check_unmapped(void *cd, scram_fd *fp, pileup_t *p) {
     bam_io_t *bio = (bam_io_t *)cd;
     
 
@@ -1962,7 +1961,7 @@ static int sam_check_unmapped(void *cd, bam_file_t *fp, pileup_t *p) {
     return 1;
 }
 
-static int sam_add_seq(void *cd, bam_file_t *fp, pileup_t *p,
+static int sam_add_seq(void *cd, scram_fd *fp, pileup_t *p,
 		       int depth, int pos, int nth) {
     int tid, np = 0;
     bam_io_t *bio = (bam_io_t *)cd;
@@ -2161,7 +2160,7 @@ static void bio_init_libs(bam_io_t *bio) {
 
 int parse_sam_or_bam(GapIO *io, char *fn, tg_args *a, char *mode) {
     bam_io_t *bio = (bam_io_t*)calloc(1, sizeof(*bio));
-    bam_file_t *fp;
+    scram_fd *fp;
 
     /* Setup bam_io_t object and create our pileup interface */
     bio->io = io;
@@ -2186,7 +2185,7 @@ int parse_sam_or_bam(GapIO *io, char *fn, tg_args *a, char *mode) {
 
     bio_init_libs(bio);
 
-    fp = bam_open(fn, mode);
+    fp = scram_open(fn, mode);
     if (!fp)
 	return -1;
     bio->fp = fp;
@@ -2199,9 +2198,9 @@ int parse_sam_or_bam(GapIO *io, char *fn, tg_args *a, char *mode) {
     /* The main processing loop, calls sam_add_seq() */
     if (0 != pileup_loop(fp, sam_check_unmapped, sam_add_seq, bio)) {
 	verror(ERR_WARN, "sam_import", "pileup failed processing line %d",
-	       fp->line);
+	       scram_line(fp));
 	cache_flush(io);
-	bam_close(fp);
+	scram_close(fp);
 	return -1;
     }
 
@@ -2219,7 +2218,7 @@ int parse_sam_or_bam(GapIO *io, char *fn, tg_args *a, char *mode) {
  
     /* Tidy up */
     if (fp)
-	bam_close(fp);
+	scram_close(fp);
 
     if (bio) {
 	bio_seq_t *s, *n;
@@ -2275,4 +2274,8 @@ int parse_bam(GapIO *io, char *fn, tg_args *a) {
 
 int parse_sam(GapIO *io, char *fn, tg_args *a) {
     return parse_sam_or_bam(io, fn, a, "r");
+}
+
+int parse_cram(GapIO *io, char *fn, tg_args *a) {
+    return parse_sam_or_bam(io, fn, a, "rc");
 }
