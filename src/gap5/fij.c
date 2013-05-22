@@ -746,7 +746,13 @@ static int auto_join(GapIO *io, mobj_fij *r) {
 
 	/* Possibly recompute overlap length - start/ends may have changed */
 	if (m->flags & OBJ_FLAG_JOINED) {
-	    int len = MIN(r1 - m->pos1, r2 - m->pos2);
+	    int start, len;
+
+	    start = MIN(m->pos1 - l1, m->pos2 - l2);
+	    m->pos1 -= start;
+	    m->pos2 -= start;
+
+	    len = MIN(r1 - m->pos1, r2 - m->pos2);
 	    oleft1 = left1 = m->pos1; oright1 = right1 = left1 + len;
 	    oleft2 = left2 = m->pos2; oright2 = right2 = left2 + len;
 	} else {
@@ -758,6 +764,20 @@ static int auto_join(GapIO *io, mobj_fij *r) {
 	if (overlapLength <= 0) {
 	    vmessage("Skipping as contigs seem to no longer overlap.\n");
 	    continue;
+	}
+
+	/* Double check to avoid any bugs above. Must touch edges */
+	if (left1 > l1 && left2 > l2) {
+	    vmessage("BUG: Found local alignment - forcing to be global.\n");
+	    int dist = MIN(left1-l1, left2-l2);
+	    left1 -= dist;
+	    left2 -= dist;
+	}
+	if (right1 < r1 && right2 < r2) {
+	    vmessage("BUG: Found local alignment - forcing to be global.\n");
+	    int dist = MIN(r1 - right1, r2 - right2);
+	    right1 += dist;
+	    right2 += dist;
 	}
 
 	/* Add on extra data either end to allow for padding */
