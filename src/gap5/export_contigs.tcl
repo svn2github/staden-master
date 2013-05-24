@@ -27,6 +27,7 @@ proc ExportSequences {io} {
 	-default [keylget gap5_defs EXPORT.FORMAT] \
 	-orient horizontal \
 	-buttons [list \
+	     [list cram  -command "ExportSequences_format $io $f"] \
 	     [list bam   -command "ExportSequences_format $io $f"] \
 	     [list sam   -command "ExportSequences_format $io $f"] \
 	     [list ace   -command "ExportSequences_format $io $f"] \
@@ -38,14 +39,14 @@ proc ExportSequences {io} {
 
     #--- Output options
     checkbutton $f.fixmates \
-	-text "Fix mate-pair information (SAM/BAM only)" \
+	-text "Fix mate-pair information (CRAM/SAM/BAM only)" \
 	-variable $f.FixMates \
 	-anchor w
     global $f.FixMates
     set $f.FixMates [keylget gap5_defs EXPORT.FIX_MATES] \
 
     checkbutton $f.depad \
-	-text "Use depadded coordinates (SAM/BAM only)" \
+	-text "Use depadded coordinates (CRAM/SAM/BAM only)" \
 	-variable $f.Depad \
 	-anchor w
     global $f.Depad
@@ -66,10 +67,10 @@ proc ExportSequences {io} {
 
 # Callback for when the output format is changed
 proc ExportSequences_format {io f} {
-    set format [lindex "x bam sam ace caf baf fastq fasta" [radiolist_get $f.format]]
+    set format [lindex "x cram bam sam ace caf baf fastq fasta" [radiolist_get $f.format]]
     set entry [entrybox_path $f.outfile.entry]
     set fn [$entry get]
-    if {[regexp {(.*)\.(bam|sam|fna|fa|fasta|fastq|baf|ace|caf)$} $fn _ pfix sfix]} {
+    if {[regexp {(.*)\.(cram|bam|sam|fna|fa|fasta|fastq|baf|ace|caf)$} $fn _ pfix sfix]} {
 	set fn $pfix.$format
     } else {
 	set fn $fn.$format
@@ -81,7 +82,7 @@ proc ExportSequences_format {io f} {
 proc ExportSequences2 {io f} {
     global $f.FixMates $f.Depad
 
-    set format [lindex "x bam sam ace caf baf fastq fasta" [radiolist_get $f.format]]
+    set format [lindex "x cram bam sam ace caf baf fastq fasta" [radiolist_get $f.format]]
     if {[lorf_in_get $f.infile] == 4} {
 	set gel_name [contig_id_gel $f.id]
 	set lreg [contig_id_lreg $f.id]

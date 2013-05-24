@@ -879,7 +879,7 @@ set_def CONTIGS_TO_LIST.OUTFILE.WHICH.NAME     "Save reading names in"
 
 #Export Sequences
 set_def EXPORT.INFILE				$defs_c_in
-set_def EXPORT.FORMAT				1
+set_def EXPORT.FORMAT				2
 set_def EXPORT.FIX_MATES			0
 set_def EXPORT.DEPAD				1
 

@@ -16,7 +16,7 @@
 #include "sam_index.h"
 #include "dstring.h"
 #include "tagdb.h"
-#include <io_lib/bam.h>
+#include <io_lib/scram.h>
 #include "active_tags.h"
 
 /* Sequence formats */
@@ -27,6 +27,7 @@
 #define FORMAT_ACE   4
 #define FORMAT_CAF   5
 #define FORMAT_BAM   6
+#define FORMAT_CRAM  7
 
 /* Annotation formats */
 #define FORMAT_GFF   10
@@ -76,6 +77,8 @@ int tcl_export_contigs(ClientData clientData, Tcl_Interp *interp,
 	format_code = FORMAT_SAM;
     else if( 0 == strcmp(args.format, "bam"))
 	format_code = FORMAT_BAM;
+    else if( 0 == strcmp(args.format, "cram"))
+	format_code = FORMAT_CRAM;
     else if( 0 == strcmp(args.format, "baf"))
 	format_code = FORMAT_BAF;
     else if( 0 == strcmp(args.format, "ace"))
@@ -297,14 +300,15 @@ static char *false_name(GapIO *io, seq_t *s, int suffix, int *name_len) {
     return false_name;
 }
 
-static int export_header_sam(GapIO *io, bam_file_t *bf,
+static int export_header_sam(GapIO *io, scram_fd *bf,
 			     int cc, contig_list_t *cv,
-			     int fixmates) {
+			     int fixmates,
+			     char *ref_fn, int format) {
     int i;
     char len_buf[100];
 
     /* Generated in sorted order, adhering to version 1.4 */
-    bf->header = sam_hdr_parse("@HD\tVN:1.4\tSO:coordinate", 0);
+    scram_set_header(bf, sam_hdr_parse("@HD\tVN:1.4\tSO:coordinate", 0));
 
     /* Inefficient as we have to loop twice - here and when outputting reads */
     if (fixmates) {
@@ -326,7 +330,8 @@ static int export_header_sam(GapIO *io, bam_file_t *bf,
 		len += 1-c->start;
 
 	    sprintf(len_buf, "%d", len);
-	    sam_hdr_add(bf->header, "SQ", "SN", c->name, "LN", len_buf, NULL);
+	    sam_hdr_add(scram_get_header(bf), "SQ", "SN",
+			c->name, "LN", len_buf, NULL);
 	}
     } else {
 	for (i = 0; i < cc; i++) {
@@ -341,7 +346,8 @@ static int export_header_sam(GapIO *io, bam_file_t *bf,
 		len += 1-c->start;
 
 	    sprintf(len_buf, "%d", len);
-	    sam_hdr_add(bf->header, "SQ", "SN", c->name, "LN", len_buf, NULL);
+	    sam_hdr_add(scram_get_header(bf), "SQ", "SN",
+			c->name, "LN", len_buf, NULL);
 	}
     }
 
@@ -350,7 +356,7 @@ static int export_header_sam(GapIO *io, bam_file_t *bf,
 	tg_rec lrec = arr(tg_rec, io->library, i);
 	library_t *lib = cache_search(io, GT_Library, lrec);
 	if (lib->name) {
-	    sam_hdr_add(bf->header, "RG",
+	    sam_hdr_add(scram_get_header(bf), "RG",
 			"ID", lib->name, 
 			"SM", "unknown",
 			"LB", lib->name,
@@ -358,7 +364,7 @@ static int export_header_sam(GapIO *io, bam_file_t *bf,
 	} else {
 	    char buf[100];
 	    sprintf(buf, "rg#%"PRIrec, lib->rec);
-	    sam_hdr_add(bf->header, "RG",
+	    sam_hdr_add(scram_get_header(bf), "RG",
 			"ID", buf,
 			"SM", "unknown",
 			"LB", buf,
@@ -366,8 +372,14 @@ static int export_header_sam(GapIO *io, bam_file_t *bf,
 	}
     }
 
+    /* If cram, also load the reference sequences up */
+    if (format == FORMAT_CRAM) {
+	scram_set_option(bf, CRAM_OPT_REFERENCE, ref_fn);
+	scram_set_option(bf, CRAM_OPT_EMBED_REF, 1);
+    }
+
     /* Write it, also populates refs and other internal arrays */
-    bam_write_header(bf);
+    scram_write_header(bf);
 
     return 0;
 }
@@ -582,7 +594,7 @@ static uint32_t *sam_depadded_cigar(char *seq, int left, int right, int olen,
 /*
  * Exports a single consensus tag as a fake sam sequence.
  */
-static void sam_export_cons_tag(GapIO *io, bam_file_t *bf, fifo_t *fi,
+static void sam_export_cons_tag(GapIO *io, scram_fd *bf, fifo_t *fi,
 				contig_t *c, int offset,
 				int depad, char *cons,
 				int *npad, int *pad_to) {
@@ -638,7 +650,7 @@ static void sam_export_cons_tag(GapIO *io, bam_file_t *bf, fifo_t *fi,
     bam_construct_seq(&bam, dstring_length(ds)+5,
 		      "*", 1,
 		      768,
-		      sam_hdr_name2ref(bf->header, c->name),
+		      sam_hdr_name2ref(scram_get_header(bf), c->name),
 		      start + offset,
 		      end   + offset,
 		      255,
@@ -648,7 +660,7 @@ static void sam_export_cons_tag(GapIO *io, bam_file_t *bf, fifo_t *fi,
 
     bam_aux_add_data(&bam, "CT", 'Z', dstring_length(ds)+1, dstring_str(ds));
     
-    bam_put_seq(bf, bam);
+    scram_put_seq(bf, bam);
 }
 
 /*
@@ -662,7 +674,7 @@ static void sam_export_cons_tag(GapIO *io, bam_file_t *bf, fifo_t *fi,
  * keep track of the number of pads seen so far up to base 'pad_to', and
  * update these fields as we go (with an assumption data is in sorted order).
  */
-static void sam_export_seq(GapIO *io, bam_file_t *bf,
+static void sam_export_seq(GapIO *io, scram_fd *bf,
 			   fifo_t *fi, fifo_queue_t *tq,
 			   int fixmates, tg_rec crec, contig_t *c, int offset,
 			   int depad, char *cons, int *npad, int *pad_to) {
@@ -912,9 +924,9 @@ static void sam_export_seq(GapIO *io, bam_file_t *bf,
 
 
     /* Create BAM struct */
-    ref_id = sam_hdr_name2ref(bf->header, c->name);
+    ref_id = sam_hdr_name2ref(scram_get_header(bf), c->name);
     mate_ref_id = (mate_ref[0] == '=' && mate_ref[1] == '\0')
-	? ref_id : sam_hdr_name2ref(bf->header, mate_ref);
+	? ref_id : sam_hdr_name2ref(scram_get_header(bf), mate_ref);
     bam_construct_seq(&bam, 0,
 		      tname, tname_len,
 		      flag,
@@ -1067,14 +1079,14 @@ static void sam_export_seq(GapIO *io, bam_file_t *bf,
     //fputs(dstring_str(ds), fp);
 
     /*--- Finally output it */
-    bam_put_seq(bf, bam);
+    scram_put_seq(bf, bam);
 
     if (s != sorig)
 	free(s);
 
 }
 
-static int export_contig_sam(GapIO *io, bam_file_t *bf,
+static int export_contig_sam(GapIO *io, scram_fd *bf,
 			     tg_rec crec, int start, int end,
 			     int fixmates, int depad) {
     contig_iterator *ci;
@@ -1974,22 +1986,143 @@ static int export_contig_ace(GapIO *io, FILE *fp,
     return 0;
 }
 
+/*
+ * Saves the consensus to <fn>.fasta and creates a samtools style
+ * <fn>.fasta.fai index.
+ *
+ * Returns <fn>.fasta on success
+ *         NULL on failure
+ */
+static char *create_ref_seq(GapIO *io, int cc, contig_list_t *cv, char *fn) {
+    static char fn1[PATH_MAX], fn2[PATH_MAX];
+    FILE *fp1 = NULL, *fp2 = NULL;
+    int i;
+    int64_t offset = 0;
+
+    sprintf(fn1, "%s.fasta", fn);
+    sprintf(fn2, "%s.fasta.fai", fn);
+
+    if (!(fp1 = fopen(fn1, "w")))
+	goto err;
+    if (!(fp2 = fopen(fn2, "w")))
+	goto err;
+
+    for (i = 0; i < cc; i++) {
+	char *seq = NULL;
+	contig_t *c;
+	int len;
+
+	if (!(c = cache_search(io, GT_Contig, cv[i].contig)))
+	    goto err;
+	cache_incr(io, c);
+	
+	len = cv[i].end - cv[i].start + 1;
+	if (!(seq = malloc(len)))
+	    goto err;
+
+	if (0 != calculate_consensus_simple(io, cv[i].contig,
+					    cv[i].start, cv[i].end,
+					    seq, NULL)) {
+	    cache_decr(io, c);
+	    free(seq);
+	}
+
+	depad_seq(seq, &len, NULL);
+
+	offset += fprintf(fp1, ">%s\n", contig_get_name(&c));
+	if (cv[i].start > 1) {
+	    int n = cv[i].start - 1;
+	    while (n > 0) {
+		int l = MIN(1024, n);
+		offset += fwrite("NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+				 1, l, fp1);
+		n -= l;
+	    }
+	}
+
+	fprintf(fp2, "%s\t%d\t%"PRId64"\t%d\t%d\n",
+		contig_get_name(&c), len, offset, len, len+1);
+
+	offset += fprintf(fp1, "%.*s\n", len, seq);
+	    
+	cache_decr(io, c);
+	free(seq);
+    }
+
+    fclose(fp1);
+    fclose(fp2);
+
+    return fn1;
+
+ err:
+    if (fp1)
+	fclose(fp1);
+    if (fp2)
+	fclose(fp2);
+    return NULL;
+}
+
 static int export_contigs(GapIO *io, int cc, contig_list_t *cv, int format,
 			  char *fn, int fixmates, int depad) {
     int i;
     FILE *fp = NULL;
-    bam_file_t *bf = NULL;
+    scram_fd *bf = NULL;
+    char *ref_fn = NULL;
     
     switch (format) {
     case FORMAT_SAM:
-	if (NULL == (bf = bam_open(fn, "w"))) {
+	if (NULL == (bf = scram_open(fn, "ws"))) {
 	    perror(fn);
 	    return -1;
 	}
 	break;
 
     case FORMAT_BAM:
-	if (NULL == (bf = bam_open(fn, "wb"))) {
+	if (NULL == (bf = scram_open(fn, "wb"))) {
+	    perror(fn);
+	    return -1;
+	}
+	break;
+
+    case FORMAT_CRAM:
+	/* Create fasta reference first */
+	if (!(ref_fn = create_ref_seq(io, cc, cv, fn))) {
+	    perror(fn);
+	    return -1;
+	}
+
+	if (NULL == (bf = scram_open(fn, "wc"))) {
 	    perror(fn);
 	    return -1;
 	}
@@ -2014,7 +2147,8 @@ static int export_contigs(GapIO *io, int cc, contig_list_t *cv, int format,
 
     case FORMAT_SAM:
     case FORMAT_BAM:
-	export_header_sam(io, bf, cc, cv, fixmates);
+    case FORMAT_CRAM:
+	export_header_sam(io, bf, cc, cv, fixmates, ref_fn, format);
 	break;
     }
 
@@ -2023,6 +2157,7 @@ static int export_contigs(GapIO *io, int cc, contig_list_t *cv, int format,
 	switch (format) {
 	case FORMAT_SAM:
 	case FORMAT_BAM:
+	case FORMAT_CRAM:
 	    export_contig_sam(io, bf, cv[i].contig, cv[i].start, cv[i].end,
 			      fixmates, depad);
 	    break;
@@ -2058,7 +2193,8 @@ static int export_contigs(GapIO *io, int cc, contig_list_t *cv, int format,
     switch (format) {
     case FORMAT_SAM:
     case FORMAT_BAM:
-	bam_close(bf);
+    case FORMAT_CRAM:
+	scram_close(bf);
 	break;
 
     default:
