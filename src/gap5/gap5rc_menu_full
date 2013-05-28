@@ -602,8 +602,13 @@ add_menu View			1 0 left
 add_menu Results		1 0 left
 add_menu Help			1 0 right
 
+add_command {File.Load Plot}    1 0 {CSLoadPlot $io $f}
+add_cascade {File.Save}		1 0
+add_separator {File.S1}
 add_command {File.Exit} 	1 0 {CSStartShutdown $io $f}
+
 add_command {Edit.Save contig order}	 8 26 {flush_contig_order -io \$io}
+
 add_command {View.Results manager} 	1 0 {ListResults $io}
 add_command {View.Contig list}		1 0 {InitListContigs $io ""} 
 add_command {View.Select tags}		1 0 {CSTagCheckList $io $f \

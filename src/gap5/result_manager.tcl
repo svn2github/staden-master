@@ -65,10 +65,14 @@ proc result_list_destroy {io} {
 # 
 proc result_list_update {io} {
     global gap5_defs
+    
+    set f [keylget gap5_defs CONTIG_SEL.WIN]
 
-    set csmenu [keylget gap5_defs CONTIG_SEL.WIN].menubar.results
+    # Contig selector Results and File->Save menu
+    set csmenu  $f.menubar.results
+    set csmenu2 $f.menubar.file.save
     if {[winfo exists $csmenu]} {
-	set cse 1
+	set cse 1; # Contig Selector Exists
     } else {
 	set cse 0
     }
@@ -108,6 +112,8 @@ proc result_list_update {io} {
     if {$cse} {
         destroy $csmenu
         menu $csmenu
+        destroy $csmenu2
+        menu $csmenu2
     }
 
     set count 0
@@ -128,7 +134,10 @@ proc result_list_update {io} {
                  result_list_popup_single $io [lindex $i 0] \
      	            [reg_get_ops -io $io -id [lindex $i 0]] \
      	            $csmenu.m$count
- 
+
+		 $csmenu2 add command -label $n \
+		     -command [list CSSavePlot $io $f [lindex $i 0]]
+
                  incr count
              }
  	}

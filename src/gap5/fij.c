@@ -203,12 +203,12 @@ void fij_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
 
 	if (r->all_hidden)
 	    jdata->get_ops.ops = "PLACEHOLDER\0PLACEHOLDER\0Information\0"
-		"PLACEHOLDER\0Hide all\0Reveal all\0Sort Matches\0"
-		    "SEPARATOR\0Remove\0";
+		"PLACEHOLDER\0Hide all\0Reveal all\0Sort matches\0"
+		    "Save matches\0SEPARATOR\0Remove\0";
 	else
 	    jdata->get_ops.ops = "Use for 'Next'\0Reset 'Next'\0Information\0"
-		"Configure\0Hide all\0Reveal all\0Sort Matches\0"
-		    "SEPARATOR\0Remove\0";
+		"Configure\0Hide all\0Reveal all\0Sort matches\0"
+		    "Save matches\0SEPARATOR\0Remove\0";
 	break;
 
 
@@ -240,7 +240,17 @@ void fij_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
 	    csmatch_reset_hash(csplot_hash, (mobj_repeat *)r);
 	    r->current = -1;
 	    break;
-	case 7: /* Remove */
+	case 7: { /* Save */
+	    char *fn;
+	    if (Tcl_VarEval(GetInterp(), "tk_getSaveFile ", "-parent ",
+			    cs->window, NULL) != TCL_OK)
+		break;
+	    fn = Tcl_GetStringResult(GetInterp());
+	    if (fn && *fn)
+		csmatch_save(r, fn);
+	    break;
+	}
+	case 8: /* Remove */
 	    csmatch_remove(io, cs->window,
 			   (mobj_repeat *)r,
 			   csplot_hash);
@@ -298,7 +308,7 @@ void fij_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
 	    break;
 
 	case TASK_CS_SAVE:
-	    ret = csmatch_save(r, "/tmp/plot.out");
+	    ret = csmatch_save(r, (char *)jdata->generic.data);
 	    vTcl_SetResult(GetInterp(), "%d", ret);
 	    break;
 
@@ -870,4 +880,111 @@ static int auto_join(GapIO *io, mobj_fij *r) {
     vmessage("\nMade %d of %d joins found\n", nr_orig-i, nr_orig);
 
     return 0;
+}
+
+/*
+ * Loads a file (already opened in fp) of join results and returns the
+ * registered ID.
+ *
+ * Returns -1 on failure.
+ */
+int csmatch_load_fij(GapIO *io, FILE *fp) {
+    tg_rec c1, c2;
+    int pos1, pos2, end1, end2, length, score, n;
+    float percent;
+    int asize = 0;
+    obj_fij *r;
+    char *val;
+    int id;
+
+    mobj_fij *m = calloc(1, sizeof(*m));
+    if (!m)
+	return -1;
+
+    strcpy(m->tagname, CPtr2Tcl(m));
+    m->num_match = 0;
+    m->match = NULL;
+    m->io = io;
+    m->all_hidden = 0;
+    m->current = -1;
+    val = get_default_string(GetInterp(), gap5_defs, "FIJ.COLOUR");
+    strcpy(m->colour, val);
+    m->linewidth = get_default_int(GetInterp(), gap5_defs, "FIJ.LINEWIDTH");
+    m->match_type = REG_TYPE_FIJ;
+    m->reg_func = fij_callback;
+
+    while (9 == (n = fscanf(fp, "%"PRIrec" %d %d %"PRIrec" %d %d %d %d %f\n",
+			    &c1, &pos1, &end1, &c2, &pos2, &end2,
+			    &length, &score, &percent))) {
+	contig_t *c;
+
+	if (m->num_match >= asize) {
+	    asize = asize ? asize*2 : 16;
+	    m->match = realloc(m->match,
+			       asize * sizeof(*m->match));
+	    if (!m->match)
+		return -1;
+	}
+
+	if (!cache_exists(io, GT_Contig, ABS(c1)) ||
+	    !(c = cache_search(io, GT_Contig, ABS(c1)))) {
+	    verror(ERR_WARN, "csmatch_load_fij",
+		   "Contig =%"PRIrec" does not exist", ABS(c1));
+	    continue;
+	}
+
+	if (pos1 < c->start)
+	    pos1 = c->start;
+	if (end1 > c->end)
+	    end1 = c->end;
+
+	if (!cache_exists(io, GT_Contig, ABS(c2)) ||
+	    !(c = cache_search(io, GT_Contig, ABS(c2)))) {
+	    verror(ERR_WARN, "csmatch_load_fij",
+		   "Contig =%"PRIrec" does not exist", ABS(c2));
+	    continue;
+	}
+
+	if (pos2 < c->start)
+	    pos2 = c->start;
+	if (end2 > c->end)
+	    end2 = c->end;
+
+	r = &m->match[m->num_match++];
+	r->func = fij_obj_func;
+	r->data = m;
+
+	r->c1 = c1;
+	r->c2 = c2;
+	r->pos1 = pos1;
+	r->pos2 = pos2;
+	r->end1 = end1;
+	r->end2 = end2;
+	r->score = score;
+	r->percent = 10000*percent;
+	r->flags = 0; // fixme
+    }
+    if (n != EOF)
+	verror(ERR_WARN, "csmatch_load_fij", "File malformatted or truncated");
+
+    if (m->num_match) {
+	id = register_id();
+	contig_register(io, 0, fij_callback, (void *)m, id,
+			REG_REQUIRED | REG_DATA_CHANGE | REG_OPS |
+			REG_NUMBER_CHANGE | REG_ORDER | REG_GENERIC,
+			REG_TYPE_FIJ);
+	update_results(io);
+
+	return id;
+    }
+
+ err:
+    if (m) {
+	if (m->match)
+	    free(m->match);
+
+	free(m);
+    }
+
+    return -1;
 }

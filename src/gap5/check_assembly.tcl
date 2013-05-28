@@ -84,12 +84,21 @@ proc CheckAssembly2 {io t lorf id maxperc u_winsize ignore_N} {
     update idletasks
     ContigComparator $io
 
-    log_call check_assembly \
-	-io $io \
-	-max_pmismatch $mperc \
-	-contigs $list \
-	-win_size $wsize \
-	-ignore_N $ignore_N
+    set id [log_call check_assembly \
+		-io $io \
+		-max_pmismatch $mperc \
+		-contigs $list \
+		-win_size $wsize \
+		-ignore_N $ignore_N]
+
+    if {$id > 0} {
+	# Draw it too
+	result_notify \
+	    -io $io \
+	    -id $id \
+	    -type GENERIC \
+	    -args "{task TASK_CS_PLOT}"
+    }
 
     ClearBusy
 }

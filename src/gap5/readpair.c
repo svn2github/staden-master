@@ -56,7 +56,8 @@ void *readpair_obj_func(int job, void *jdata, obj_read_pair *obj,
 	    return "Information\0Hide\0IGNORE\0"
 		"IGNORE\0SEPARATOR\0Remove\0";
 	} else {
-	    return "Information\0Hide\0Invoke join editor *\0SEPARATOR\0Remove\0";
+	    return "Information\0Hide\0Invoke join editor *\0"
+		        "SEPARATOR\0Remove\0";
 	}
 	break;
 
@@ -196,10 +197,12 @@ void readpair_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
 
 	if (r->all_hidden)
 	    jdata->get_ops.ops = "PLACEHOLDER\0PLACEHOLDER\0Information\0"
-		"PLACEHOLDER\0Hide all\0Reveal all\0SEPARATOR\0Remove\0";
+		"PLACEHOLDER\0Hide all\0Reveal all\0"
+		"Save matches\0SEPARATOR\0Remove\0";
 	else
 	    jdata->get_ops.ops = "Use for 'Next'\0Reset 'Next'\0Information\0"
-		"Configure\0Hide all\0Reveal all\0SEPARATOR\0Remove\0";
+		"Configure\0Hide all\0Reveal all\0"
+		"Save matches\0SEPARATOR\0Remove\0";
 	break;
 
 
@@ -226,7 +229,17 @@ void readpair_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
 	    csmatch_reveal(GetInterp(), cs->window, (mobj_repeat *)r,
 			   csplot_hash);
 	    break;
-	case 6: /* Remove */
+	case 6: { /* Save */
+	    char *fn;
+	    if (Tcl_VarEval(GetInterp(), "tk_getSaveFile ", "-parent ",
+			    cs->window, NULL) != TCL_OK)
+		break;
+	    fn = Tcl_GetStringResult(GetInterp());
+	    if (fn && *fn)
+		csmatch_save((mobj_repeat *)r, fn);
+	    break;
+	}
+	case 7: /* Remove */
 	    csmatch_remove(io, cs->window,
 			   (mobj_repeat *)r,
 			   csplot_hash);
@@ -270,6 +283,21 @@ void readpair_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
     case REG_LENGTH:
 	csmatch_replot(io, (mobj_repeat *)r, csplot_hash, cs->window);
 	break;
+
+    case REG_GENERIC:
+	switch (jdata->generic.task) {
+	    int ret;
+
+	case TASK_CS_PLOT:
+	    PlotRepeats(io, (mobj_repeat *)r);
+	    Tcl_VarEval(GetInterp(), "CSLastUsed ", CPtr2Tcl(r), NULL);
+	    break;
+
+	case TASK_CS_SAVE:
+	    ret = csmatch_save(r, (char *)jdata->generic.data);
+	    vTcl_SetResult(GetInterp(), "%d", ret);
+	    break;
+	}
     }
 }
 
@@ -367,9 +395,6 @@ int PlotTempMatches(GapIO *io, read_pair_t *rp) {
     template->reg_func = readpair_callback;
     template->match_type = REG_TYPE_READPAIR;
 
-    PlotRepeats(io, template);
-    Tcl_VarEval(GetInterp(), "CSLastUsed ", CPtr2Tcl(template), NULL);
-
     /*
      * Register the repeat search with each of the contigs used.
      * Currently we assume that this is all.
@@ -377,10 +402,11 @@ int PlotTempMatches(GapIO *io, read_pair_t *rp) {
     id = register_id();
     contig_register(io, 0, readpair_callback, (void *)template, id,
 		    REG_REQUIRED | REG_DATA_CHANGE | REG_OPS |
-		    REG_NUMBER_CHANGE | REG_ORDER, REG_TYPE_READPAIR);
+		    REG_NUMBER_CHANGE | REG_ORDER | REG_GENERIC,
+		    REG_TYPE_READPAIR);
     update_results(io);
 
-    return 0;
+    return id;
 }
 
 HashTable *create_lib_hash(tg_rec *library, int nlibrary) {
@@ -794,6 +820,7 @@ int find_read_pairs(GapIO *io, int num_contigs, contig_list_t *contig_array,
     
     read_pair_t *tarr;
     HashTable *lib_hash = NULL;
+    int id;
 
     if (library) {
 	lib_hash = create_lib_hash(library, nlibrary);
@@ -808,11 +835,125 @@ int find_read_pairs(GapIO *io, int num_contigs, contig_list_t *contig_array,
     }
 
     /* Find only those templates spanning multiple contigs and plot them. */
-    PlotTempMatches(io, tarr);
+    id = PlotTempMatches(io, tarr);
 
     /* Tidy up */
     if (NULL != lib_hash) HashTableDestroy(lib_hash, 0);
     free(tarr);
 
-    return 0;
+    return id;
+}
+
+/*
+ * Loads a file (already opened in fp) of find read-pairs results and
+ * returns the registered ID.
+ *
+ * Returns -1 on failure.
+ */
+int csmatch_load_read_pairs(GapIO *io, FILE *fp) {
+    tg_rec c1, c2;
+    int pos1, pos2, end1, end2, length, mq1, mq2, n;
+    tg_rec read1, read2;
+    float percent;
+    int asize = 0;
+    obj_read_pair *r;
+    char *val;
+    int id;
+
+    mobj_read_pair *m = calloc(1, sizeof(*m));
+    if (!m)
+	return -1;
+
+    strcpy(m->tagname, CPtr2Tcl(m));
+    m->num_match = 0;
+    m->match = NULL;
+    m->io = io;
+    m->all_hidden = 0;
+    m->current = -1;
+    val = get_default_string(GetInterp(), gap5_defs, "READPAIR.COLOUR");
+    strcpy(m->colour, val);
+    m->linewidth = get_default_int(GetInterp(), gap5_defs,
+				   "READPAIR.LINEWIDTH");
+    m->match_type = REG_TYPE_READPAIR;
+    m->reg_func = readpair_callback;
+
+    while (11 == (n = fscanf(fp, "%"PRIrec" %d %d %"PRIrec" %d %d %d "
+			    "%"PRIrec" %"PRIrec" %d %d\n",
+			    &c1, &pos1, &end1, &c2, &pos2, &end2, &length,
+			    &read1, &read2, &mq1, &mq2))) {
+	contig_t *c;
+
+	if (m->num_match >= asize) {
+	    asize = asize ? asize*2 : 16;
+	    m->match = realloc(m->match,
+			       asize * sizeof(*m->match));
+	    if (!m->match)
+		return -1;
+	}
+
+	if (!cache_exists(io, GT_Contig, ABS(c1)) ||
+	    !(c = cache_search(io, GT_Contig, ABS(c1)))) {
+	    verror(ERR_WARN, "csmatch_load_read_pairs",
+		   "Contig =%"PRIrec" does not exist", ABS(c1));
+	    continue;
+	}
+
+	if (pos1 < c->start)
+	    pos1 = c->start;
+	if (end1 > c->end)
+	    end1 = c->end;
+
+	if (!cache_exists(io, GT_Contig, ABS(c2)) ||
+	    !(c = cache_search(io, GT_Contig, ABS(c2)))) {
+	    verror(ERR_WARN, "csmatch_load_read_pairs",
+		   "Contig =%"PRIrec" does not exist", ABS(c2));
+	    continue;
+	}
+
+	if (pos2 < c->start)
+	    pos2 = c->start;
+	if (end2 > c->end)
+	    end2 = c->end;
+
+	r = (obj_read_pair *)&m->match[m->num_match++];
+	r->func =  (void *(*)(int, void *, struct obj_match_t *,
+			      struct mobj_repeat_t *))readpair_obj_func;
+	r->data = m;
+
+	r->c1    = c1;
+	r->c2    = c2;
+	r->pos1  = pos1;
+	r->pos2  = pos2;
+	r->end1  = end1;
+	r->end2  = end2;
+	r->read1 = read1;
+	r->read2 = read2;
+	r->mq1   = mq1;
+	r->mq2   = mq2;
+	r->flags = 0; // fixme
+    }
+    if (n != EOF)
+	verror(ERR_WARN, "csmatch_load_read_pairs",
+	       "File malformatted or truncated");
+
+    if (m->num_match) {
+	id = register_id();
+	contig_register(io, 0, readpair_callback, (void *)m, id,
+			REG_REQUIRED | REG_DATA_CHANGE | REG_OPS |
+			REG_NUMBER_CHANGE | REG_ORDER | REG_GENERIC,
+			REG_TYPE_READPAIR);
+	update_results(io);
+
+	return id;
+    }
+
+ err:
+    if (m) {
+	if (m->match)
+	    free(m->match);
+
+	free(m);
+    }
+
+    return -1;
 }

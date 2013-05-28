@@ -134,13 +134,23 @@ proc ReadPairs_OK_Pressed {io f infile mode end_size min_mq min_freq lib_w} {
     ContigComparator $io
 
     SetBusy
-    find_read_pairs \
-	-io           $io \
-	-contigs      $list \
-	-mode         $mode \
-	-end_size     $end_size \
-	-min_map_qual $min_mq \
-	-min_freq     $min_freq \
-	-libraries    $libs
+    set id [find_read_pairs \
+		-io           $io \
+		-contigs      $list \
+		-mode         $mode \
+		-end_size     $end_size \
+		-min_map_qual $min_mq \
+		-min_freq     $min_freq \
+		-libraries    $libs]
+
+    if {$id > 0} {
+	# Draw it too
+	result_notify \
+	    -io $io \
+	    -id $id \
+	    -type GENERIC \
+	    -args "{task TASK_CS_PLOT}"
+    }
+
     ClearBusy
 }

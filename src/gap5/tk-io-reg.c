@@ -1174,6 +1174,11 @@ int str2reg_data(Tcl_Interp *interp, GapIO *io,
 	    rd->generic.data = (void *)&y;
 	    break;
 	  }
+
+	default:
+	case TASK_CS_SAVE:
+	    rd->generic.data = reg_get_arg("data");
+	    break;
 	}
 	break;
 

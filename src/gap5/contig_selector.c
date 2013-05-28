@@ -1194,6 +1194,13 @@ cs_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
 		}
 		break;
 	    }
+
+	case TASK_CS_LOAD: {
+	    int id = csmatch_load(io, (char *)jdata->generic.data);
+	    vTcl_SetResult(GetInterp(), "%d", id);
+	    break;
+	}
+
 #if 0
 	case TASK_CS_REDRAW:
 	    {

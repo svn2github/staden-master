@@ -1141,6 +1141,73 @@ proc CSStartShutdown {io f} {
 }
 
 ##############################################################################
+proc CSLoadPlot {io f} {
+    global $f.cs_id NGList gap5_defs
+    set csh_win $f[keylget gap5_defs CONTIG_SEL.WIN]
+
+    set fn [tk_getOpenFile -parent $csh_win]
+    if {$fn == ""} return
+
+    if {[catch {set fd [open $fn r]} err]} {
+	tk_messageBox \
+	    -parent $csh_win \
+	    -type ok \
+	    -message "$fn: $err"
+	return
+    }
+    
+    set id [result_notify \
+		-io $io \
+		-id [set $f.cs_id] \
+		-type GENERIC \
+		-args "{task TASK_CS_LOAD data $fn}"]
+    if {$id == -1} {
+	tk_messageBox \
+	    -parent $csh_win \
+	    -type ok \
+	    -message "$fn: Failed to parse and/or load"
+	return
+    }
+
+    ContigComparator $io
+
+    result_notify \
+	-io $io \
+	-id $id \
+	-type GENERIC \
+	-args "{task TASK_CS_PLOT}"    
+}
+
+proc CSSavePlot {io f id} {
+    global $f.cs_id NGList gap5_defs
+    set csh_win $f[keylget gap5_defs CONTIG_SEL.WIN]
+
+    set fn [tk_getSaveFile -parent $csh_win]
+    if {$fn == ""} return
+
+    set id [result_notify \
+		-io $io \
+		-id $id \
+		-type GENERIC \
+		-args "{task TASK_CS_SAVE data $fn}"]
+    if {$id == -1} {
+	tk_messageBox \
+	    -parent $csh_win \
+	    -type ok \
+	    -message "$fn: Failed to parse and/or load"
+	return
+    }
+
+    ContigComparator $io
+
+    result_notify \
+	-io $io \
+	-id $id \
+	-type GENERIC \
+	-args "{task TASK_CS_PLOT}"    
+}
+
+##############################################################################
 proc sort_c_num {x y } {
 
     regexp {.*#([0-9]+)\)$} $x dummy a

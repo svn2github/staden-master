@@ -844,7 +844,7 @@ FindRepeats(ClientData clientData,
 	    Tcl_Obj *CONST objv[])
 {
     contig_list_t *contig_array = NULL;
-    int num_contigs = 0;
+    int num_contigs = 0, id;
     find_repeats_arg args;
     Tcl_DString input_params;
     char *name1;
@@ -906,13 +906,14 @@ FindRepeats(ClientData clientData,
 	return TCL_OK;
     }
 
-    if (find_repeats(args.io, args.idir, args.minmat,
-		     mask, consensus_cutoff, num_contigs, contig_array,
-		     *args.outfile ? args.outfile : NULL) < 0 ) {
+    if ((id = find_repeats(args.io, args.idir, args.minmat,
+			   mask, consensus_cutoff, num_contigs, contig_array,
+			   *args.outfile ? args.outfile : NULL)) < 0 ) {
 	verror(ERR_WARN, "Find repeats", "Failure in Find Repeats");
 	SetActiveTags("");
 	return TCL_OK;
     }
+    vTcl_SetResult(interp, "%d", id);
 
     SetActiveTags("");
     if (contig_array)
@@ -929,7 +930,7 @@ FindReadPairs(ClientData clientData,
 	      Tcl_Obj *CONST objv[])
 {
     contig_list_t *contig_array = NULL;
-    int num_contigs = 0;
+    int num_contigs = 0, id;
     enum readpair_mode mode;
     Tcl_DString input_params;
     readpair_arg args;
@@ -998,13 +999,15 @@ FindReadPairs(ClientData clientData,
 	}
     }
 
-    if (find_read_pairs(args.io, num_contigs, contig_array, mode,
-			args.end_size, args.min_map_qual, args.min_freq, 
-			libraries ? ArrayBase(tg_rec, libraries) : NULL,
-			libraries ? ArrayMax(libraries) : 0) < 0 ) {
+    if ((id = find_read_pairs(args.io, num_contigs, contig_array, mode,
+			      args.end_size, args.min_map_qual, args.min_freq, 
+			      libraries ? ArrayBase(tg_rec, libraries) : NULL,
+			      libraries ? ArrayMax(libraries) : 0)) < 0) {
 	verror(ERR_WARN, "Find read pairs", "Failure in Find Read Pairs");
 	return TCL_OK;
     }
+
+    vTcl_SetResult(interp, "%d", id);
 
     xfree(contig_array);
     if (libraries)
@@ -2228,7 +2231,7 @@ int tcl_break_contig_holes(ClientData clientData, Tcl_Interp *interp,
 int
 tcl_check_assembly(ClientData clientData, Tcl_Interp *interp,
 		   int objc, Tcl_Obj *CONST objv[]) {
-    int rargc;
+    int rargc, id;
     contig_list_t *rargv;
     check_ass_arg args;
 
@@ -2253,8 +2256,10 @@ tcl_check_assembly(ClientData clientData, Tcl_Interp *interp,
 	return TCL_OK;
     }
 
-    check_assembly(args.io, rargc, rargv, 
-		   args.win_size, args.max_mismatch / 100.0, args.ignore_N);
+    id = check_assembly(args.io, rargc, rargv, 
+			args.win_size, args.max_mismatch / 100.0,
+			args.ignore_N);
+    vTcl_SetResult(interp, "%d", id);
 
     xfree(rargv);
 

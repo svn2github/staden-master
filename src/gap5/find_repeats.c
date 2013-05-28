@@ -14,6 +14,8 @@
 #include "editor_view.h"
 #include "tk-io-reg.h"
 #include "dna_utils.h"
+#include "find_oligo.h"
+#include "check_assembly.h"
 
 /*
  * Match callback.
@@ -177,12 +179,12 @@ void repeat_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
 
 	if (r->all_hidden)
 	    jdata->get_ops.ops = "PLACEHOLDER\0PLACEHOLDER\0Information\0"
-		"PLACEHOLDER\0Hide all\0Reveal all\0Sort Matches\0"
-		    "SEPARATOR\0Remove\0";
+		"PLACEHOLDER\0Hide all\0Reveal all\0Sort matches\0"
+		    "Save matches\0SEPARATOR\0Remove\0";
 	else
 	    jdata->get_ops.ops = "Use for 'Next'\0Reset 'Next'\0Information\0"
-		"Configure\0Hide all\0Reveal all\0Sort Matches\0"
-		    "SEPARATOR\0Remove\0";
+		"Configure\0Hide all\0Reveal all\0Sort matches\0"
+		    "Save matches\0SEPARATOR\0Remove\0";
 	break;
 
 
@@ -214,7 +216,17 @@ void repeat_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
 	    csmatch_reset_hash(csplot_hash, (mobj_repeat *)r);
 	    r->current = -1;
 	    break;
-	case 7: /* Remove */
+	case 7: { /* Save */
+	    char *fn;
+	    if (Tcl_VarEval(GetInterp(), "tk_getSaveFile ", "-parent ",
+			    cs->window, NULL) != TCL_OK)
+		break;
+	    fn = Tcl_GetStringResult(GetInterp());
+	    if (fn && *fn)
+		csmatch_save(r, fn);
+	    break;
+	}
+	case 8: /* Remove */
 	    csmatch_remove(io, cs->window, (mobj_repeat *)r,
 			   csplot_hash);
 	    break;
@@ -256,6 +268,21 @@ void repeat_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
     case REG_LENGTH:
 	csmatch_replot(io, (mobj_repeat *)r, csplot_hash, cs->window);
 	break;
+
+    case REG_GENERIC:
+	switch (jdata->generic.task) {
+	    int ret;
+
+	case TASK_CS_PLOT:
+	    PlotRepeats(io, (mobj_repeat *)r);
+	    Tcl_VarEval(GetInterp(), "CSLastUsed ", CPtr2Tcl(r), NULL);
+	    break;
+
+	case TASK_CS_SAVE:
+	    ret = csmatch_save(r, (char *)jdata->generic.data);
+	    vTcl_SetResult(GetInterp(), "%d", ret);
+	    break;
+	}
     }
 }
 
@@ -299,9 +326,6 @@ int plot_rpt(GapIO *io, int nres, obj_match *matches) {
     /* Sort matches */
     qsort(repeat->match, repeat->num_match, sizeof(obj_match), sort_func);
 
-    PlotRepeats(io, repeat);
-    Tcl_VarEval(GetInterp(), "CSLastUsed ", CPtr2Tcl(repeat), NULL);
-
     /*
      * Register the repeat search with each of the contigs used.
      * Currently we assume that this is all.
@@ -309,10 +333,11 @@ int plot_rpt(GapIO *io, int nres, obj_match *matches) {
     id = register_id();
     contig_register(io, 0, repeat_callback, (void *)repeat, id,
 		    REG_REQUIRED | REG_DATA_CHANGE | REG_OPS |
-		    REG_NUMBER_CHANGE | REG_ORDER, REG_TYPE_REPEAT);
+		    REG_NUMBER_CHANGE | REG_ORDER | REG_GENERIC,
+		    REG_TYPE_REPEAT);
     update_results(io);
 
-    return 0;
+    return id;
 }
 
 int
@@ -442,9 +467,7 @@ find_repeats(GapIO *io,
     }
 #endif
 
-    if (plot_rpt(io, ret, matches)) goto bail_out;
-
-    retval = 0;
+    retval = plot_rpt(io, ret, matches);
 
  bail_out:
     if ( pos1 )  xfree(pos1);
@@ -454,7 +477,160 @@ find_repeats(GapIO *io,
     if ( contig_list )  xfree(contig_list);
     if ( depadded )     free(depadded);
     if ( depad_to_pad ) free(depad_to_pad);
-    if ( retval && matches ) xfree(matches);
+    if ( retval <= 0 && matches ) xfree(matches);
 
     return retval;
 } /* end FindRepeats */
+
+/*
+ * Loads a file (already opened in fp) of repeats / oligos / check assembly
+ * and returns a registered ID.
+ *
+ * Returns -1 on failure.
+ */
+int csmatch_load_repeats(GapIO *io, FILE *fp, int match_type) {
+    tg_rec c1, c2;
+    int pos1, pos2, end1, end2, length, rpos, score, n;
+    tg_rec read_rec;
+    int asize = 0;
+    obj_match *r;
+    char *val;
+    int id;
+
+    mobj_repeat *m = calloc(1, sizeof(*m));
+    if (!m)
+	return -1;
+
+    strcpy(m->tagname, CPtr2Tcl(m));
+    m->num_match = 0;
+    m->match = NULL;
+    m->io = io;
+    m->all_hidden = 0;
+    m->current = -1;
+    m->match_type = match_type;
+    switch (m->match_type) {
+    case REG_TYPE_REPEAT:
+	val = get_default_string(GetInterp(), gap5_defs, "FINDREP.COLOUR");
+	strcpy(m->colour, val);
+	m->linewidth = get_default_int(GetInterp(), gap5_defs,
+				       "FINDREP.LINEWIDTH");
+	m->reg_func = repeat_callback;
+	break;
+
+    case REG_TYPE_OLIGO:
+	val = get_default_string(GetInterp(), gap5_defs, "FINDOLIGO.COLOUR");
+	strcpy(m->colour, val);
+	m->linewidth = get_default_int(GetInterp(), gap5_defs,
+				       "FINDOLIGO.LINEWIDTH");
+	m->reg_func = find_oligo_callback;
+	break;
+
+    case REG_TYPE_CHECKASS:
+	val = get_default_string(GetInterp(), gap5_defs,
+				 "CHECK_ASSEMBLY.COLOUR");
+	strcpy(m->colour, val);
+	m->linewidth = get_default_int(GetInterp(), gap5_defs,
+				       "CHECK_ASSEMBLY.LINEWIDTH");
+	m->reg_func = check_assembly_callback;
+	break;
+
+    default:
+	return -1;
+    }
+
+    while (10 == (n = fscanf(fp, "%"PRIrec" %d %d %"PRIrec" %d %d %d %d %"PRIrec" %d\n",
+			    &c1, &pos1, &end1, &c2, &pos2, &end2,
+			    &length, &rpos, &read_rec, &score))) {
+	contig_t *c;
+
+	if (m->num_match >= asize) {
+	    asize = asize ? asize*2 : 16;
+	    m->match = realloc(m->match,
+			       asize * sizeof(*m->match));
+	    if (!m->match)
+		return -1;
+	}
+
+	if (!cache_exists(io, GT_Contig, ABS(c1)) ||
+	    !(c = cache_search(io, GT_Contig, ABS(c1)))) {
+	    verror(ERR_WARN, "csmatch_load_repeat",
+		   "Contig =%"PRIrec" does not exist", ABS(c1));
+	    continue;
+	}
+
+	if (pos1 < c->start)
+	    pos1 = c->start;
+	if (end1 > c->end)
+	    end1 = c->end;
+
+	if (!cache_exists(io, GT_Contig, ABS(c2)) ||
+	    !(c = cache_search(io, GT_Contig, ABS(c2)))) {
+	    verror(ERR_WARN, "csmatch_load_repeat",
+		   "Contig =%"PRIrec" does not exist", ABS(c2));
+	    continue;
+	}
+
+	if (pos2 < c->start)
+	    pos2 = c->start;
+	if (end2 > c->end)
+	    end2 = c->end;
+
+	r = &m->match[m->num_match++];
+	switch (match_type) {
+	case REG_TYPE_REPEAT:
+	    r->func = repeat_obj_func;
+	    break;
+
+	case REG_TYPE_OLIGO:
+	    if (read_rec || (ABS(c1) == ABS(c2) && pos1 == pos2))
+		r->func = find_oligo_obj_func2;
+	    else
+		r->func = find_oligo_obj_func1;
+	    break;
+
+	case REG_TYPE_CHECKASS:
+	    r->func = (void *(*)(int, void *, struct obj_match_t *,
+				 struct mobj_repeat_t *))checkass_obj_func;
+	    break;
+
+	default: 
+	    return -1;
+	}
+	r->data = m;
+
+	r->c1 = c1;
+	r->c2 = c2;
+	r->pos1 = pos1;
+	r->pos2 = pos2;
+	r->end1 = end1;
+	r->end2 = end2;
+	r->length = length;
+	r->rpos = rpos;
+	r->read = read_rec;
+	r->score = score;
+	r->flags = 0; // fixme
+    }
+    if (n != EOF)
+	verror(ERR_WARN, "csmatch_load_repeat", "File malformatted or truncated");
+
+    if (m->num_match) {
+	id = register_id();
+	contig_register(io, 0, m->reg_func, (void *)m, id,
+			REG_REQUIRED | REG_DATA_CHANGE | REG_OPS |
+			REG_NUMBER_CHANGE | REG_ORDER | REG_GENERIC,
+			m->match_type);
+	update_results(io);
+
+	return id;
+    }
+
+ err:
+    if (m) {
+	if (m->match)
+	    free(m->match);
+
+	free(m);
+    }
+
+    return -1;
+}

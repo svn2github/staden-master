@@ -142,7 +142,7 @@ void *checkass_obj_func(int job, void *jdata, obj_checkass *obj,
     switch(job) {
     case OBJ_LIST_OPERATIONS:
 	return "Information\0Hide\0Invoke contig editor *\0"
-	    "SEPARATOR\0Remove\0";
+	    "Save matches\0SEPARATOR\0Remove\0";
 
     case OBJ_INVOKE_OPERATION:
 	switch(*((int *)jdata)) {
@@ -192,7 +192,18 @@ void *checkass_obj_func(int job, void *jdata, obj_checkass *obj,
 	    break;
 	}
 
-	case 3: /* Remove */
+	case 3: { /* Save */
+	    char *fn;
+	    if (Tcl_VarEval(GetInterp(), "tk_getSaveFile ", "-parent ",
+			    cs->window, NULL) != TCL_OK)
+		break;
+	    fn = Tcl_GetStringResult(GetInterp());
+	    if (fn && *fn)
+		csmatch_save((mobj_repeat *)ca, fn);
+	    break;
+	}
+
+	case 4: /* Remove */
 	    obj_remove(GetInterp(), cs->window, obj,
 		       (mobj_repeat *)ca, csplot_hash);
 	    break;
@@ -251,12 +262,12 @@ void check_assembly_callback(GapIO *io, tg_rec contig, void *fdata,
 
 	if (r->all_hidden)
 	    jdata->get_ops.ops = "PLACEHOLDER\0PLACEHOLDER\0Information\0"
-		"PLACEHOLDER\0Hide all\0Reveal all\0Sort Matches\0"
-		    "SEPARATOR\0Remove\0";
+		"PLACEHOLDER\0Hide all\0Reveal all\0Sort matches\0"
+		    "Save matches\0SEPARATOR\0Remove\0";
 	else
 	    jdata->get_ops.ops = "Use for 'Next'\0Reset 'Next'\0Information\0"
-		"Configure\0Hide all\0Reveal all\0Sort Matches\0"
-		    "SEPARATOR\0Remove\0";
+		"Configure\0Hide all\0Reveal all\0Sort matches\0"
+		    "Save matches\0SEPARATOR\0Remove\0";
 	break;
 
 
@@ -288,7 +299,17 @@ void check_assembly_callback(GapIO *io, tg_rec contig, void *fdata,
 	    csmatch_reset_hash(csplot_hash, (mobj_repeat *)r);
 	    r->current = -1;
 	    break;
-	case 7: /* Remove */
+	case 7: { /* Save */
+	    char *fn;
+	    if (Tcl_VarEval(GetInterp(), "tk_getSaveFile ", "-parent ",
+			    cs->window, NULL) != TCL_OK)
+		break;
+	    fn = Tcl_GetStringResult(GetInterp());
+	    if (fn && *fn)
+		csmatch_save((mobj_repeat *)r, fn);
+	    break;
+	}
+	case 8: /* Remove */
 	    csmatch_remove(io, cs->window, (mobj_repeat *)r,
 			   csplot_hash);
 	    break;
@@ -328,6 +349,21 @@ void check_assembly_callback(GapIO *io, tg_rec contig, void *fdata,
     case REG_LENGTH:
 	csmatch_replot(io, (mobj_repeat *)r, csplot_hash, cs->window);
 	break;
+
+    case REG_GENERIC:
+	switch (jdata->generic.task) {
+	    int ret;
+
+	case TASK_CS_PLOT:
+	    PlotRepeats(io, (mobj_repeat *)r);
+	    Tcl_VarEval(GetInterp(), "CSLastUsed ", CPtr2Tcl(r), NULL);
+	    break;
+
+	case TASK_CS_SAVE:
+	    ret = csmatch_save(r, (char *)jdata->generic.data);
+	    vTcl_SetResult(GetInterp(), "%d", ret);
+	    break;
+	}
     }
 }
 
@@ -368,7 +404,6 @@ int check_assembly_plot(GapIO *io, tg_rec *reads, tg_rec *conts, int *score,
 	sprintf(ca->params, "Unknown at present");
     ca->all_hidden = 0;
     ca->current = -1;
-    ca->current = -1;
     ca->reg_func = check_assembly_callback;
     ca->match_type = REG_TYPE_CHECKASS;
 
@@ -382,15 +417,13 @@ int check_assembly_plot(GapIO *io, tg_rec *reads, tg_rec *conts, int *score,
 	matches[i].end1 = matches[i].end2 = pos[i] + length[i];
 	matches[i].length = length[i];
 	matches[i].score = score[i];
+	matches[i].rpos = 0;
 	matches[i].flags = 0;
 	matches[i].read = reads[i];
     }
 
     /* Sort matches */
     qsort(ca->match, ca->num_match, sizeof(obj_match), sort_func);
-
-    PlotRepeats(io, (mobj_repeat *)ca);
-    Tcl_VarEval(GetInterp(), "CSLastUsed ", CPtr2Tcl(ca), NULL);
 
     /*
      * Register the repeat search with each of the contigs used.
@@ -399,10 +432,11 @@ int check_assembly_plot(GapIO *io, tg_rec *reads, tg_rec *conts, int *score,
     id = register_id();
     contig_register(io, 0, check_assembly_callback, (void *)ca, id,
 		    REG_REQUIRED | REG_DATA_CHANGE | REG_OPS |
-		    REG_NUMBER_CHANGE | REG_ORDER, REG_TYPE_CHECKASS);
+		    REG_NUMBER_CHANGE | REG_ORDER | REG_GENERIC,
+		    REG_TYPE_CHECKASS);
     update_results(io);
 
-    return 0;
+    return id;
 }
 
 /*
@@ -415,7 +449,7 @@ int check_assembly_plot(GapIO *io, tg_rec *reads, tg_rec *conts, int *score,
  */
 int check_assembly(GapIO *io, int num_contigs, contig_list_t *contigs,
 		   int winsize, float maxperc, int ignore_N) {
-    int i, sc, count = 0, allocated = 0;
+    int i, sc, count = 0, allocated = 0, id;
     char *con;
     tg_rec *reads = NULL, *conts = NULL;
     int *score = NULL, *length = NULL, *pos = NULL;
@@ -460,7 +494,8 @@ int check_assembly(GapIO *io, int num_contigs, contig_list_t *contigs,
 	xfree(con);
     }
 
-    if (-1 == check_assembly_plot(io, reads, conts, score, pos, length, count))
+    id = check_assembly_plot(io, reads, conts, score, pos, length, count);
+    if (-1 == id)
 	goto error;
 
     if (reads)
@@ -474,7 +509,7 @@ int check_assembly(GapIO *io, int num_contigs, contig_list_t *contigs,
     if (score)
 	xfree(score);
 
-    return 0;
+    return id;
 
  error:
     if (reads)

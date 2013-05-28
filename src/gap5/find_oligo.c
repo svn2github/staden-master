@@ -30,9 +30,9 @@
  * functions to act upon matches generated using TAGs
  */
 void *find_oligo_obj_func1(int job,
-			  void *jdata,
-			  obj_match *obj,
-			  mobj_find_oligo *find_oligo)
+			   void *jdata,
+			   obj_match *obj,
+			   mobj_find_oligo *find_oligo)
 {
     static char buf[80];
     obj_cs *cs;
@@ -171,9 +171,9 @@ void *find_oligo_obj_func1(int job,
  * functions to act upon matches generated using SEQUENCE
  */
 void *find_oligo_obj_func2(int job,
-			  void *jdata,
-			  obj_match *obj,
-			  mobj_find_oligo *find_oligo)
+			   void *jdata,
+			   obj_match *obj,
+			   mobj_find_oligo *find_oligo)
 {
     static char buf[80];
     obj_cs *cs;
@@ -407,7 +407,7 @@ void find_oligo_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata)
 	    break;
 
 	case TASK_CS_SAVE:
-	    ret = csmatch_save(r, "/tmp/plot.out");
+	    ret = csmatch_save(r, (char *)jdata->generic.data);
 	    vTcl_SetResult(GetInterp(), "%d", ret);
 	    break;
 
@@ -483,7 +483,6 @@ RegFindOligo(GapIO *io,
 			   struct mobj_repeat_t *))find_oligo_obj_func1;
 	    matches[i].c2     = c2[i];
 	    matches[i].read   = 0;
-	    matches[i].pos2   = 0;
 	    matches[i].pos2   = pos2[i];
 	} else if (type == SEQUENCE) {
 	    matches[i].func =
@@ -1042,6 +1041,7 @@ StringMatch(GapIO *io,                                                 /* in */
     return -1;
 }
 
+
 int
 find_oligos(GapIO *io,
 	    int num_contigs,
@@ -1189,16 +1189,81 @@ find_oligo_file(GapIO *io,
 {
     char **ids;
     int nids;
-    int i;
-    int r = 0; /* ret. code */
+    int i, id = -1;
+    int *pos1 = NULL;
+    int *pos2 = NULL;
+    int *score = NULL;
+    int *length = NULL;
+    tg_rec *c1 = NULL;
+    tg_rec *c2 = NULL;
+    int max_matches, abs_max;
+    int seq_len;
+    int n_matches = 0;
+    int max_clen;
+    char **cons_array = NULL;
 
     /* Use seq_utils to parse the input file */
     if (0 != get_identifiers(file, &ids, &nids))
 	return -1;
+ 
+    /*
+     * FIXME.
+     *
+     * Memory allocation is dire here. We should have StringMatch returning
+     * an obj_match array and reallocating as it goes. In turn this needs
+     * to recall inexact_pad_match multiple times possibly if we find
+     * many matches within one contig (or allocate suitable temp arrays
+     * per contig.
+     *
+     * For now we take the quick and easy approach instead.
+     */
 
+    /* Calculate maximum contig length and total contig length */
+    for (max_matches = 0, max_clen = 0, i=0; i<num_contigs; i++) {
+	if (io_clength(io, contig_array[i].contig) > max_clen)
+	    max_clen = io_clength(io, contig_array[i].contig);
+	max_matches += io_clength(io, contig_array[i].contig);
+    }
+    max_matches *= 2; /* both strands */
+
+    abs_max = get_default_int(GetInterp(), gap5_defs, "FINDOLIGO.MAX_MATCHES");
+
+    if (max_matches > abs_max)
+	max_matches = abs_max;
+
+    if (NULL == (pos1 = (int *)xmalloc((max_matches + 1) * sizeof(int))))
+	goto error;
+    if (NULL == (pos2 = (int *)xmalloc((max_matches + 1) * sizeof(int))))
+	goto error;
+    if (NULL == (score = (int *)xmalloc((max_matches + 1) * sizeof(int))))
+	goto error;
+    if (NULL == (length = (int *)xmalloc((max_matches + 1) * sizeof(int))))
+	goto error;
+    if (NULL == (c1 = (tg_rec *)xmalloc((max_matches + 1) * sizeof(tg_rec))))
+	goto error;
+    if (NULL == (c2 = (tg_rec *)xmalloc((max_matches + 1) * sizeof(tg_rec))))
+	goto error;
+
+    /* save consensus for each contig */
+    if (NULL == (cons_array = (char **)xmalloc(num_contigs * sizeof(char *))))
+	goto error;
+
+    for (i = 0; i < num_contigs; i++) {
+	seq_len = contig_array[i].end - contig_array[i].start + 1;
+	if (NULL == (cons_array[i] = (char *)xmalloc(seq_len + 1)))
+	    goto error;
+
+	calculate_consensus_simple(io, contig_array[i].contig,
+				   contig_array[i].start, contig_array[i].end,
+				   cons_array[i], NULL);
+
+	cons_array[i][seq_len] = '\0';
+    }
+
+    clear_list("seq_hits");
     for (i = 0; i < nids; i++) {
 	char *seq;
-	int seq_len;
+	int seq_len, n;
 
 	seq = NULL;
 	seq_len = 0;
@@ -1213,13 +1278,30 @@ find_oligo_file(GapIO *io,
 	}
 
 	vmessage("Sequence search for ID '%s'\n", ids[i]);
-	r |= find_oligos(io, num_contigs, contig_array, mis_match,
-			 seq, consensus_only, in_cutoff);
-	vmessage("\n");
+
+	n = StringMatch(io, num_contigs, contig_array,
+			cons_array, seq, mis_match,
+			&pos1[n_matches], &pos2[n_matches],
+			&score[n_matches], &length[n_matches],
+			&c1[n_matches], &c2[n_matches],
+			max_matches - n_matches,
+			consensus_only, in_cutoff);
+	if (n > 0)
+	    n_matches += n;
 
 	if (seq)
 	    xfree(seq);
+
+	if (n_matches >= max_matches) {
+	    vmessage("Hit maximum number of sequence matches. Bailing out.\n");
+	    break;
+	}
     }
+    list_remove_duplicates("seq_hits");
+
+    if (-1 == (id = RegFindOligo(io, SEQUENCE, pos1, pos2, score,
+				 length, c1, c2, n_matches)))
+	goto error;
 
     /* Tidy up memory */
     for (i = 0; i < nids; i++) {
@@ -1227,5 +1309,34 @@ find_oligo_file(GapIO *io,
     }
     xfree(ids);
 
-    return r;
+    for (i = 0; i < num_contigs; i++) {
+	if (cons_array[i])
+	    xfree(cons_array[i]);
+    }
+    xfree(cons_array);
+    xfree(c1);
+    xfree(c2);
+    xfree(pos1);
+    xfree(pos2);
+    xfree(score);
+    xfree(length);
+    return id;
+
+ error:
+    if (c1)
+	xfree(c1);
+    if (c2)
+	xfree(c2);
+    if (cons_array)
+	xfree(cons_array);
+    if (pos1)
+	xfree(pos1);
+    if (pos2)
+	xfree(pos2);
+    if (score)
+	xfree(score);
+    if (length)
+	xfree(length);
+
+    return -1;
 }

@@ -170,13 +170,23 @@ proc Find_Rep_OK_Pressed {io f infile id sel_task sel_mode add_tags min_rpt\
 
     # If repeats are found, this also sets the tag_list variable
     SetBusy
-    log_call find_repeats \
-	-io $io \
-	-direction $sel_task \
-        -min_match $min_rpt\
-	-contigs $list \
-	-outfile $outfile \
-	-tag_types $active_tags
+    set id [log_call find_repeats \
+		-io $io \
+		-direction $sel_task \
+		-min_match $min_rpt\
+		-contigs $list \
+		-outfile $outfile \
+		-tag_types $active_tags]
+
+    if {$id > 0} {
+	# Draw it too
+	result_notify \
+	    -io $io \
+	    -id $id \
+	    -type GENERIC \
+	    -args "{task TASK_CS_PLOT}"
+    }
+
     ClearBusy
 }
 

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "xalloc.h"
 #include "cs-object.h"
@@ -635,9 +636,9 @@ int csmatch_save(mobj_generic *m, char *fn) {
     case REG_TYPE_FIJ: {
 	obj_fij *o = m->fij.match;
 	for (i = 0; i < m->fij.num_match; i++, o++) {
-	    fprintf(fp, "%"PRId64" %d %"PRId64" %d %d %d %f\n",
-		    o->c1, o->pos1, o->c2, o->pos2, o->length,
-		    o->score, o->percent / 10000.0);
+	    fprintf(fp, "%"PRId64"\t%d\t%d\t%"PRId64"\t%d\t%d\t%d\t%d\t%f\n",
+		    o->c1, o->pos1, o->end1, o->c2, o->pos2, o->end2,
+		    o->length, o->score, o->percent / 10000.0);
 
 	}
 	break;
@@ -648,9 +649,9 @@ int csmatch_save(mobj_generic *m, char *fn) {
     case REG_TYPE_OLIGO:  {
 	obj_match *o = m->repeat.match;
 	for (i = 0; i < m->repeat.num_match; i++, o++) {
-	    fprintf(fp, "%"PRId64" %d %"PRId64" %d %d %"PRId64" %"PRId64" %d\n",
-		    o->c1, o->pos1, o->c2, o->pos2, o->length,
-		    o->rpos, o->read, o->score);
+	    fprintf(fp, "%"PRId64"\t%d\t%d\t%"PRId64"\t%d\t%d\t%d\t%"PRId64"\t%"PRId64"\t%d\n",
+		    o->c1, o->pos1, o->end1, o->c2, o->pos2, o->end2,
+		    o->length, o->rpos, o->read, o->score);
 
 	}
 	break;
@@ -659,9 +660,9 @@ int csmatch_save(mobj_generic *m, char *fn) {
     case REG_TYPE_READPAIR: {
 	obj_read_pair *o = (obj_read_pair *)m->read_pair.match;
 	for (i = 0; i < m->read_pair.num_match; i++, o++) {
-	    fprintf(fp, "%"PRId64" %d %"PRId64" %d %d %"PRId64" %"PRId64" %d %d\n",
-		    o->c1, o->pos1, o->c2, o->pos2, o->length,
-		    o->read1, o->read2, o->mq1, o->mq2);
+	    fprintf(fp, "%"PRId64"\t%d\t%d\t%"PRId64"\t%d\t%d\t%d\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
+		    o->c1, o->pos1, o->end1, o->c2, o->pos2, o->end2,
+		    o->length, o->read1, o->read2, o->mq1, o->mq2);
 	}
 	break;
     }
@@ -671,4 +672,53 @@ int csmatch_save(mobj_generic *m, char *fn) {
     }
 
     return fclose(fp);
+}
+
+/*
+ * Loads a cs-match object and returns the appropriate mobj_generic.
+ *
+ * Returns registered result ID on success
+ *         -1 on failure
+ */
+int csmatch_load(GapIO *io, char *fn) {
+    char line[8192];
+    FILE *fp = NULL;
+    char *cp;
+    int id = -1;
+
+    if (!(fp = fopen(fn, "r")))
+	goto err;
+
+    if (!fgets(line, 8192, fp))
+	goto err;
+    line[8191] = 0;
+
+    if (strncmp(line, "G5_PLOT", 7) != 0)
+	goto err;
+
+    for (cp = line+7; isspace(*cp); cp++)
+	;
+    
+    if (strcmp(cp, "FIND_INTERNAL_JOINS\n") == 0) {
+	id = csmatch_load_fij(io, fp);
+    } else if (strcmp(cp, "FIND_READ_PAIRS\n") == 0) {
+	id = csmatch_load_read_pairs(io, fp);
+    } else if (strcmp(cp, "FIND_REPEATS\n") == 0) {
+	id = csmatch_load_repeats(io, fp, REG_TYPE_REPEAT);
+    } else if (strcmp(cp, "FIND_OLIGOS\n") == 0) {
+	id = csmatch_load_repeats(io, fp, REG_TYPE_OLIGO);
+    } else if (strcmp(cp, "CHECK_ASSEMBLY\n") == 0) {
+	id = csmatch_load_repeats(io, fp, REG_TYPE_CHECKASS);
+    } else {
+	verror(ERR_WARN, "csmatch_load", "Unknown plot type %s", cp);
+	goto err;
+    }
+
+    fclose(fp);
+    return id;
+
+ err:
+    if (fp)
+	fclose(fp);
+    return -1;
 }

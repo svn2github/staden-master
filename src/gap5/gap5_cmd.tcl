@@ -390,6 +390,270 @@ proc ::cmd::auto_join::run {dbname _options} {
 
 
 #-----------------------------------------------------------------------------
+# COMMAND: fij
+namespace eval cmd::fij {
+    set name "Find Internal Joins"
+}
+
+set ::cmd::fij::opts {
+    h|help  0 0    {}     {Shows this help.}
+    {} {} {} {} {}
+    
+    contigs       1 {*} list {Output only specific contigs. 'list' is a space separated list of contig names}
+    strict        0 0   {}   {Strict parameter set; filtered >=50bp @ 0% mismatch}
+    lenient       0 0   {}   {Lenient parameter set; >=30bp @ 5% mismatch}
+    o|out         1 fij.out {fn} {Output filename for Contig Comparator}
+    {} {} {} {} {}    	  
+    min_overlap   1 50  val  {Minimum length of alignment}
+    word_length   1 12  val  {Word length for hashing}
+    min_match     1 50  val  {Minimum length of initial exact match}
+    max_pmismatch 1 0.0 val  {Maximum percentage mismatch}
+    rp_mode       1 off mode {Read-pair checking mode, one of off, end_end, end_all, all_all}
+    rp_end_size   1 5000 val {Size of portion to treat as contig end}
+    rp_min_mq     1 10  val  {Minimum mapping quality for read-pair}
+    rp_min_freq   1 2   val  {Minimum number of spanning read-pairs}
+    filter_words  1 5   N    {Filter repeat words occuring more than N times}
+    fastest       0 0   {}   {Enable "fastest" mode}
+}
+
+proc ::cmd::fij::_lenient {_options} {
+    upvar $_options opt
+    set opt(min_overlap)   30
+    set opt(min_match)     20
+    set opt(max_pmismatch) 5.0
+    set opt(rp_mode)       off
+    set opt(filter_words)  10
+}
+
+proc ::cmd::fij::_strict {_options} {
+    upvar $_options opt
+    set opt(min_overlap)   50
+    set opt(min_match)     50
+    set opt(max_pmismatch) 0.0
+    set opt(rp_mode)       end_end
+    set opt(rp_min_freq)   2
+    set opt(filter_words)  5
+}
+
+proc ::cmd::fij::run {dbname _options} {
+    upvar $_options opt
+    set io [db_open $dbname rw]
+
+    if {$opt(contigs) == "*"} {
+	set opt(contigs) [CreateAllContigList=Numbers $io]
+    }
+
+    set fast_mode 1
+    if {$opt(fastest)} {incr fast_mode}
+
+    set id [find_internal_joins \
+		-io            $io \
+		-contigs1      $opt(contigs) \
+		-contigs2      $opt(contigs) \
+		-min_overlap   $opt(min_overlap) \
+		-max_pmismatch $opt(max_pmismatch) \
+		-word_length   $opt(word_length) \
+		-min_match     $opt(min_match) \
+		-filter_words  $opt(filter_words) \
+		-fast_mode     $fast_mode \
+		-rp_mode       $opt(rp_mode) \
+		-rp_end_size   $opt(rp_end_size) \
+		-rp_min_mq     $opt(rp_min_mq) \
+		-rp_min_freq   $opt(rp_min_freq) \
+		-use_conf      0 \
+		-min_conf      0 \
+		-use_hidden    0]
+
+    result_notify \
+	-io $io \
+	-id $id \
+	-type GENERIC \
+	-args "{task TASK_CS_SAVE data [list $opt(out)]}"
+
+    $io close
+}
+
+
+#-----------------------------------------------------------------------------
+# COMMAND: find_repeats
+namespace eval cmd::find_repeats {
+    set name "Find Repeats"
+}
+
+set ::cmd::find_repeats::opts {
+    h|help  0 0    {}     {Shows this help.}
+    {} {} {} {} {}
+    
+    contigs       1 {*} list {Output only specific contigs. 'list' is a space separated list of contig names}
+    o|out         1 repeats.out {fn} {Output filename for Contig Comparator}
+    min_match     1 50  val  {Minimum length repeat}
+    direction     1 1   dir  {Direction; 1=fwd, 2=rev, 3=both}
+    tag_file      1 {}  fn   {Create file of repeat tags}
+}
+
+proc ::cmd::find_repeats::run {dbname _options} {
+    upvar $_options opt
+    set io [db_open $dbname rw]
+
+    if {$opt(contigs) == "*"} {
+	set opt(contigs) [CreateAllContigList=Numbers $io]
+    }
+
+    set id [find_repeats \
+		-io            $io \
+		-contigs       $opt(contigs) \
+		-min_match     $opt(min_match) \
+		-outfile       $opt(tag_file) \
+		-direction     $opt(direction)]
+
+    result_notify \
+	-io $io \
+	-id $id \
+	-type GENERIC \
+	-args "{task TASK_CS_SAVE data [list $opt(out)]}"
+
+    $io close
+}
+
+
+#-----------------------------------------------------------------------------
+# COMMAND: find_read_pairs
+namespace eval cmd::find_read_pairs {
+    set name "Find Read Pairs"
+}
+
+set ::cmd::find_read_pairs::opts {
+    h|help  0 0    {}     {Shows this help.}
+    {} {} {} {} {}
+    
+    contigs       1 {*} list {Output only specific contigs. 'list' is a space separated list of contig names}
+    o|out         1 read_pairs.out {fn} {Output filename for Contig Comparator}
+    {} {} {} {} {}    	  
+    mode         1 end_end mode {Read-pair checking mode, one of end_end, end_all, all_all}
+    end_size     1 2000 val {Size of portion to treat as contig end}
+    min_mq       1 10  val  {Minimum mapping quality for read-pair}
+    min_freq     1 2   val  {Minimum number of spanning read-pairs}
+    libraries    1 {}  list {Space separated list of library record numbers}
+}
+
+proc ::cmd::find_read_pairs::run {dbname _options} {
+    upvar $_options opt
+    set io [db_open $dbname rw]
+
+    if {$opt(contigs) == "*"} {
+	set opt(contigs) [CreateAllContigList=Numbers $io]
+    }
+
+    set id [find_read_pairs \
+		-io            $io \
+		-contigs       $opt(contigs) \
+		-mode          $opt(mode) \
+		-end_size      $opt(end_size) \
+		-min_map_qual  $opt(min_mq) \
+		-min_freq      $opt(min_freq) \
+		-libraries     $opt(libraries)]
+
+    result_notify \
+	-io $io \
+	-id $id \
+	-type GENERIC \
+	-args "{task TASK_CS_SAVE data [list $opt(out)]}"
+
+    $io close
+}
+
+
+#-----------------------------------------------------------------------------
+# COMMAND: find_oligos
+namespace eval cmd::find_oligos {
+    set name "Find Oligos (Sequence Search)"
+}
+
+set ::cmd::find_oligos::opts {
+    h|help  0 0    {}     {Shows this help.}
+    {} {} {} {} {}
+    
+    contigs       1 {*} list {Output only specific contigs. 'list' is a space separated list of contig names}
+    o|out         1 oligos.out  {fn} {Output filename for Contig Comparator}
+    min_pmatch 1  100.0 val  {Minimum percentage match}
+    seq           1 {}  str  {DNA sequence to search for}
+    c|consensus_only 0 0 {} {Only search for matches in the consensus}
+    cutoffs       1 0   val  {Also look for matches in clipped/cutoff sequence}
+    rp_min_freq   1 2   val  {Minimum number of spanning read-pairs}
+    seq_file      1 {}  fn   {Use 'fn' as a file of sequences to search for}
+}
+
+proc ::cmd::find_oligos::run {dbname _options} {
+    upvar $_options opt
+    set io [db_open $dbname rw]
+
+    if {$opt(contigs) == "*"} {
+	set opt(contigs) [CreateAllContigList=Numbers $io]
+    }
+
+    set id [find_oligo \
+		-io             $io \
+		-contigs        $opt(contigs) \
+		-seq            $opt(seq) \
+		-consensus_only $opt(consensus_only) \
+		-cutoffs        $opt(cutoffs) \
+		-file           $opt(seq_file) \
+		-min_pmatch     $opt(min_pmatch)]
+
+    result_notify \
+	-io $io \
+	-id $id \
+	-type GENERIC \
+	-args "{task TASK_CS_SAVE data [list $opt(out)]}"
+
+    $io close
+}
+
+
+#-----------------------------------------------------------------------------
+# COMMAND: check_assembly
+namespace eval cmd::check_assembly {
+    set name "Check Assembly"
+}
+
+set ::cmd::check_assembly::opts {
+    h|help  0 0    {}     {Shows this help.}
+    {} {} {} {} {}
+    
+    contigs       1 {*} list {Output only specific contigs. 'list' is a space separated list of contig names}
+    o|out         1 errs.out {fn} {Output filename for Contig Comparator}
+    {} {} {} {} {}    	  
+    max_pmismatch 1 15.0 val  {Maximum percentage mismatch}
+    win_size      1 30   val  {Window size over which to look for mismatches}
+    N|ignore_N    0 0    {}   {Treat N as a matching base}
+}
+
+proc ::cmd::check_assembly::run {dbname _options} {
+    upvar $_options opt
+    set io [db_open $dbname rw]
+
+    if {$opt(contigs) == "*"} {
+	set opt(contigs) [CreateAllContigList=Numbers $io]
+    }
+
+    set id [check_assembly \
+		-io            $io \
+		-contigs       $opt(contigs) \
+		-max_pmismatch $opt(max_pmismatch) \
+		-win_size      $opt(win_size) \
+		-ignore_N      $opt(ignore_N)]
+
+    result_notify \
+	-io $io \
+	-id $id \
+	-type GENERIC \
+	-args "{task TASK_CS_SAVE data [list $opt(out)]}"
+
+    $io close
+}
+
+
+#-----------------------------------------------------------------------------
 # Main entry
 
 set cmd [lindex $argv 0]
