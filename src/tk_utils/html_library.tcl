@@ -2,7 +2,7 @@
 # Copyright (c) 1995 by Sun Microsystems
 # Version 0.3 Fri Sep  1 10:47:17 PDT 1995
 #
-# See the file "license.terms" for information on usage and redistribution
+# See the file "tcl-license.terms" for information on usage and redistribution
 # of this file, and for a DISCLAIMER OF ALL WARRANTIES.
 #
 # To use this package,  create a text widget (say, .text)

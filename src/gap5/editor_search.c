@@ -745,7 +745,7 @@ int edview_search_name(edview *xx, int dir, int strand, char *value)
 	rangec_t *r;
 
 	/* From name index */
-	rec = rp[i++];
+	rec = rp[i];
 	sequence_get_clipped_position(xx->io, rec, &cnum, &start, &end,
 				      &cstart, NULL, NULL);
 	if (cnum == xx->cnum) {
