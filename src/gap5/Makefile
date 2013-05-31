@@ -221,7 +221,7 @@ install:
 	$(INSTALL) gap5_cmd $(INSTALLBIN)
 
 distsrc: distsrc_dirs
-	cp $(S)/*.[ch] $(S)/*.tcl $(S)/*.in $(S)/tclIndex $(S)/Makefile 
+	cp $(S)/*.[ch] $(S)/*.tcl $(S)/*.in $(S)/tclIndex $(S)/Makefile \
 	   $(S)/gap5rc $(S)/gap5rc_menu_full $(DIRNAME)
 
 # DO NOT DELETE THIS LINE -- make depend depends on it.

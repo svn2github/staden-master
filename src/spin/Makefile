@@ -90,7 +90,7 @@ DEPEND_OBJ = $(OBJS)
 
 distsrc: distsrc_dirs
 	cp $(S)/*.[ch] $(S)/*.tcl $(S)/tclIndex $(DIRNAME)
-	cp $(S)/Makefile $(S)/spin $(S)/spin.bat $(DIRNAME)
+	cp $(S)/Makefile $(S)/spin.in $(S)/spin.bat $(DIRNAME)
 	cp $(S)/*.wts $(S)/niprc $(S)/siprc $(S)/spinrc $(DIRNAME)
 
 install:

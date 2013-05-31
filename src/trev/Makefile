@@ -3,7 +3,7 @@ include $(SRCROOT)/global.mk
 include ../system.mk
 
 distsrc: distsrc_dirs
-	cp $(S)/*.tcl $(S)/trevrc $(S)/trev $(S)/trev.bat $(S)/Makefile $(DIRNAME)
+	cp $(S)/*.tcl $(S)/trevrc $(S)/trev.in $(S)/trev.bat $(S)/Makefile $(DIRNAME)
 
 install:
 	$(INSTALL) trev $(INSTALLBIN)

@@ -21,7 +21,7 @@ spotless: clean cleanprogs cleanlibs
 
 .PHONY: distsrc install
 distsrc: distsrc_dirs
-	cp $(S)/Makefile $(S)/*.tcl $(S)/*.xbm $(S)/tclIndex $(S)/pregap4 \
+	cp $(S)/Makefile $(S)/*.tcl $(S)/*.xbm $(S)/tclIndex $(S)/pregap4.in \
 	   $(S)/pregap4.bat $(S)/widget_licence $(S)/pregap4rc $(DIRNAME)
 	-mkdir $(DIRNAME)/modules
 	cp $(S)/modules/*.p4m $(DIRNAME)/modules

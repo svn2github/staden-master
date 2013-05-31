@@ -83,7 +83,7 @@ install:
 
 distsrc: distsrc_dirs
 	cp $(S)/*.[ch] $(S)/*.tcl $(S)/*.itcl $(S)/*.itk $(S)/help \
-	   $(S)/args.template $(S)/Makefile $(S)/prefinish $(S)/tclIndex \
+	   $(S)/args.template $(S)/Makefile $(S)/prefinish.in $(S)/tclIndex \
 	   $(S)/config.prefinish $(S)/finish_sanger $(S)/finish_cDNA \
 	   $(S)/finish_cDNA_ends_only $(S)/prefinishrc \
 	   $(DIRNAME)

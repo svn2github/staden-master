@@ -270,7 +270,7 @@ install:
 	cp $(S)/*.bitmap $(S)/*.gif $(INSTALLETC)
 
 distsrc: distsrc_dirs
-	cp $(S)/*.[chf] $(S)/*.tcl $(S)/tclIndex $(S)/Makefile $(S)/gap4 \
+	cp $(S)/*.[chf] $(S)/*.tcl $(S)/tclIndex $(S)/Makefile $(S)/gap4.in \
 	   $(S)/gap4.bat $(S)/GTAGDB $(S)/NOTEDB $(S)/*.bitmap $(S)/*.gif \
 	   $(S)/gaprc $(S)/gaprc_menu_full $(S)/gaprc_menu_mito \
 	   $(S)/cap2rc $(S)/cap3rc $(S)/fak2rc $(S)/phraprc $(DIRNAME)

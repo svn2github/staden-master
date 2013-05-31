@@ -43,7 +43,7 @@ install:
 	cp $(S)/copy_readsrc $(INSTALLETC)
 
 distsrc: distsrc_dirs
-	cp $(S)/*.[ch] $(S)/*.tcl $(S)/tclIndex $(S)/copy_reads \
+	cp $(S)/*.[ch] $(S)/*.tcl $(S)/tclIndex $(S)/copy_reads.in \
 	   $(S)/Makefile $(S)/copy_readsrc $(DIRNAME)
 
 DEPEND_OBJ = $(OBJS)
