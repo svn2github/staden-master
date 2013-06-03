@@ -23,6 +23,7 @@
 #include <unistd.h>		/* IMPORT: lseek, pread, ... */
 #include <string.h>		/* IMPORT: memset() */
 #include <errno.h>
+#include <assert.h>
 
 #include "array.h"
 
@@ -789,12 +790,13 @@ static int g_unlock_views(GDB *gdb, GView v)
 	 * Is this a record we're attempting to remove?
 	 */
 	if (arr(View,gdb->view,v).flags & G_VIEW_DELETED) {
+	    assert(gfile->header.free_record != cache->rec);
 	    cache->used = gfile->header.free_record;
 	    gfile->header.free_record = cache->rec;
 
-	    update_record(gfile, cache->rec, cache->image, cache->allocated,
+	    update_record(gfile, cache->rec, cache->image,
+			  cache->allocated,
 			  cache->used, edtime, &old_images[i]);
-
 	    updates++;
 
 	/*
@@ -1657,6 +1659,13 @@ int g_free_rec_(GDB *gdb, GClient c, GFileN file_N) {
 
     ind = g_read_index(gdb->gfile, rec);
     ind->flags |= G_INDEX_NEW;
+
+    if (ind->aux_used == rec) {
+	/* Workaround for unknown bug */
+	gfile->header.free_record = G_NO_REC;
+	return G_NO_REC;
+    }
+
     g_write_index(gfile, rec, ind);
 
     /*
