@@ -577,9 +577,13 @@ proc get_consensus {args} {
     }
     fconfigure $fd -translation binary
 
+    array set contig_done ""
     foreach contig $opt(-contigs) {
 	foreach {id start end} $contig {
 	    set crec [cname2crec $io $id]
+	    if {[info exists contig_done($crec)]} break
+	    set contig_done($crec) 1
+
 	    set c [$io get_contig $crec]
 	    if {$start == ""} {set start [$c get_visible_start]}
 	    if {$end   == ""} {set end   [$c get_visible_end]}
