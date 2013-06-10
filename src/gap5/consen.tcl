@@ -585,6 +585,7 @@ proc get_consensus {args} {
 	    set contig_done($crec) 1
 
 	    set c [$io get_contig $crec]
+	    set id [$c get_name]
 	    if {$start == ""} {set start [$c get_visible_start]}
 	    if {$end   == ""} {set end   [$c get_visible_end]}
 	    $c delete
