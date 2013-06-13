@@ -280,4 +280,7 @@ void csmatch_contig_delete(GapIO *io, mobj_repeat *r, tg_rec contig,
 void csmatch_replot(GapIO *io, mobj_repeat *r, HTablePtr T[], char *cs_plot);
 void csmatch_reset_next(mobj_repeat *r);
 
+int csmatch_save(mobj_generic *m, char *fn);
+int csmatch_load(GapIO *io, char *fn);
+
 #endif

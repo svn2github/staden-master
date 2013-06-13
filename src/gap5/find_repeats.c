@@ -223,7 +223,7 @@ void repeat_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
 		break;
 	    fn = Tcl_GetStringResult(GetInterp());
 	    if (fn && *fn)
-		csmatch_save(r, fn);
+		csmatch_save((mobj_generic *) r, fn);
 	    break;
 	}
 	case 8: /* Remove */
@@ -279,7 +279,7 @@ void repeat_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
 	    break;
 
 	case TASK_CS_SAVE:
-	    ret = csmatch_save(r, (char *)jdata->generic.data);
+	    ret = csmatch_save((mobj_generic *) r, (char *)jdata->generic.data);
 	    vTcl_SetResult(GetInterp(), "%d", ret);
 	    break;
 	}

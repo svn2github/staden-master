@@ -658,7 +658,8 @@ static void sam_export_cons_tag(GapIO *io, scram_fd *bf, fifo_t *fi,
 		      -1, 0, 0,
 		      0, "", "");
 
-    bam_aux_add_data(&bam, "CT", 'Z', dstring_length(ds)+1, dstring_str(ds));
+    bam_aux_add_data(&bam, "CT", 'Z',
+		     dstring_length(ds)+1, (uint8_t *) dstring_str(ds));
     
     scram_put_seq(bf, bam);
 }
@@ -951,16 +952,16 @@ static void sam_export_seq(GapIO *io, scram_fd *bf,
 	else
 	    sprintf(rg_buf, "rg#%"PRIrec, lib->rec);
 
-	bam_aux_add_data(&bam, "RG", 'Z', strlen(rg_buf)+1, rg_buf);
+	bam_aux_add_data(&bam, "RG", 'Z', strlen(rg_buf)+1, (uint8_t *) rg_buf);
     }
 
     if (tname_len != s->name_len) {
 	bam_aux_add_data(&bam, "FS", 'Z', s->name_len - tname_len + 1,
-			 s->name + tname_len);
+			 (uint8_t *) s->name + tname_len);
     }
 
     if (s->aux_len) {
-	bam_add_raw(&bam, s->aux_len, s->sam_aux);
+	bam_add_raw(&bam, s->aux_len, (uint8_t *) s->sam_aux);
     }
 
     /*--- Attach tags for this sequence too */
@@ -1068,7 +1069,7 @@ static void sam_export_seq(GapIO *io, scram_fd *bf,
     }
     if (!first_tag)
 	bam_aux_add_data(&bam, "PT", 'Z', dstring_length(ds)+1,
-			 dstring_str(ds));
+			 (uint8_t *) dstring_str(ds));
 
     if (depad_map)
 	free(depad_map);

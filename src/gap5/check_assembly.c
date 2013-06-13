@@ -199,7 +199,7 @@ void *checkass_obj_func(int job, void *jdata, obj_checkass *obj,
 		break;
 	    fn = Tcl_GetStringResult(GetInterp());
 	    if (fn && *fn)
-		csmatch_save((mobj_repeat *)ca, fn);
+		csmatch_save((mobj_generic *)ca, fn);
 	    break;
 	}
 
@@ -306,7 +306,7 @@ void check_assembly_callback(GapIO *io, tg_rec contig, void *fdata,
 		break;
 	    fn = Tcl_GetStringResult(GetInterp());
 	    if (fn && *fn)
-		csmatch_save((mobj_repeat *)r, fn);
+		csmatch_save((mobj_generic *)r, fn);
 	    break;
 	}
 	case 8: /* Remove */
@@ -360,7 +360,7 @@ void check_assembly_callback(GapIO *io, tg_rec contig, void *fdata,
 	    break;
 
 	case TASK_CS_SAVE:
-	    ret = csmatch_save(r, (char *)jdata->generic.data);
+	    ret = csmatch_save((mobj_generic *) r, (char *)jdata->generic.data);
 	    vTcl_SetResult(GetInterp(), "%d", ret);
 	    break;
 	}

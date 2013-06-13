@@ -202,8 +202,8 @@ static int CONTIGL_sort_func(const void *v1, const void *v2) {
  * We make sure this is maintained here.
  */
 static void resort_contigl(MALIGN *malign) {
-    CONTIGL *lastl, *cl, **sorted, **last;
-    int swapped, i, nele, noop = 1, last_offset = INT_MIN;
+    CONTIGL *cl, **sorted;
+    int i, nele, noop = 1, last_offset = INT_MIN;
 
     /*
      * This list is almost sorted already, but in excessive depth areas we

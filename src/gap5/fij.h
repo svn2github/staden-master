@@ -32,4 +32,6 @@ void buffij(tg_rec c1, int pos1, int end1,
 	    tg_rec c2, int pos2, int end2,
 	    int len, int score, double percent);
 
+int csmatch_load_fij(GapIO *io, FILE *fp);
+
 #endif /* _FIJ_H_ */

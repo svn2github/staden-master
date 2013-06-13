@@ -1568,7 +1568,6 @@ int cache_flush(GapIO *io) {
 	for (i = 0; i < h->nbuckets; i++) {
 	    HacheItem *next;
 	    for (hi = h->bucket[i]; hi; hi = next) {
-		HacheData data;
 		cached_item *ci = hi->data.p;
 
 		next = hi->next;
@@ -2385,7 +2384,7 @@ int cache_item_remove(GapIO *io, int type, tg_rec rec) {
 	sub_rec = rec & (SCAFFOLD_BLOCK_SZ-1);
 	rec >>= SCAFFOLD_BLOCK_BITS;
 	fb = cache_search(io, GT_ScaffoldBlock, rec);
-	fb = cache_rw(io, cb);
+	fb = cache_rw(io, fb);
 	fb->scaffold[sub_rec] = NULL;
 	break;
 

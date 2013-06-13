@@ -35,4 +35,6 @@ read_pair_t *spanning_pairs(GapIO *io, int num_contigs,
 			    int end_size, int min_mq, int min_freq,
 			    HashTable *lib_hash);
 
+int csmatch_load_read_pairs(GapIO *io, FILE *fp);
+
 #endif /* _READPAIR_H_ */

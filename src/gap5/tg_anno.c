@@ -403,8 +403,6 @@ static int delete_tag_single_contig(GapIO *io, tg_rec crec,
 	char t[5];
 	(void)type2str(r->mqual, t);
 	if (!h || HashTableSearch(h, t, 4)) {
-	    anno_ele_t *e;
-
 	    if (verbose)
 		vmessage("Removing anno %s #%"PRIrec"\tContig %s\t%d..%d\n",
 			 t, r->rec, c->name, r->start, r->end);

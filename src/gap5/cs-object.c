@@ -13,6 +13,9 @@
 #include "tk-io-reg.h"
 #include "gap4_compat.h"
 #include "consensus.h"
+#include "fij.h"
+#include "readpair.h"
+#include "find_repeats.h"
 
 /*
  * ============================================================================

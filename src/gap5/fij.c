@@ -247,7 +247,7 @@ void fij_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
 		break;
 	    fn = Tcl_GetStringResult(GetInterp());
 	    if (fn && *fn)
-		csmatch_save(r, fn);
+		csmatch_save((mobj_generic *) r, fn);
 	    break;
 	}
 	case 8: /* Remove */
@@ -308,7 +308,7 @@ void fij_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
 	    break;
 
 	case TASK_CS_SAVE:
-	    ret = csmatch_save(r, (char *)jdata->generic.data);
+	    ret = csmatch_save((mobj_generic *) r, (char *)jdata->generic.data);
 	    vTcl_SetResult(GetInterp(), "%d", ret);
 	    break;
 
@@ -711,7 +711,6 @@ buffij(tg_rec c1, int pos1, int end1,
  */
 static int auto_join(GapIO *io, mobj_fij *r) {
     int i, j, nr, nr_orig;
-    char PAD_SYM = '.';
 
     if (!r)
 	return -1;
@@ -725,10 +724,10 @@ static int auto_join(GapIO *io, mobj_fij *r) {
 	int l1, r1, l2, r2; /* contig used extents */
 	int left1,right1,oleft1,oright1;
 	int left2,right2,oleft2,oright2;
-	int offset, ret;
+	int offset;
 	int overlapLength;
 	int len1,len2;
-	int shift, extra;
+	int extra;
 
 	vmessage("Processing join %d of %d: =%+"PRIrec" vs =%+"PRIrec"\n",
 		 j+1, nr_orig, m->c1, m->c2);

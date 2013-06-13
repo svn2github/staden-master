@@ -14,6 +14,7 @@
 #include "align.h"
 #include "dna_utils.h"
 #include "align_lib.h"
+#include "text_output.h"
 
 #include "dis_readings.h"
 
@@ -418,6 +419,7 @@ int align_apply_edits(GapIO *io0, tg_rec c0,
 
     cache_decr(io0, ctg0);
     cache_decr(io1, ctg1);
+    return 0;
 }
 
 /*

@@ -347,7 +347,7 @@ void find_oligo_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata)
 	    Tcl_Eval(GetInterp(), "tk_getSaveFile");
 	    fn = Tcl_GetStringResult(GetInterp());
 	    if (fn && *fn) {
-		if (csmatch_save(r, fn) == -1) {
+		if (csmatch_save((mobj_generic *) r, fn) == -1) {
 		    Tcl_Eval(GetInterp(), "tk_messageBox -type error -icon error -message \"Failed to save file\"");
 		}
 	    }
@@ -407,7 +407,7 @@ void find_oligo_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata)
 	    break;
 
 	case TASK_CS_SAVE:
-	    ret = csmatch_save(r, (char *)jdata->generic.data);
+	    ret = csmatch_save((mobj_generic *) r, (char *)jdata->generic.data);
 	    vTcl_SetResult(GetInterp(), "%d", ret);
 	    break;
 

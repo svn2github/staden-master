@@ -18,6 +18,8 @@ typedef struct {
 
 int join_contigs(GapIO *io, tg_rec clrec, tg_rec crrec, int offset);
 
+void alignment_free(alignment_t *a);
+
 alignment_t *align_contigs(GapIO *io0, tg_rec c0, int pos0, int len0,
 			   GapIO *io1, tg_rec c1, int pos1, int len1,  
 			   int fixed_left,
