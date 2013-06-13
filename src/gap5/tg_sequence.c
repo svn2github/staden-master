@@ -759,6 +759,8 @@ int sequence_get_clipped_position(GapIO *io, tg_rec snum, tg_rec *contig,
 	st2 = st2 + s->left-1;
     }
 
+    cache_decr(io, s);
+
     if (clipped_start)
 	*clipped_start = st2;
     if (clipped_end)
