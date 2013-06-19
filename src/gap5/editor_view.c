@@ -217,6 +217,11 @@ void edview_renumber(edview *xx, tg_rec new_contig) {
     HacheItem *hi;
     HacheData hd;
     
+    /* Drop the selection if it happens to be on the old consensus */
+    if (xx->select_made && xx->select_seq == xx->cnum) {
+	edSelectClear(xx);
+    }
+
     /* Remove this instance from edview_hash */
     for (hi = HacheTableSearch(edview_hash, (char *)&xx->cnum, sizeof(tg_rec));
 	 NULL != hi;
