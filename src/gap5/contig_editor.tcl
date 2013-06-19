@@ -1049,21 +1049,19 @@ proc contig_editor {w args} {
     }
     grid $pane1  -sticky nsew -row 3
     grid $status -sticky nsew -row 4
-
+    
     # Synchronised pane movement
     set opt(panes) $pane1.pane
     if {$join} {
 	lappend opt(panes) $diffs.pane $pane0.pane
     }
-
     foreach p $opt(panes) {
-	bind $p <ButtonRelease-1> "+sync_panes %W $w 1 1"
-	bind $p <ButtonRelease-2> "+sync_panes %W $w 0 1"
+	bind $p <ButtonRelease-1> "+sync_panes %W $w 1"
+	bind $p <ButtonRelease-2> "+sync_panes %W $w 1"
 
-	bind $p <Any-B2-Motion> "+sync_panes %W $w 0 0"
+	bind $p <Any-B2-Motion> "+sync_panes %W $w 0"
     }
-    sync_panes $pane1.pane opt 0 1
-
+    sync_panes $pane1.pane opt 1
     # Grid control
     # In theory this should work, but in practice getting the panedwindow
     # widget to correctly honour the side of the internal components is
@@ -1276,7 +1274,7 @@ proc editor_pane {top w above ind arg_array} {
 
     set w $f.pane
     panedwindow $w -orient horiz -bd 1 -relief sunken \
-	-showhandle 1 -sashrelief raised
+	-showhandle 1 -sashrelief raised -opaqueresize 1
 
     frame $w.name -bd 0 -highlightthickness 0
     frame $w.seq -bd 0 -highlightthickness 0
@@ -1392,6 +1390,7 @@ proc editor_pane {top w above ind arg_array} {
     set posh [expr {$posh1>$posh2?$posh1:$posh2}]
 
     incr posh -8;# 4 lots of jog borderwidth
+    
     jog $w.seq.jog \
 	-orient horiz \
 	-command "jog_editor $w.seq.sheet" \
@@ -1407,7 +1406,7 @@ proc editor_pane {top w above ind arg_array} {
     grid $w.name.pos $w.name.pos_type -row $jogrow    -sticky nsew
 
     $w.name configure -width [expr {[keylget gap5_defs CONTIG_EDITOR.NAMES_WIDTH]*[font measure sheet_font A]}]
-
+    
     grid rowconfigure $w.seq $textrow -weight 1
     grid columnconfigure $w.seq 0 -weight 1
     grid $w.seq.sheet $w.seq.y -row $textrow   -sticky nsew
@@ -1431,7 +1430,7 @@ proc editor_pane {top w above ind arg_array} {
 			-command "contig_register_callback $ed" \
 			-flags [list HIGHLIGHT_READ]]
     $ed init $opt(io$ind) $opt(contig$ind) $opt(-reading$ind) $opt(-pos$ind) $w.name.sheet
-
+    
     if {$ind == 2} {
 	set ${ed}(side) top
     } else {
@@ -1499,18 +1498,14 @@ proc diff_pane {w} {
 }
 
 # Synchronises the pane position between a list of panes
-proc sync_panes {w arg_array proxy round} {
+proc sync_panes {w arg_array round} {
     upvar $arg_array opt
 
     if {[winfo class $w] != "Panedwindow"} {
 	set w $w.pane
     }
 
-    if {$proxy} {
-	foreach {px y} [$w proxy coord] {}
-    } else {
-	foreach {px y} [$w sash coord 0] {}
-    }
+    foreach {px y} [$w sash coord 0] {}
 
     if {$round} {
 	set fs [font measure sheet_font A]
@@ -1518,7 +1513,7 @@ proc sync_panes {w arg_array proxy round} {
     } else {
 	set x $px
     }
-
+    
     foreach pane $opt(panes) {
 	if {[winfo class $pane] != "Panedwindow"} {
 	    set pane $pane.pane
@@ -2784,6 +2779,7 @@ proc update_brief {w {name 0} {x {}} {y {}}} {
     set w [set ${w}(top)]
     global $w
     set ${w}(Status) $msg
+
 }
 
 proc editor_name_select {w where {num 0}} {
@@ -4592,7 +4588,6 @@ proc ednames_select_drag {W x y pair} {
     UpdateReadingListItem $opt(OutputList) [list "\#$rec"] $EdNames_select $pair
     editor_name_select $W [$W get_number @$x @$y]
 }
-
 
 
 bind Editor <Key-Return> {editor_return %W}
