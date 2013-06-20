@@ -228,7 +228,8 @@ int calculate_consensus_simple(GapIO *io, tg_rec contig, int start, int end,
 		s = (seq_t *)cache_search(io, GT_Seq, cons_r->rec);
 
 		/* Double check sizes */
-		if (s && cons_r->start == 0 && cons_r->end == bin->size-1) {
+		if (s && cons_r->start == 0 && cons_r->end == bin->size-1 &&
+		    bend - bstart + 1 == s->len) {
 		    cache_incr(io, s);
 		    valid = 1;
 		} else {
@@ -249,6 +250,8 @@ int calculate_consensus_simple(GapIO *io, tg_rec contig, int start, int end,
 		    valid = 0;
 		    if (!s)
 			cons_r = NULL;
+		    else
+			cache_incr(io, s);
 		}
 	    }
 	    if (!valid) {
