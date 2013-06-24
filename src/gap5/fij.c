@@ -871,6 +871,8 @@ static int auto_join(GapIO *io, mobj_fij *r) {
 	if (nr == 1)
 	    break; // r will have been deallocated.
 
+	cache_flush(io);
+
 	i--;
     }
 
