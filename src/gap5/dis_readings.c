@@ -255,21 +255,28 @@ static int unlink_read(GapIO *io, tg_rec rec, r_pos_t *pos, int remove) {
      * Remove from bin range array. Delay consistency checking until
      * we've removed everything.
      */
-    bin = cache_search(io, GT_Bin, pos->bin);
-    if (!c || !bin) {
+    if (!(bin = cache_search(io, GT_Bin, pos->bin))) {
 	cache_decr(io, seq);
 	return -1;
     }
+    cache_incr(io, bin);
 
-    c = cache_search(io, GT_Contig, pos->contig);
+    if (!(c = cache_search(io, GT_Contig, pos->contig))) {
+	cache_decr(io, seq);
+	cache_decr(io, bin);
+	return -1;
+    }
     cache_incr(io, c);
+
     if (fast_remove_item_from_bin(io, &c, &bin, GT_Seq, rec, seq->bin_index)) {
 	cache_decr(io, seq);
+	cache_decr(io, bin);
 	cache_decr(io, c);
 	return -1;
     }
 
     cache_decr(io, seq);
+    cache_decr(io, bin);
     cache_decr(io, c);
 
     /*
