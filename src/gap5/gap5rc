@@ -661,7 +661,7 @@ set_def FIJ.BANDSIZE.MAX		100
 set_def FIJ.BANDSIZE.VALUE		5
 
 set_def FIJ.MAXMIS			$defs_maxmis
-set_def FIJ.MAXMIS.VALUE		10.00
+set_def FIJ.MAXMIS.VALUE		30.00
 
 set_def FIJ.WORDLENGTH.NAME		"Word length"
 set_def FIJ.WORDLENGTH.BUTTON.1		12

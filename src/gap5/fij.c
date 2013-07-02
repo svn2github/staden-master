@@ -844,6 +844,9 @@ fij(fij_arg *fij_args,
 	goto out;
     }
 
+    FIJMatch->params = fij_params(fij_args);
+    vmessage("\n%s\n", FIJMatch->params);
+
     global_match = FIJMatch;
     counter = 0;
 
@@ -885,15 +888,12 @@ fij(fij_arg *fij_args,
 
     FIJMatch->linewidth = get_default_int(GetInterp(), gap5_defs,
 					  "FIJ.LINEWIDTH");
-    FIJMatch->params = fij_params(fij_args);
     FIJMatch->all_hidden = 0;
     FIJMatch->current = -1;
     FIJMatch->reg_func = fij_callback;
     FIJMatch->match_type = REG_TYPE_FIJ;
     FIJMatch->max_mismatch = fij_args->max_mis;
     FIJMatch->min_length = fij_args->min_match;
-
-    vmessage("\n%s\n", FIJMatch->params);
 
     /* Filter matches */
     if (fij_args->unique_ends)
