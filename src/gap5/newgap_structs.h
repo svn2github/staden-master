@@ -147,6 +147,7 @@ typedef struct {
     /* char *mode; */
     int mask;
     int min_overlap;
+    int max_overlap;
     float max_mis;
     int word_len;
     float max_prob;
@@ -163,15 +164,21 @@ typedef struct {
     char *tag_list;
     char *inlist1;
     char *inlist2;
+    int min_depth;
+    int max_depth;
+    int containments;
+    int ends;
     /* Read-pair screening options */
     char   *rp_mode_str;
     int     rp_mode;
     int     rp_end_size;
     int     rp_min_mq;
     int     rp_min_freq;
+    int     rp_min_perc;
     char   *rp_libraries;
     tg_rec *rp_library;
     int     rp_nlibrary;
+    int     unique_ends;
 } fij_arg;
 
 typedef struct {

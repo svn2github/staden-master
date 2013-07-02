@@ -16,6 +16,19 @@ load_package tk_utils
 tk_utils_init
 load_package gap5
 
+set consensus_mode          [keylget gap5_defs CONSENSUS_MODE]
+set consensus_cutoff        [keylget gap5_defs CONSENSUS_CUTOFF]
+set quality_cutoff          [keylget gap5_defs QUALITY_CUTOFF]
+set chem_as_double          [keylget gap5_defs CHEM_AS_DOUBLE]
+set consensus_iub           [keylget gap5_defs CONSENSUS_IUB]
+set template_size_tolerance [keylget gap5_defs TEMPLATE_TOLERANCE]
+set min_vector_len          [keylget gap5_defs MIN_VECTOR_LENGTH]
+set align_open_cost         [keylget gap5_defs ALIGNMENT.OPEN.COST]
+set align_extend_cost       [keylget gap5_defs ALIGNMENT.EXTEND.COST]
+load_alignment_matrix       [keylget gap5_defs ALIGNMENT.MATRIX_FILE]
+set ignore_all_ptype        [keylget gap5_defs IGNORE_ALL_PTYPE]
+set ignore_custom_ptype     [keylget gap5_defs IGNORE_CUSTOM_PTYPE]
+	
 # Error reporting, override the tk route
 catch {rename tk_messageBox {}}
 proc tk_messageBox {args} {
@@ -105,6 +118,7 @@ proc parse_opts {argv cmd opts} {
 		    }
 		    set opt([lindex $tlist end]) [lindex $argv 1]
 		    set skip 2
+		    catch {::cmd::${cmd}::_[lindex $tlist 0] opt}
 		    break
 		}
 	    }
@@ -312,12 +326,15 @@ set ::cmd::auto_join::opts {
     h|help  0 0    {}     {Shows this help.}
     {} {} {} {} {}
     
-    contigs       1 {*} list {Output only specific contigs. 'list' is a space separated list of contig names}
+    contigs       1 {*} list {Compare only specific contigs against each other. 'list' is a space separated list of contig names}
+    contigs1      1 {*} list {Compare set 1 against set 2. 'list' is a space separated list of contig names}
+    contigs2      1 {*} list {Compare set 1 against set 2. 'list' is a space separated list of contig names}
     strict        0 0   {}   {Strict parameter set; filtered >=50bp @ 0% mismatch}
     lenient       0 0   {}   {Lenient parameter set; >=30bp @ 5% mismatch}
     n|dry_run     0 0   {}   {Find joins only, but do not make them}
     {} {} {} {} {}    	  
     min_overlap   1 50  val  {Minimum length of alignment}
+    max_overlap   1 0   val  {Maximum length of alignment (0 => no maximum)}
     word_length   1 12  val  {Word length for hashing}
     min_match     1 50  val  {Minimum length of initial exact match}
     max_pmismatch 1 0.0 val  {Maximum percentage mismatch}
@@ -325,8 +342,21 @@ set ::cmd::auto_join::opts {
     rp_end_size   1 5000 val {Size of portion to treat as contig end}
     rp_min_mq     1 10  val  {Minimum mapping quality for read-pair}
     rp_min_freq   1 2   val  {Minimum number of spanning read-pairs}
+    rp_min_perc   1 70  val  {Minimum percentage of spanning read-pairs}
+    rp_libs       1 {*} list {Libraries to use for read-pair scanning, specify a blank list to see the choices available.}
     filter_words  1 5   N    {Filter repeat words occuring more than N times}
     fastest       0 0   {}   {Enable "fastest" mode}
+    min_depth     1 0   val  {Minimum depth (0 => no minimum)}
+    max_depth     1 0   val  {Maximum depth (0 => no maximum)}
+    no_containments 0 0 {}   {Disallow containment joins}
+    no_ends         0 0 {}   {Disallow overlap joins between contig ends}
+    unique_ends   0 0   {}   {Only make joins between contig ends that match uniquely to one place.}
+}
+
+proc ::cmd::auto_join::_contigs {_options} {
+    upvar $_options opt
+    set opt(contigs1) $opt(contigs)
+    set opt(contigs2) $opt(contigs)
 }
 
 proc ::cmd::auto_join::_lenient {_options} {
@@ -350,20 +380,73 @@ proc ::cmd::auto_join::_strict {_options} {
 
 proc ::cmd::auto_join::run {dbname _options} {
     upvar $_options opt
-    set io [db_open $dbname rw]
 
-    if {$opt(contigs) == "*"} {
-	set opt(contigs) [CreateAllContigList=Numbers $io]
+    if {$opt(dry_run)} {
+	set io [db_open $dbname ro]
+    } else {
+	set io [db_open $dbname rw]
     }
 
-    set fast_mode 1
+    if {$opt(rp_libs) == "*"} {
+	set opt(rp_libs) ""; #Gap5 interprets that as all
+
+    } elseif {$opt(rp_libs) == ""} {
+	puts "List of available libraries, as #num or name:"
+	set db [$io get_database]
+	set nl [$db get_num_libraries]
+	for {set i 0} {$i < $nl} {incr i} {
+	    set rec [$db get_library_rec $i]
+	    set lib [$io get_library $rec]
+	    puts "\t#$rec\t[$lib get_name]"
+	    $lib delete
+	}
+	exit 0
+
+    } else {
+	set libs ""
+
+	set db [$io get_database]
+	set nl [$db get_num_libraries]
+	foreach lib_id $opt(rp_libs) {
+	    if {[regexp {^#([0-9]+)} $lib_id _ rec]} {
+		lappend libs $rec
+	    } else {
+		for {set i 0} {$i < $nl} {incr i} {
+		    set rec [$db get_library_rec $i]
+		    set lib [$io get_library $rec]
+		    if {[string match [$lib get_name] $lib_id]} {
+			lappend libs $rec
+			$lib delete
+			break;
+		    }
+		    $lib delete
+		}
+		if {$i == $nl} {
+		    puts stderr "Library name \"$lib_id\" not found."
+		    $io close
+		    exit 1
+		}
+	    }
+	}
+	set opt(rp_libs) $libs
+    }
+
+    if {$opt(contigs1) == "*"} {
+	set opt(contigs1) [CreateAllContigList=Numbers $io]
+    }
+    if {$opt(contigs2) == "*"} {
+	set opt(contigs2) [CreateAllContigList=Numbers $io]
+    }
+
+    set fast_mode 0
     if {$opt(fastest)} {incr fast_mode}
 
     set id [find_internal_joins \
 		-io            $io \
-		-contigs1      $opt(contigs) \
-		-contigs2      $opt(contigs) \
+		-contigs1      $opt(contigs1) \
+		-contigs2      $opt(contigs2) \
 		-min_overlap   $opt(min_overlap) \
+		-max_overlap   $opt(max_overlap) \
 		-max_pmismatch $opt(max_pmismatch) \
 		-word_length   $opt(word_length) \
 		-min_match     $opt(min_match) \
@@ -373,6 +456,13 @@ proc ::cmd::auto_join::run {dbname _options} {
 		-rp_end_size   $opt(rp_end_size) \
 		-rp_min_mq     $opt(rp_min_mq) \
 		-rp_min_freq   $opt(rp_min_freq) \
+		-rp_min_perc   $opt(rp_min_perc) \
+		-rp_libraries  $opt(rp_libs) \
+	        -min_depth     $opt(min_depth) \
+	        -max_depth     $opt(max_depth) \
+	        -containments  [expr {!$opt(no_containments)}] \
+	        -ends          [expr {!$opt(no_ends)}] \
+	        -unique_ends   $opt(unique_ends) \
 		-use_conf      0 \
 		-min_conf      0 \
 		-use_hidden    0]
@@ -399,12 +489,15 @@ set ::cmd::fij::opts {
     h|help  0 0    {}     {Shows this help.}
     {} {} {} {} {}
     
-    contigs       1 {*} list {Output only specific contigs. 'list' is a space separated list of contig names}
+    contigs       1 {*} list {Compare only specific contigs against each other. 'list' is a space separated list of contig names}
+    contigs1      1 {*} list {Compare set 1 against set 2. 'list' is a space separated list of contig names}
+    contigs2      1 {*} list {Compare set 1 against set 2. 'list' is a space separated list of contig names}
     strict        0 0   {}   {Strict parameter set; filtered >=50bp @ 0% mismatch}
     lenient       0 0   {}   {Lenient parameter set; >=30bp @ 5% mismatch}
     o|out         1 fij.out {fn} {Output filename for Contig Comparator}
     {} {} {} {} {}    	  
     min_overlap   1 50  val  {Minimum length of alignment}
+    max_overlap   1 0   val  {Maximum length of alignment (0 => no maximum)}
     word_length   1 12  val  {Word length for hashing}
     min_match     1 50  val  {Minimum length of initial exact match}
     max_pmismatch 1 0.0 val  {Maximum percentage mismatch}
@@ -412,8 +505,20 @@ set ::cmd::fij::opts {
     rp_end_size   1 5000 val {Size of portion to treat as contig end}
     rp_min_mq     1 10  val  {Minimum mapping quality for read-pair}
     rp_min_freq   1 2   val  {Minimum number of spanning read-pairs}
+    rp_min_perc   1 70  val  {Minimum percentage of spanning read-pairs}
+    rp_libs       1 {*} list {Libraries to use for read-pair scanning, specify a blank list to see the choices available.}
     filter_words  1 5   N    {Filter repeat words occuring more than N times}
     fastest       0 0   {}   {Enable "fastest" mode}
+    min_depth     1 -1  val  {Minimum median depth of combined contig (-1 => no minimum)}
+    max_depth     1 -1  val  {Maximum median depth of combined contig (-1 => no maximum)}
+    containments  1 1   bool {Allow containment joins}
+    ends          1 1   bool {Allow overlap joins between contig ends}
+}
+
+proc ::cmd::fij::_contigs {_options} {
+    upvar $_options opt
+    set opt(contigs1) $opt(contigs)
+    set opt(contigs2) $opt(contigs)
 }
 
 proc ::cmd::fij::_lenient {_options} {
@@ -439,18 +544,67 @@ proc ::cmd::fij::run {dbname _options} {
     upvar $_options opt
     set io [db_open $dbname rw]
 
-    if {$opt(contigs) == "*"} {
-	set opt(contigs) [CreateAllContigList=Numbers $io]
+    if {$opt(rp_libs) == "*"} {
+	set opt(rp_libs) ""; #Gap5 interprets that as all
+
+    } elseif {$opt(rp_libs) == ""} {
+	puts "List of available libraries, as #num or name:"
+	set db [$io get_database]
+	set nl [$db get_num_libraries]
+	for {set i 0} {$i < $nl} {incr i} {
+	    set rec [$db get_library_rec $i]
+	    set lib [$io get_library $rec]
+	    puts "\t#$rec\t[$lib get_name]"
+	    $lib delete
+	}
+	exit 0
+
+    } else {
+	set libs ""
+
+	set db [$io get_database]
+	set nl [$db get_num_libraries]
+	foreach lib_id $opt(rp_libs) {
+	    if {[regexp {^#([0-9]+)} $lib_id _ rec]} {
+		lappend libs $rec
+	    } else {
+		for {set i 0} {$i < $nl} {incr i} {
+		    set rec [$db get_library_rec $i]
+		    set lib [$io get_library $rec]
+		    if {[string match [$lib get_name] $lib_id]} {
+			lappend libs $rec
+			$lib delete
+			break;
+		    }
+		    $lib delete
+		}
+		if {$i == $nl} {
+		    puts stderr "Library name \"$lib_id\" not found."
+		    $io close
+		    exit 1
+		}
+	    }
+	}
+	set opt(rp_libs) $libs
     }
 
-    set fast_mode 1
+    if {$opt(contigs1) == "*"} {
+	set opt(contigs1) [CreateAllContigList=Numbers $io]
+    }
+
+    if {$opt(contigs2) == "*"} {
+	set opt(contigs2) [CreateAllContigList=Numbers $io]
+    }
+
+    set fast_mode 0
     if {$opt(fastest)} {incr fast_mode}
 
     set id [find_internal_joins \
 		-io            $io \
-		-contigs1      $opt(contigs) \
-		-contigs2      $opt(contigs) \
+		-contigs1      $opt(contigs1) \
+		-contigs2      $opt(contigs2) \
 		-min_overlap   $opt(min_overlap) \
+		-max_overlap   $opt(max_overlap) \
 		-max_pmismatch $opt(max_pmismatch) \
 		-word_length   $opt(word_length) \
 		-min_match     $opt(min_match) \
@@ -460,6 +614,12 @@ proc ::cmd::fij::run {dbname _options} {
 		-rp_end_size   $opt(rp_end_size) \
 		-rp_min_mq     $opt(rp_min_mq) \
 		-rp_min_freq   $opt(rp_min_freq) \
+		-rp_min_perc   $opt(rp_min_perc) \
+		-rp_libraries  $opt(rp_libs) \
+	        -min_depth     $opt(min_depth) \
+	        -max_depth     $opt(max_depth) \
+	        -containments  $opt(containments) \
+	        -ends          $opt(ends) \
 		-use_conf      0 \
 		-min_conf      0 \
 		-use_hidden    0]

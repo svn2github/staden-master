@@ -11,6 +11,7 @@
 #include "align_lib.h"
 #include "newgap_structs.h"
 #include "io_lib/hash_table.h"
+#include "consensus.h"
 /*#include "hash_lib.h"*/
 
 /* 1/6/98 johnt - need to explicitly import globals from DLLs with Visual C++ */
@@ -40,6 +41,147 @@ typedef struct {
     int one_by_one;
 } add_fij_t;
 
+
+/*
+ * Checks a join to see if it is an end/end overlap or a containment, and
+ * accepts or rejects based on this.
+ *
+ * Returns 0 for accept;
+ *         1 for reject;
+ *        -1 for failure.
+ */
+static int check_containment_or_end(add_fij_t *cd,
+				    int contig1_num, int s1l, int s1r,
+				    int contig2_num, int s2l, int s2r) {
+    GapIO    *io = cd->fij_args->io;
+    tg_rec crec1 = cd->contig_list1[contig1_num].contig_number;
+    tg_rec crec2 = cd->contig_list2[contig2_num].contig_number;
+    contig_t        *c;
+    int cstart1, cend1, cstart2, cend2;
+    int contain = 0;
+
+    if (0 != consensus_valid_range(io, crec1, &cstart1, &cend1))
+	return -1;
+    if (0 != consensus_valid_range(io, crec2, &cstart2, &cend2))
+	return -1;
+
+    if (s1l > cstart1 && s1r < cend1)
+	contain = 1;
+
+    if (s2l > cstart2 && s2r < cend2)
+	contain = 1;
+
+    if (contain && cd->fij_args->containments == 0) {
+	vmessage("Rejecting join between =%"PRIrec" and =%"PRIrec
+		 " due to containment join.\n", crec1, crec2);
+	return 1;
+    } else if (!contain && cd->fij_args->ends == 0) {
+	vmessage("Rejecting join between =%"PRIrec" and =%"PRIrec
+		 " due to end/end join.\n", crec1, crec2);
+	return 1;
+    }
+
+    return 0;
+}
+
+static int depth_sort(const void *vp1, const void *vp2) {
+    return *(const int *)vp1 - *(const int *)vp2;
+}
+
+/*
+ * Checks a join to see if the depth falls within the requested limits.
+ * We sum the depths of the two contigs together and take the median value.
+ * However we've lost the alignment by this stage so it's a bit of guess
+ * work, just doing a linear scaling of s2r-srl / s1r-s1l.
+ *
+ * Returns 0 for accept;
+ *         1 for reject;
+ *        -1 for failure.
+ */
+static int check_depth(add_fij_t *cd, int orient,
+		       int contig1_num, int s1l, int s1r,
+		       int contig2_num, int s2l, int s2r) {
+    GapIO    *io = cd->fij_args->io;
+    tg_rec crec1 = cd->contig_list1[contig1_num].contig_number;
+    tg_rec crec2 = cd->contig_list2[contig2_num].contig_number;
+    consensus_t *cons = NULL;
+    int i, depth, d1, d2;
+    int *d;
+
+
+    /* Ensure we're scaling longer contig to fit shorter contig
+     * as up-scaling causes wholes and breaks the median.
+     */
+    if (s2r-s2l < s1r-s1l) {
+	tg_rec tc;
+	int ti;
+
+	tc = crec1; crec1 = crec2; crec2 = tc;
+	i = s1l; s1l = s2l; s2l = i;
+	i = s1r; s1r = s2r; s2r = i;
+    }
+
+
+    /* Compute depth for contig 1 */
+    if (!(d = calloc(s1r-s1l+1, sizeof(*d))))
+	return -1;
+
+    if (!(cons = malloc((s1r-s1l+1) * sizeof(*cons)))) {
+	free(d);
+	return -1;
+    }
+
+    if (-1 == calculate_consensus(io, crec1, s1l, s1r, cons)) {
+	free(d);
+	free(cons);
+	return -1;
+    }
+
+    for (i = 0; i < s1r-s1l+1; i++)
+	d[i] = cons[i].depth;
+
+
+    /* Compute depth for contig 2 */
+    if (!(cons = realloc(cons, (s2r-s2l+1) * sizeof(*cons))))
+	return -1;
+
+    if (-1 == calculate_consensus(io, crec2, s2l, s2r, cons)) {
+	free(cons);
+	return -1;
+    }
+
+    if (orient) {
+	int L = s1r-s1l+1 -1;
+	for (i = 0; i < s2r-s2l+1; i++)
+	    d[L - (int)(i * (double)(s1r-s1l+1)/(s2r-s2l+1))] += cons[i].depth;
+    } else {
+	for (i = 0; i < s2r-s2l+1; i++)
+	    d[(int)(i * (double)(s1r-s1l+1)/(s2r-s2l+1))] += cons[i].depth;
+    }
+
+
+    /* Sort and obtain the median */
+    qsort(d, s1r-s1l+1, sizeof(*d), depth_sort);
+    depth = d[(s1r-s1l+1)/2];
+
+    free(cons);
+    free(d);
+
+    if (cd->fij_args->min_depth > 0 && depth < cd->fij_args->min_depth) {
+	vmessage("Rejecting join between =%"PRIrec" and =%"PRIrec
+		 " due insufficient depth (%d).\n", crec1, crec2, depth);
+	return 1;
+    }
+    if (cd->fij_args->max_depth > 0 && depth > cd->fij_args->max_depth) {
+	vmessage("Rejecting join between =%"PRIrec" and =%"PRIrec
+		 " due excessive depth (%d).\n", crec1, crec2, depth);
+	return 1;
+    }
+
+    return 0;
+}
+
+
 /*
  * Check a sequence overlap to see if enough read pairs support it.
  * If reverse is true, contig2 was complemented.  If this
@@ -50,7 +192,6 @@ typedef struct {
  *         1 if not enough pairs were found.
  *        -1 on failure.
  */
-
 static int check_overlap_pairs(add_fij_t *cd, int reverse,
 			       int contig1_num, int s1l, int s1r,
 			       int contig2_num, int s2l, int s2r) {
@@ -66,10 +207,12 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
     HashTable       *pairs   = NULL;
     pool_alloc_t    *rp_pool = NULL;
     int              good_pairs = 0;
+    int              all_pairs = 0;
     int              target = cd->fij_args->rp_min_freq;
     int es1l, es1r, es2l, es2r;
 
-    if (target < 1) target = 1;
+    if (cd->fij_args->rp_min_perc > 0)
+	target = INT_MAX; // to force counting all
 
     /* Expand start/end a bit to find pairs that span out beyond the ends
        of the overlapping region */
@@ -187,11 +330,12 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
 					      NULL, NULL, NULL)) goto fail;
 	    }
 
-	    /* Work out if it's a good pair */
+	    /* Work out if it's a good, bad, or unknown quality pair */
 	    total_count = lib->counts[0] + lib->counts[1] + lib->counts[2];
-	    if (lib->counts[orient] >= .05 * total_count &&
-		ABS(dist - lib->insert_size[orient]) < 3 * lib->sd[orient]) {
-		good_pairs++;
+	    if (lib->counts[orient] >= .05 * total_count) {
+		if (ABS(dist - lib->insert_size[orient]) < 3*lib->sd[orient])
+		    good_pairs++;
+		all_pairs++;
 	    }
 	}
     }
@@ -200,7 +344,21 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
     pool_destroy(rp_pool);
     contig_iter_del(ci);
 
-    return good_pairs >= target ? 0 : 1;
+    if (good_pairs < cd->fij_args->rp_min_freq) {
+	vmessage("Rejecting join between =%"PRIrec" and =%"PRIrec
+		 " due to insufficient number of read-pairs (%d).\n",
+		 crec1, crec2, good_pairs);
+	return 1;
+    }
+
+    if (!all_pairs || 100*good_pairs/all_pairs < cd->fij_args->rp_min_perc) {
+	vmessage("Rejecting join between =%"PRIrec" and =%"PRIrec
+		 " due to insufficient percentage of read-pairs (%d).\n",
+		 crec1, crec2, all_pairs ? 100*good_pairs/all_pairs : 0);
+	return 1;
+    }
+    
+    return 0;
 
  fail:
     if (NULL != rp_pool) pool_destroy(rp_pool);
@@ -226,6 +384,7 @@ static void add_fij_overlap(OVERLAP *overlap, int contig1_num,
     percent_mismatch = 100.0 - overlap->percent;
 
     if ((overlap->length < cd->fij_args->min_overlap) || 
+	(overlap->length > cd->fij_args->max_overlap) || 
 	(percent_mismatch > cd->fij_args->max_mis)) return;
 
     /* note conversion depadded to padded coordinates */
@@ -255,6 +414,22 @@ static void add_fij_overlap(OVERLAP *overlap, int contig1_num,
 	+ c2p->contig_start
 	- c2p->contig_left_extension;
 
+    /* Check containment/end status */
+    if (cd->fij_args->ends == 0 || cd->fij_args->containments == 0) {
+	if (check_containment_or_end(cd,
+				     contig1_num, seq1_start_f, seq1_end_f,
+				     contig2_num, seq2_start_f, seq2_end_f))
+	    return;
+    }
+
+    /* Check depth */
+    if (cd->fij_args->min_depth > 0 || cd->fij_args->max_depth > 0) {
+	if (check_depth(cd, 0,
+			contig1_num, seq1_start_f, seq1_end_f,
+			contig2_num, seq2_start_f, seq2_end_f))
+	    return;
+    }
+
     /* Check read pairs if screening on */
     if (cd->fij_args->rp_mode >= 0) {	
 	if (check_overlap_pairs(cd, 0, contig1_num, seq1_start_f, seq1_end_f,
@@ -263,8 +438,8 @@ static void add_fij_overlap(OVERLAP *overlap, int contig1_num,
 	}
     }
     
-    sprintf(name1,"%"PRIrec, c1p->contig_left_gel);
-    sprintf(name2,"%"PRIrec, c2p->contig_left_gel);
+    sprintf(name1,"%"PRIrec, c1p->contig_number);
+    sprintf(name2,"%"PRIrec, c2p->contig_number);
     sprintf(buf,
 	    " Possible join between contig =%"PRIrec
 	    " in the + sense and contig =%"PRIrec"\n"
@@ -341,6 +516,22 @@ static void add_fij_overlap_r(OVERLAP *overlap, int contig1_num,
     seq2_start_r = c2p->contig_end
 	- ( cd->depad_to_pad2[seq2e - 1] - c2p->contig_right_extension);
 
+    /* Check containment/end status */
+    if (cd->fij_args->ends == 0 || cd->fij_args->containments == 0) {
+	if (check_containment_or_end(cd,
+				     contig1_num, seq1_start_r, seq1_end_r,
+				     contig2_num, seq2_start_r, seq2_end_r))
+	    return;
+    }
+
+    /* Check depth */
+    if (cd->fij_args->min_depth > 0 || cd->fij_args->max_depth > 0) {
+	if (check_depth(cd, 1,
+			contig1_num, seq1_start_r, seq1_end_r,
+			contig2_num, seq2_start_r, seq2_end_r))
+	    return;
+    }
+
     /* Check read pairs if screening on */
     if (cd->fij_args->rp_mode >= 0) {
 	/* Note conversion of seq2_start, seq2_end to complementary strand */
@@ -351,8 +542,8 @@ static void add_fij_overlap_r(OVERLAP *overlap, int contig1_num,
 	}
     }
 
-    sprintf(name1,"%"PRIrec, c1p->contig_left_gel);
-    sprintf(name2,"%"PRIrec, c2p->contig_left_gel);
+    sprintf(name1,"%"PRIrec, c1p->contig_number);
+    sprintf(name2,"%"PRIrec, c2p->contig_number);
     sprintf(buf,
 	    " Possible join between contig =%"PRIrec
 	    " in the - sense and contig =%"PRIrec"\n"
@@ -556,8 +747,8 @@ int do_it_fij(fij_arg *fij_args, char *seq, int seq_len,
 	//UpdateTextOutput();
 	if (hash_seqn(h, 1)) {
 	    verror(ERR_WARN, "find internal joins",
-		   "hashing 1st sequence (#%"PRIrec")",
-		   contig_list1[contig1_num].contig_left_gel); 
+		   "hashing 1st sequence (=%"PRIrec")",
+		   contig_list1[contig1_num].contig_number); 
 	    continue;
 	}
 	vmessage("done\n\n");
@@ -642,8 +833,8 @@ int do_it_fij(fij_arg *fij_args, char *seq, int seq_len,
 		/* fflush(stdout); */
 		if (hash_seqn(h, 2)) {
 		    verror(ERR_WARN, "find internal joins",
-			   "hashing 2nd sequence (#%"PRIrec")",
-			   contig_list2[contig2_num].contig_left_gel); 
+			   "hashing 2nd sequence (=%"PRIrec")",
+			   contig_list2[contig2_num].contig_number); 
 		    continue;
 		}
 

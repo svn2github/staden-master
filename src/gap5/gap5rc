@@ -636,14 +636,19 @@ set_def FIJ.INFILE2			$defs_c_in
 set_def FIJ.INFILE2.WHICH.NAME          "With contigs from"
 
 set_def FIJ.MINOVERLAP.NAME		"Minimum overlap"
-set_def FIJ.MINOVERLAP.MIN		10
-set_def FIJ.MINOVERLAP.MAX		1000
 set_def FIJ.MINOVERLAP.VALUE		20
 
+set_def FIJ.MAXOVERLAP.NAME		"Maximum overlap"
+set_def FIJ.MAXOVERLAP.VALUE		10000000
+
 set_def FIJ.MINMATCH.NAME		"Minimum initial match length"
-set_def FIJ.MINMATCH.MIN		0
-set_def FIJ.MINMATCH.MAX		1000
 set_def FIJ.MINMATCH.VALUE		20
+
+set_def FIJ.MINDEPTH.NAME		"Minimum combined depth"
+set_def FIJ.MINDEPTH.VALUE		0
+
+set_def FIJ.MAXDEPTH.NAME		"Maximum combined depth"
+set_def FIJ.MAXDEPTH.VALUE		0
 
 set_def FIJ.MAXDIAG.NAME		"Diagonal threshold"
 set_def FIJ.MAXDIAG.MIN			1.0e-40
@@ -656,7 +661,7 @@ set_def FIJ.BANDSIZE.MAX		100
 set_def FIJ.BANDSIZE.VALUE		5
 
 set_def FIJ.MAXMIS			$defs_maxmis
-set_def FIJ.MAXMIS.VALUE		30.00
+set_def FIJ.MAXMIS.VALUE		10.00
 
 set_def FIJ.WORDLENGTH.NAME		"Word length"
 set_def FIJ.WORDLENGTH.BUTTON.1		12
@@ -664,11 +669,13 @@ set_def FIJ.WORDLENGTH.BUTTON.2		8
 set_def FIJ.WORDLENGTH.BUTTON.3		4
 set_def FIJ.WORDLENGTH.VALUE		1
 
-set_def FIJ.USEFILTERWORDS.NAME		"Auto-filter repeats"
+set_def FIJ.USEFILTERWORDS.NAME		"Filter repeat words"
 set_def FIJ.USEFILTERWORDS.VALUE	0
 
 set_def FIJ.FILTERWORDS.NAME		"Maximum word over-representation"
 set_def FIJ.FILTERWORDS.VALUE		5
+
+set_def FIJ.UNIQUE_ENDS                 0
 
 set_def FIJ.HIDDEN.WINSIZE.NAME		"Window length"
 set_def FIJ.HIDDEN.MAXDASH.NAME		"Window length"
@@ -691,6 +698,9 @@ set_def FIJ.MAX_ALIGNMENT		4000
 
 # Alignmode 1 = quickest, 2 = quick, 3 = sensitive (slower) 
 set_def FIJ.ALIGN_MODE          2 
+
+# Alignment location 1 = end/end, 2 = containments, 3 = both
+set_def FIJ.ALIGN_LOCATION          3
  
 # Only applies for the quick algorithm 
 set_def FIJ.USEBAND.NAME        "Use banded alignment" 
@@ -716,6 +726,10 @@ set_def FIJ.READPAIR.MIN_FREQ.NAME	"Minimum spanning pair count"
 set_def FIJ.READPAIR.MIN_FREQ.VALUE	1
 set_def FIJ.READPAIR.MIN_FREQ.MIN	1
 set_def FIJ.READPAIR.MIN_FREQ.MAX	100
+set_def FIJ.READPAIR.MIN_PERC.NAME	"Minimum spanning pair percentage"
+set_def FIJ.READPAIR.MIN_PERC.VALUE	70
+set_def FIJ.READPAIR.MIN_PERC.MIN	1
+set_def FIJ.READPAIR.MIN_PERC.MAX	100
 
 #Auto assemble
 set_def AUTO_ASSEMBLE.USE_EXP_ARCHIVES   0

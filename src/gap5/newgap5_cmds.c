@@ -1320,6 +1320,7 @@ tcl_find_internal_joins(ClientData clientData, Tcl_Interp *interp,
 	{"-io",		  ARG_IO,   1, NULL,   offsetof(fij_arg, io)},
 	{"-mask",	  ARG_STR,  1, "none", offsetof(fij_arg, mask_str)},
 	{"-min_overlap",  ARG_INT,  1, "20",   offsetof(fij_arg, min_overlap)},
+	{"-max_overlap",  ARG_INT,  1, "0",    offsetof(fij_arg, max_overlap)},
 	{"-max_pmismatch",ARG_FLOAT,1, "30.0", offsetof(fij_arg, max_mis)},
 	{"-word_length",  ARG_INT,  1, "12",   offsetof(fij_arg, word_len)},
 	{"-max_prob",     ARG_FLOAT,1, "1.0e-8",  offsetof(fij_arg, max_prob)},
@@ -1336,12 +1337,18 @@ tcl_find_internal_joins(ClientData clientData, Tcl_Interp *interp,
 	{"-max_display",  ARG_INT,  1, "0",    offsetof(fij_arg, max_display)},
 	{"-filter_words", ARG_FLOAT,1, "0",    offsetof(fij_arg,filter_words)},
 	{"-fast_mode",    ARG_INT,  1, "0",    offsetof(fij_arg, fast_mode)},
+	{"-min_depth",    ARG_INT,  1, "-1",   offsetof(fij_arg, min_depth)},
+	{"-max_depth",    ARG_INT,  1, "-1",   offsetof(fij_arg, max_depth)},
+	{"-containments", ARG_INT,  1, "1",    offsetof(fij_arg,containments)},
+	{"-ends",         ARG_INT,  1, "1",    offsetof(fij_arg, ends)},
 	/* Read-pair screening options */
 	{"-rp_mode",      ARG_STR,  1, "off",  offsetof(fij_arg, rp_mode_str)},
 	{"-rp_end_size",  ARG_INT,  1, "1000", offsetof(fij_arg, rp_end_size)},
 	{"-rp_min_mq",    ARG_INT,  1, "10",   offsetof(fij_arg, rp_min_mq)},
 	{"-rp_min_freq",  ARG_INT,  1, "0",    offsetof(fij_arg, rp_min_freq)},
+	{"-rp_min_perc",  ARG_INT,  1, "0",    offsetof(fij_arg, rp_min_perc)},
 	{"-rp_libraries", ARG_STR,  1, "",     offsetof(fij_arg, rp_libraries)},
+	{"-unique_ends",  ARG_INT,  1, "0",    offsetof(fij_arg, unique_ends)},
 	{NULL,		  0,	    0, NULL,   0}
     };
 
@@ -1361,6 +1368,9 @@ tcl_find_internal_joins(ClientData clientData, Tcl_Interp *interp,
 	Tcl_SetResult(interp, "invalid mask mode", TCL_STATIC);
 	return TCL_ERROR;
     }
+
+    if (args.max_overlap == 0)
+	args.max_overlap = INT_MAX;
 
     /* create contig name array */
     active_list_contigs(args.io, args.inlist1, &num_contigs1, &contig_array1);

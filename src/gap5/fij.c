@@ -17,6 +17,7 @@
 #include "readpair.h"
 #include "editor_join.h"
 #include "io_lib/hash_table.h"
+#include "dstring.h"
 
 static int counter;
 static int counter_max;
@@ -52,12 +53,12 @@ void *fij_obj_func(int job, void *jdata, obj_fij *obj,
 
 	    start_message();
 	    vmessage("FIJ match\n");
-	    vmessage("    From contig %s(#%"PRIrec") at %d\n",
+	    vmessage("    From contig %s(=%"PRIrec") at %d\n",
 		     get_contig_name(fij->io, ABS(obj->c1)),
-		     io_clnbr(fij->io, ABS(obj->c1)), obj->pos1);
-	    vmessage("    With contig %s(#%"PRIrec") at %d\n",
+		     ABS(obj->c1), obj->pos1);
+	    vmessage("    With contig %s(=%"PRIrec") at %d\n",
 		     get_contig_name(fij->io, ABS(obj->c2)),
-		     io_clnbr(fij->io, ABS(obj->c2)), obj->pos2);
+		     ABS(obj->c2), obj->pos2);
 	    vmessage("    Length %d, score %d, mismatch %2.2f%%\n\n",
 		     obj->length, obj->score, ((float)obj->percent)/10000);
 	    end_message(cs->window);
@@ -160,9 +161,19 @@ void *fij_obj_func(int job, void *jdata, obj_fij *obj,
     return NULL;
 }
 
-static int sort_func(const void *p1, const void *p2) {
+static int sort_func_score(const void *p1, const void *p2) {
     obj_fij *m1 = (obj_fij *)p1, *m2 = (obj_fij *)p2;
     return m2->score - m1->score;
+}
+
+static int sort_func_c1(const void *p1, const void *p2) {
+    obj_fij *m1 = (obj_fij *)p1, *m2 = (obj_fij *)p2;
+    return ABS(m2->c1) - ABS(m1->c1);
+}
+
+static int sort_func_c2(const void *p1, const void *p2) {
+    obj_fij *m1 = (obj_fij *)p1, *m2 = (obj_fij *)p2;
+    return ABS(m2->c2) - ABS(m1->c2);
 }
 
 /*
@@ -236,7 +247,7 @@ void fij_callback(GapIO *io, tg_rec contig, void *fdata, reg_data *jdata) {
 			   csplot_hash);
 	    break;
 	case 6: /* Sort */
-	    qsort(r->match, r->num_match, sizeof(obj_fij), sort_func);
+	    qsort(r->match, r->num_match, sizeof(obj_fij), sort_func_score);
 	    csmatch_reset_hash(csplot_hash, (mobj_repeat *)r);
 	    r->current = -1;
 	    break;
@@ -501,6 +512,249 @@ static HashTable * fij_prefilter_repeats(fij_arg *fij_args,
     return NULL;
 }
 
+
+/*
+ * Removes FIJ matches based on the number of matching contig ends.
+ * If end of contig A joins to start of contig B, but start of contig B joins
+ * to both contig A and contig C, then remove the links.
+ */
+static void fij_postfilter_matches(mobj_fij *FIJMatch) {
+    int i, j;
+    obj_fij *m;
+    GapIO *io = FIJMatch->io;
+
+    vmessage("\nFiltering joins based on duplicate matches per contig end.\n");
+
+    /* Sort by 1st contig */
+    qsort(FIJMatch->match, FIJMatch->num_match, sizeof(obj_fij), sort_func_c1);
+
+    /* Remove left or right ends going to the same spot */
+    m = FIJMatch->match;
+    for (i = j = 0; i < FIJMatch->num_match; ) {
+	int k = i, start = 0, end = 0;
+	tg_rec c1 = ABS(m[i].c1);
+	int cstart1, cend1;
+	tg_rec c2 = ABS(m[i].c2);
+	int cstart2, cend2;
+
+	consensus_valid_range(io, c1, &cstart1, &cend1);
+	consensus_valid_range(io, c2, &cstart2, &cend2);
+
+	/* Count */
+	while (k < FIJMatch->num_match && ABS(m[i].c1) == ABS(m[k].c1)) {
+	    if (m[k].pos1 <= cstart1)
+		start++;
+	    if (m[k].end1 >= cend1)
+		end++;
+	    k++;
+	}
+
+	//printf("\n1> ctg=%"PRIrec" start=%d end=%d\n",
+	//       ABS(m[i].c1), start, end);
+
+	/* Filter */
+	k = i;
+	while (k < FIJMatch->num_match && ABS(m[i].c1) == ABS(m[k].c1)) {
+	    //printf("%+6"PRIrec" %d (%6d..%6d) %6d /"
+	    //       "%+6"PRIrec" %d (%6d..%6d) %6d\t",
+	    //       m[k].c1, cstart1, m[k].pos1, m[k].end1, cend1,
+	    //       m[k].c2, cstart2, m[k].pos2, m[k].end2, cend2);
+	    //if (m[k].pos1 <= cstart1)
+	    //    putchar('S');
+	    //if (m[k].end1 >= cend1)
+	    //    putchar('E');
+	    if ((m[k].pos1 <= cstart1 && start > 1) ||
+		(m[k].end1 >= cend1   && end   > 1)) {
+		vmessage("  Rejecting #%+"PRIrec" / #%+"PRIrec"\n",
+			 m[k].c1, m[k].c2);
+		//putchar('*');
+	    } else {
+		m[j++] = m[k];
+	    }
+	    //putchar('\n');
+	    k++;
+	}
+
+	i = k;
+    }
+
+    //fprintf(stderr, "Filtered from %d to %d matches\n", FIJMatch->num_match, j);
+
+    FIJMatch->num_match = j;
+
+
+    /* Sort by 2nd contig */
+    qsort(FIJMatch->match, FIJMatch->num_match, sizeof(obj_fij), sort_func_c2);
+
+    /* Remove left or right ends going to the same spot */
+    m = FIJMatch->match;
+    for (i = j = 0; i < FIJMatch->num_match; ) {
+	int k = i, start = 0, end = 0;
+	tg_rec c1 = ABS(m[i].c1);
+	int cstart1, cend1;
+	tg_rec c2 = ABS(m[i].c2);
+	int cstart2, cend2;
+
+	consensus_valid_range(io, c1, &cstart1, &cend1);
+	consensus_valid_range(io, c2, &cstart2, &cend2);
+
+	/* Count */
+	while (k < FIJMatch->num_match && ABS(m[i].c2) == ABS(m[k].c2)) {
+	    if (m[k].pos2 <= cstart2)
+		start++;
+	    if (m[k].end2 >= cend2)
+		end++;
+	    k++;
+	}
+
+	//printf("\n2> ctg=%"PRIrec" start=%d end=%d\n",
+	//       ABS(m[i].c1), start, end);
+
+	/* Filter */
+	k = i;
+	while (k < FIJMatch->num_match && ABS(m[i].c2) == ABS(m[k].c2)) {
+	    //printf("%+6"PRIrec" %d (%6d..%6d) %6d /"
+	    //	   "%+6"PRIrec" %d (%6d..%6d) %6d\t",
+	    //	   m[k].c1, cstart1, m[k].pos1, m[k].end1, cend1,
+	    //	   m[k].c2, cstart2, m[k].pos2, m[k].end2, cend2);
+	    //if (m[k].pos2 <= cstart2)
+	    //	putchar('S');
+	    //if (m[k].end2 >= cend2)
+	    //	putchar('E');
+	    if ((m[k].pos2 <= cstart2 && start > 1) ||
+		(m[k].end2 >= cend2   && end   > 1)) {
+		//putchar('*');
+		vmessage("  Rejecting #%"PRIrec" / #%"PRIrec"\n",
+			 m[k].c1, m[k].c2);
+	    } else {
+		m[j++] = m[k];
+	    }
+	    //putchar('\n');
+	    k++;
+	}
+
+	i = k;
+    }
+
+    //fprintf(stderr, "Filtered from %d to %d matches\n", FIJMatch->num_match, j);
+    vmessage("Filtered out %d of %d matches, leaving %d\n",
+	     FIJMatch->num_match - j, FIJMatch->num_match, j);
+
+    FIJMatch->num_match = j;
+}
+
+
+/*
+ * Constructs a parameter string.
+ */
+static char *fij_params(fij_arg *a) {
+    char *s;
+    dstring_t *ds = NULL;
+
+    if (!(ds = dstring_create("Join searching parameters:\n")))
+	goto err;
+    if (-1 == dstring_append(ds, "  Join types allowed:             "))
+			      
+	goto err;
+    if (a->ends && -1 == dstring_append(ds, " Ends"))
+	goto err;
+    if (a->containments && -1 == dstring_append(ds, " Containments"))
+	goto err;
+    dstring_append(ds, "\n");
+
+    if (a->min_match == 0) {
+	if (-1 == dstring_appendf(ds,
+				  "  Alignment mode:                  "
+				  "Sensitive\n"))
+	    goto err;
+    } else {
+	if (-1 == dstring_appendf(ds,
+				  "  Alignment mode:                  %s\n",
+				  a->fast_mode ? "Fastest" : "Quick"))
+	    goto err;
+
+	if (-1 == dstring_appendf(ds,
+				  "  Word length:                     %d\n",
+				  a->word_len))
+	    goto err;
+	if (-1 == dstring_appendf(ds,
+				  "  Minimum match:                   %d\n",
+				  a->min_match))
+	    goto err;
+    }
+
+    if (-1 == dstring_append(ds, "\nJoin filtering parameters:\n"))
+	goto err;
+    if (-1 == dstring_appendf(ds,
+			      "  Minimum overlap:                 %d\n",
+			      a->min_overlap))
+	goto err;
+    if (-1 == dstring_appendf(ds,
+			      "  Maximum overlap:                 %d\n",
+			      a->max_overlap))
+	goto err;
+    if (-1 == dstring_appendf(ds,
+			      "  Maximum percentage mismatch:     %.1f%%\n",
+			      a->max_mis))
+	goto err;
+    if (a->rp_mode == -1) {
+	if (-1 == dstring_appendf(ds, "  Read-pair mode:                  "
+				  "off\n"))
+	    goto err;
+    } else {
+	if (-1 == dstring_appendf(ds,
+				  "  Read-pair mode:                  %s\n",
+	    a->rp_mode == end_end
+	    ? "end_end"
+	    : (a->rp_mode == end_all
+	       ? "end_all"
+	       : "all_all")))
+	    goto err;
+	if (-1 == dstring_appendf(ds,
+				  "  Read-pair min. count:            %d\n",
+				  a->rp_min_freq))
+	    goto err;
+	if (-1 == dstring_appendf(ds,
+				  "  Read-pair min. percentage:       %d%%\n",
+				  a->rp_min_perc))
+	    goto err;
+	if (-1 == dstring_appendf(ds,
+				  "  Read-pair min. mapping score:    %d\n",
+				  a->rp_min_mq))
+	    goto err;
+    }
+    if (a->filter_words) {
+	if (-1 == dstring_appendf(ds,
+				  "  Filter repeat words >x times:    %.1f\n",
+				  a->filter_words))
+	    goto err;
+    } else {
+	if (-1 == dstring_appendf(ds,
+				  "  Filter repeat words >x times:    off\n"))
+	    goto err;
+    }
+    if (-1 == dstring_appendf(ds, "  Minimum depth:                   %d\n",
+			      a->min_depth))
+	goto err;
+    if (-1 == dstring_appendf(ds, "  Maximum depth:                   %d\n",
+			      a->max_depth ? a->max_depth : INT_MAX))
+	goto err;
+    if (-1 == dstring_appendf(ds, "  Unique contig joins only:        %s\n",
+			      a->unique_ends ? "yes" : "no"))
+	goto err;
+
+    s = ds->str; ds->str = NULL; // HACK
+    dstring_destroy(ds);
+
+    return s;
+    
+ err:
+    if (ds)
+	dstring_destroy(ds);
+    return NULL;
+}
+
+
 /*
  * Main find internal joins algorithm entry.
  *
@@ -547,7 +801,7 @@ fij(fij_arg *fij_args,
     p.lwin1 = 0;
     p.lcnt1 = 0;
     p.rwin1 = fij_args->win_size;
-    p.rcnt1 = fij_args->dash; /* was max_unknown */
+    p.rcnt1 = fij_args->dash;
     p.qual_val = fij_args->min_conf;
     p.window_len = fij_args->win_size;
     p.gap_open = gopenval;
@@ -631,10 +885,7 @@ fij(fij_arg *fij_args,
 
     FIJMatch->linewidth = get_default_int(GetInterp(), gap5_defs,
 					  "FIJ.LINEWIDTH");
-
-    FIJMatch->params = (char *)xmalloc(100);
-    if (FIJMatch->params)
-	sprintf(FIJMatch->params, "Unknown at present");
+    FIJMatch->params = fij_params(fij_args);
     FIJMatch->all_hidden = 0;
     FIJMatch->current = -1;
     FIJMatch->reg_func = fij_callback;
@@ -642,8 +893,15 @@ fij(fij_arg *fij_args,
     FIJMatch->max_mismatch = fij_args->max_mis;
     FIJMatch->min_length = fij_args->min_match;
 
+    vmessage("\n%s\n", FIJMatch->params);
+
+    /* Filter matches */
+    if (fij_args->unique_ends)
+	fij_postfilter_matches(FIJMatch);
+
     /* Sort matches */
-    qsort(FIJMatch->match, FIJMatch->num_match, sizeof(obj_fij), sort_func);
+    qsort(FIJMatch->match, FIJMatch->num_match, sizeof(obj_fij),
+	  sort_func_score);
 
     /*
      * Register find internal joins with each of the contigs used.
@@ -701,6 +959,7 @@ buffij(tg_rec c1, int pos1, int end1,
 						    sizeof(obj_fij));
     }
 }
+
 
 /*
  * Automatically attempt to join the FIJ results 'result_id'.
@@ -852,7 +1111,7 @@ static int auto_join(GapIO *io, mobj_fij *r) {
 	    c = cache_search(io, GT_Contig, crec);
 	    printf("Add to =%"PRIrec" at %d..%d\n", c->rec, oleft2, oright2);
 	    anno_ele_add(io, GT_Contig, c->rec, 0, str2type("JOIN"), 
-			 "", oleft2, oright2, ANNO_DIR_NUL);
+			 r->params, oleft2, oright2, ANNO_DIR_NUL);
 	} else {
 	    contig_t *c;
 	    tg_rec crec = ABS(m->c1);
@@ -865,7 +1124,7 @@ static int auto_join(GapIO *io, mobj_fij *r) {
 	    c = cache_search(io, GT_Contig, crec);
 	    printf("Add to =%"PRIrec" at %d..%d\n", c->rec, oleft1, oright1);
 	    anno_ele_add(io, GT_Contig, c->rec, 0, str2type("JOIN"), 
-			 "", oleft1, oright1, ANNO_DIR_NUL);
+			 r->params, oleft1, oright1, ANNO_DIR_NUL);
 	}
 
 	if (nr == 1)

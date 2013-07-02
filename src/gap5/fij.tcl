@@ -6,134 +6,143 @@
 # notice for information on the restrictions for usage and distribution, and
 # for a disclaimer of all warranties.
 #
-proc FIJDialog { f io } {
+proc FIJDialog { w io } {
     global gap5_defs
     global LREG
+    global $w.ops
 
-    if {[xtoplevel $f -resizable 0] == ""} return
-    wm title $f "Find internal joins"
+    if {[xtoplevel $w -resizable 0] == ""} return
+    wm title $w "Find internal joins"
+
+    # 3 Panes
+    # 
+    # Contig inputs + display data
+    #    Contig set 1
+    #    Contig set 2
+    #    Maximum alignment list to display (remove?)
+    #
+    # Search params
+    #    Algorithm selection (sensitive, quick, fastest)
+    #    Use hidden data?
+    #    Word length (1)
+    #
+    #    Sensitive
+    #        Diagonal Threshold
+    #        Alignment band size (percent) (2)
+    #
+    #     Quick/Fast
+    #        Uses banded + band size (width) (2)
+    #        Minimum initial match length
+    #        Auto-filter repeats
+    #        Maximum word over-representation
+    #
+    # Alignment filtering
+    #    Maximum percent mismatch
+    #    Min/max overlap length
+    #    Min/Max sequence depth
+    #    Read-pair filtering
+    #        Size of contig ends
+    #        Minimum mapping qual
+    #        Minimum spanning pair count
+    #        Minimum spanning pair percentage
+    #        Library selection (separate dialogue?)
+
+    set b [ttk::notebook $w.book]
+    pack $b -side top -fill both -expand 1
+
+    bind $w <Key-Left>  "$b select \[expr {(\[$b select\]-1)%%3}\]"
+    bind $w <Key-Right> "$b select \[expr {(\[$b select\]+1)%%3}\]"
 
     ###########################################################################
+    # Contig identification
+    #
     # contig_id boxes for selecting single contigs
     # need both first as FIJ_config_contig_ids gets called by lorf_in
 
-    contig_id $f.id1 -io $io -range 0 -trace 2
-    contig_id $f.id2 -io $io -range 0 -trace 0
+    set f [frame $b.f_i -padx 5 -pady 5]
+    set f_i $f
 
-    ###########################################################################
-    #input set 1
+    $b add $f -text "Contigs"
 
-    lorf_in $f.infile1 [keylget gap5_defs FIJ.INFILE1] \
+    labelframe $f.l1 -text "List 1"
+    contig_id $f.l1.id1 -io $io -range 0 -trace 2 -frame_relief flat
+
+    frame $f.padding -height 10
+
+    labelframe $f.l2 -text "List 2"
+    contig_id $f.l2.id2 -io $io -range 0 -trace 0 -frame_relief flat
+
+    #--- input set 1
+    lorf_in $f.l1.infile1 [keylget gap5_defs FIJ.INFILE1] \
 	"{FIJ_config_contig_ids $f id1 disabled} \
 	 {FIJ_config_contig_ids $f id1 disabled} \
 	 {FIJ_config_contig_ids $f id1 disabled} \
 	 {FIJ_config_contig_ids $f id1 normal}" \
-	-bd 2 -relief groove
+	-bd 2 -relief flat
 
-    ###########################################################################
-    #input set 2
+    pack $f.l1.infile1 -fill x
+    pack $f.l1.id1 -fill x
 
-    lorf_in $f.infile2 [keylget gap5_defs FIJ.INFILE2] \
+    #--- input set 2
+    lorf_in $f.l2.infile2 [keylget gap5_defs FIJ.INFILE2] \
 	"{FIJ_config_contig_ids $f id2 disabled} \
 	 {FIJ_config_contig_ids $f id2 disabled} \
 	 {FIJ_config_contig_ids $f id2 disabled} \
 	 {FIJ_config_contig_ids $f id2 normal}" \
-	-bd 2 -relief groove
+	-bd 2 -relief flat
 
-    # selecting a contig_id box makes it the next to be updated
-    bind [entrybox_path $f.id1.ent] <<select>> "FIJ_config_contig_ids $f id1"
-    bind [entrybox_path $f.id2.ent] <<select>> "FIJ_config_contig_ids $f id2"
+    pack $f.l2.infile2 -fill x
+    pack $f.l2.id2 -fill x
+
+    #--- selecting a contig_id box makes it the next to be updated
+    bind [entrybox_path $f.l1.id1.ent] <<select>> "FIJ_config_contig_ids $f id1"
+    bind [entrybox_path $f.l2.id2.ent] <<select>> "FIJ_config_contig_ids $f id2"
     
     FIJ_config_contig_ids $f id1
 
-    ###########################################################################
-    #match scales
-
-    frame $f.match -relief groove -bd 2
-    frame $f.match.s -relief groove -bd 2
-    frame $f.match.f -relief groove -bd 2
-    label $f.match.s.label -text "Sensitive algorithm:"
-    label $f.match.f.label -text "Quick algorithm:"
-
+    pack $f.l1 $f.padding $f.l2 -fill both
 
     ###########################################################################
-    set mm [keylget gap5_defs FIJ.MINOVERLAP]
-    scalebox $f.match.min_overlap \
-	    -title [keylget mm NAME]\
-	    -orient horizontal \
-	    -to [keylget mm MAX] \
-	    -from [keylget mm MIN]\
-	    -default [keylget mm VALUE] \
-	    -width 5 \
-	    -type CheckInt
-    
-    set mm [keylget gap5_defs FIJ.MINMATCH]
-    scalebox $f.match.f.min_match \
-	    -title [keylget mm NAME]\
-	    -orient horizontal \
-	    -to [keylget mm MAX]\
-	    -from [keylget mm MIN] \
-	    -default [keylget mm VALUE] \
-	    -width 5 \
-	    -type CheckInt \
-	    -variable $f.MinMatch
+    # Contig searching options
+    #
+    set f [frame $b.f_s  -padx 5 -pady 5]
+    set f_s $f
+    $b add $f -text "Searching"
 
-    set mm [keylget gap5_defs FIJ.MAXDIAG]
-    entrybox $f.match.s.max_diag \
-	-title "[keylget mm NAME] ([keylget mm MIN] to [keylget mm MAX])"\
-	-default [keylget mm VALUE]\
-	-type "CheckFloatRange [keylget mm MIN] [keylget mm MAX]"
+    frame $f.padding1 -height 10
+    labelframe $f.s -text "Sensitive algorithm"
 
-    set mm [keylget gap5_defs FIJ.BANDSIZE]
-    scalebox $f.match.s.band_size \
-	    -title [keylget mm NAME]\
-	    -orient horizontal \
-	    -to [keylget mm MAX] \
-	    -from [keylget mm MIN]\
-	    -default [keylget mm VALUE] \
-	    -width 5 \
-	    -type CheckInt
+    frame $f.padding2 -height 10
+    labelframe $f.f -text "Quick algorithm"
 
-    set mm [keylget gap5_defs FIJ.USEBAND] 
-    yes_no $f.match.f.use_band \
-    	    -title [keylget mm NAME] \
-	    -orient horizontal \
-	    -bd 0 \
-	    -default [keylget mm VALUE]
+    #--- hidden data
+    labelframe $f.hidden -text "Hidden/cutoff data"
 
-    set mm [keylget gap5_defs FIJ.MAXMIS]
-    scalebox $f.match.max_mis \
-	    -title [keylget mm NAME]\
-	    -orient horizontal \
-	    -to [keylget mm MAX]\
-	    -from [keylget mm MIN] \
-	    -resolution [keylget mm RES] \
-	    -default [keylget mm VALUE] \
-	    -width 5 \
-	    -type CheckFloat
+    HiddenParametersDialogInit $w.ops
+    button $f.hidden.options \
+	-text "Edit hidden data paramaters" \
+	-command "HiddenParametersDialog $w $w.ops"
 
-    set mm [keylget gap5_defs FIJ.USEFILTERWORDS]
-    yes_no $f.match.f.use_filter \
-	-title [keylget mm NAME] \
+    set hd [keylget gap5_defs FIJ.HIDDEN]
+    xyn $f.hidden.yn \
+	-label [keylget hd NAME] \
 	-orient horizontal \
-	-bd 0 \
-	-default [keylget mm VALUE]
+	-ycommand "$f.hidden.options configure -state normal" \
+	-ncommand "$f.hidden.options configure -state disabled" \
+	-variable $w.ops(use_hidden)
+    set $w.ops(use_hidden) [keylget hd VALUE]
 
-    set mm [keylget gap5_defs FIJ.FILTERWORDS]
-    xentry $f.match.f.filter_cutoff \
-	-label [keylget mm NAME] \
-	-default [keylget mm VALUE]
+    pack $f.hidden.yn -side top -fill x
+    pack $f.hidden.options -side top -anchor w
 
 
-    ###########################################################################
-    #select word length
-
+    #---- select word length
     set st [keylget gap5_defs FIJ.WORDLENGTH]
     set b1 [keylget st BUTTON.1]
     set b2 [keylget st BUTTON.2]
     set b3 [keylget st BUTTON.3]
 
-    radiolist $f.match.word_length \
+    radiolist $f.word_length \
 	    -title [keylget st NAME]\
 	    -bd 0 \
 	    -relief groove \
@@ -142,86 +151,203 @@ proc FIJDialog { f io } {
 	    -buttons [format { {%s} {%s} {%s} } \
 			  [list $b1] [list $b2] [list $b3]]
 
-    frame $f.match.padding -relief groove -bd 2 -height 2
+    pack $f.word_length -fill x
+    #frame $f.padding -relief groove -bd 2 -height 2
+    #pack $f.padding -fill x -pady 5
+
+    #--- Sensitive
+    set mm [keylget gap5_defs FIJ.MAXDIAG]
+    xentry $f.s.max_prob \
+	-label "[keylget mm NAME] ([keylget mm MIN] to [keylget mm MAX])"\
+	-default [keylget mm VALUE]\
+	-type "check_float [keylget mm MIN] [keylget mm MAX]" \
+	-textvariable $w.ops(max_prob)
+
+    set mm [keylget gap5_defs FIJ.BANDSIZE]
+    xentry $f.s.band_size \
+	-label [keylget mm NAME] \
+	-default [keylget mm VALUE] \
+	-type "check_int [keylget mm MIN] [keylget mm MAX]" \
+	-textvariable $w.ops(band_size)
+
+    #pack $f.s.label -anchor w -padx 50
+    pack $f.s.max_prob -fill x
+    pack $f.s.band_size -fill x
 
 
-    set ff $f.match
-    radiolist $f.match.blocks \
+    #--- Quick
+    set mm [keylget gap5_defs FIJ.USEBAND] 
+    xyn $f.f.use_band \
+        -label [keylget mm NAME] \
+        -orient horiz \
+	-variable $w.ops(use_band)
+    set $w.ops(use_band) [keylget mm VALUE]
+
+    set mm [keylget gap5_defs FIJ.MINMATCH]
+    xentry $f.f.min_match \
+	-label [keylget mm NAME] \
+	-default [keylget mm VALUE] \
+	-textvariable $w.ops(min_match)
+
+    set mm [keylget gap5_defs FIJ.USEFILTERWORDS]
+    xyn $f.f.use_filter \
+	-label [keylget mm NAME] \
+	-orient horizontal \
+	-variable $w.ops(use_filter)
+    set $w.ops(use_filter) [keylget mm VALUE]
+
+    set mm [keylget gap5_defs FIJ.FILTERWORDS]
+    xentry $f.f.filter_cutoff \
+	-label [keylget mm NAME] \
+	-default [keylget mm VALUE] \
+	-textvariable $w.ops(filter_words)
+
+    #--- Algorithm choice
+    radiolist $f.blocks \
 	-title "Alignment algorithm" \
 	-bd 0 \
-	-relief groove \
 	-orient horizontal \
 	-default [keylget gap5_defs FIJ.ALIGN_MODE]\
 	-buttons [format { \
-            {fastest   -command {scalebox_configure %s -state disabled; \
-				 entrybox_configure %s -state disabled;
-				 scalebox_configure %s -state normal;
-		                 yes_no_configure %s -state normal;
-		                 yes_no_configure %s -state normal;
+            {fastest   -command {%s configure -state disabled; \
+				 %s configure -state disabled;
+				 %s configure -state normal;
+				 %s configure -state normal;
+				 %s configure -state normal;
 		                 %s configure -state normal;
-		                 set %s.MinMatch 25}} \
-            {quick     -command {scalebox_configure %s -state disabled; \
-				 entrybox_configure %s -state disabled;
-				 scalebox_configure %s -state normal;
-				 yes_no_configure %s -state normal;
-		                 yes_no_configure %s -state normal;
+		                 set %s(min_match) 25}} \
+            {quick     -command {%s configure -state disabled; \
+				 %s configure -state disabled;
+				 %s configure -state normal;
+				 %s configure -state normal;
+				 %s configure -state normal;
 		                 %s configure -state normal;
-	                         set %s.MinMatch 20}} \
-            {sensitive -command {scalebox_configure %s -state normal; \
-				 entrybox_configure %s -state normal;
-				 scalebox_configure %s -state disabled;
-		                 yes_no_configure %s -state disabled;
-		                 yes_no_configure %s -state disabled;
+	                         set %s(min_match) 20}} \
+            {sensitive -command {%s configure -state normal; \
+				 %s configure -state normal;
+				 %s configure -state disabled;
+				 %s configure -state disabled;
+				 %s configure -state disabled;
 		                 %s configure -state disabled}}} \
-            $ff.s.band_size $ff.s.max_diag $ff.f.min_match $ff.f.use_band \
-		      $ff.f.use_filter $ff.f.filter_cutoff $f \
-            $ff.s.band_size $ff.s.max_diag $ff.f.min_match $ff.f.use_band \
-		      $ff.f.use_filter $ff.f.filter_cutoff $f \
-            $ff.s.band_size $ff.s.max_diag $ff.f.min_match $ff.f.use_band \
-		      $ff.f.use_filter $ff.f.filter_cutoff]
+            $f.s.band_size $f.s.max_prob $f.f.min_match $f.f.use_band \
+		      $f.f.use_filter $f.f.filter_cutoff $w.ops \
+            $f.s.band_size $f.s.max_prob $f.f.min_match $f.f.use_band \
+		      $f.f.use_filter $f.f.filter_cutoff $w.ops \
+            $f.s.band_size $f.s.max_prob $f.f.min_match $f.f.use_band \
+		      $f.f.use_filter $f.f.filter_cutoff]
 
-    pack $f.match.word_length -fill x
-    pack $f.match.min_overlap -fill x
-    pack $f.match.max_mis -fill x
-    pack $f.match.padding -fill x -pady 5
-    pack $f.match.blocks -fill x
 
-    pack $f.match.s -fill both -expand 1
-    pack $f.match.s.label -anchor w -padx 50
-    pack $f.match.s.max_diag -fill x
-    pack $f.match.s.band_size -fill x
+    #--- Match location
+    radiolist $f.location \
+	-title "Alignment location" \
+	-bd 0 \
+	-orient horizontal \
+	-default [keylget gap5_defs FIJ.ALIGN_LOCATION] \
+	-buttons {end/end containment both}
 
-    pack $f.match.f -fill both -expand 1
-    pack $f.match.f.label -anchor w -padx 50
-    pack $f.match.f.use_band -fill x
-    pack $f.match.f.min_match -fill x
-    pack $f.match.f.use_filter -fill x
-    pack $f.match.f.filter_cutoff -fill x
-    
-    #######################################################################
-    #readpair filter
+    pack $f.blocks -fill x
+    pack $f.location -fill x
+    pack $f.hidden -fill x
+    pack $f.padding1
+    pack $f.s -fill x
+    pack $f.padding2
+    pack $f.f -fill x
+    pack $f.f.use_band -fill x
+    pack $f.f.min_match -fill x
+    pack $f.f.use_filter -fill x
+    pack $f.f.filter_cutoff -fill x
 
-    frame $f.rp -bd 2 -relief groove
+    ###########################################################################
+    # Result filtering
 
-    ReadPairParametersDialogInit $io $f.rp_params
+    set f [frame $b.f_f  -padx 5 -pady 5]
+    set f_f $f
+    $b add $f -text "Filtering"
 
-    scalebox $f.rp.min_freq \
-        -title [keylget gap5_defs FIJ.READPAIR.MIN_FREQ.NAME] \
-        -from [keylget gap5_defs FIJ.READPAIR.MIN_FREQ.MIN] \
-	-to [keylget gap5_defs FIJ.READPAIR.MIN_FREQ.MAX] \
-        -default [keylget gap5_defs FIJ.READPAIR.MIN_FREQ.VALUE] \
-        -width 5 \
-        -type CheckInt \
-        -orient horiz
+    #--- Percentage identity
+    set mm [keylget gap5_defs FIJ.MAXMIS]
+    xentry $f.max_mis \
+	-label [keylget mm NAME] \
+	-default [keylget mm VALUE] \
+	-textvariable $w.ops(max_mismatch)
 
-    button $f.rp.options \
-	-text [keylget gap5_defs FIJ.READPAIR.DIALOG.BUTTON.NAME] \
-	-command "ReadPairParametersDialog $f $io $f.rp_params"
+    #--- Min/max overlap size
+    set mm [keylget gap5_defs FIJ.MINOVERLAP]
+    xentry $f.min_overlap \
+	-label [keylget mm NAME] \
+	-default [keylget mm VALUE] \
+	-textvariable $w.ops(min_overlap)
 
-    set fij_rp_sc_d "scalebox_configure $f.rp.min_freq -state disabled ; \
-$f.rp.options configure -state disabled"
-    set fij_rp_sc_e "scalebox_configure $f.rp.min_freq -state normal ; \
-$f.rp.options configure -state normal"
+    set mm [keylget gap5_defs FIJ.MAXOVERLAP]
+    xentry $f.max_overlap \
+	-label [keylget mm NAME] \
+	-default [keylget mm VALUE] \
+	-textvariable $w.ops(max_overlap)
+
+
+    #--- Min/max depth
+    set mm [keylget gap5_defs FIJ.MINDEPTH]
+    xentry $f.min_depth \
+	-label [keylget mm NAME] \
+	-default [keylget mm VALUE] \
+	-textvariable $w.ops(min_depth)
+
+    set mm [keylget gap5_defs FIJ.MAXDEPTH]
+    xentry $f.max_depth \
+	-label [keylget mm NAME] \
+	-default [keylget mm VALUE] \
+	-textvariable $w.ops(max_depth)
+
+
+    #--- Read pair filtering
+    labelframe $f.rp -text "Read pairs"
+
+    ReadPairParametersDialogInit $io $w.ops
+
+    set rp $f.rp
+    set sub ""
+
+    set end_size [keylget gap5_defs FIJ.READPAIR.END_SIZE.VALUE]
+#    if { $data(max_end_size) > $end_size } {
+#	set end_size $data(max_end_size)
+#    }
+    xentry $f.rp.end_size \
+	-label [keylget gap5_defs FIJ.READPAIR.END_SIZE.NAME] \
+	-default $end_size \
+	-textvariable $w.ops(rp_end_size)
+    lappend sub $f.rp.end_size
+
+    set mm [keylget gap5_defs FIJ.READPAIR.MIN_MAP_QUAL]
+    xentry $f.rp.min_mq \
+	-label [keylget mm NAME] \
+        -default [keylget mm VALUE] \
+        -type "check_int [keylget mm MIN] [keylget mm MAX]" \
+	-textvariable $w.ops(rp_min_mq)
+    lappend sub $f.rp.min_mq
+
+    set mm [keylget gap5_defs FIJ.READPAIR.MIN_FREQ]
+    xentry $f.rp.min_freq \
+	-label [keylget mm NAME] \
+        -default [keylget mm VALUE] \
+        -type "check_int [keylget mm MIN] [keylget mm MAX]" \
+	-textvariable $w.ops(rp_min_freq)
+    lappend sub $f.rp.min_freq
+
+    set mm [keylget gap5_defs FIJ.READPAIR.MIN_PERC]
+    xentry $f.rp.min_perc \
+	-label [keylget mm NAME] \
+        -default [keylget mm VALUE] \
+        -type "check_int [keylget mm MIN] [keylget mm MAX]" \
+	-textvariable $w.ops(rp_min_perc)
+    lappend sub $f.rp.min_perc
+
+    button $f.rp.libs \
+	-text "Select libraries" \
+	-command [list ReadPairParametersDialog $f $io $w.ops]
+    lappend sub $f.rp.libs
+
+    set fij_rp_sc_d "foreach i {$sub} {\$i configure -state disabled}"
+    set fij_rp_sc_e "foreach i {$sub} {\$i configure -state normal}"
 
     radiolist $f.rp.mode \
 	-title [keylget gap5_defs FIJ.READPAIR.MODE.NAME] \
@@ -236,39 +362,35 @@ $f.rp.options configure -state normal"
 		      [list [keylget gap5_defs FIJ.READPAIR.MODE.BUTTON4] \
 			   -command $fij_rp_sc_d ] \
 		 ]
+    pack $f.rp.mode $f.rp.end_size $f.rp.min_mq $f.rp.min_freq \
+	$f.rp.min_perc -side top -fill x
+    pack $f.rp.libs -side top -anchor w
 
-    pack $f.rp.mode -side top -fill x
-    pack $f.rp.min_freq -side top -fill x
-    pack $f.rp.options -side top -anchor w
+ 
+    #--- Filter to unique ends only
+    xyn $f.unique_ends \
+	-orient horizontal \
+	-label "Filter non-unique contig matches" \
+	-variable $w.ops(unique_ends);
+    set $w.ops(unique_ends) [keylget gap5_defs FIJ.UNIQUE_ENDS]
 
-    ###########################################################################
-    #hidden data
-
-    frame $f.hidden -bd 2 -relief groove
-
-    HiddenParametersDialogInit $f.ops
-    button $f.hidden.options \
-	-text "Edit hidden data paramaters" \
-	-command "HiddenParametersDialog $f $f.ops"
-
-    set hd [keylget gap5_defs FIJ.HIDDEN]
-    yes_no $f.hidden.yn \
-	    -title [keylget hd NAME] \
-	    -bd 0 \
-	    -orient horizontal \
-	    -ycommand "$f.hidden.options configure -state normal" \
-	    -ncommand "$f.hidden.options configure -state disabled" \
-	    -default [keylget hd VALUE]
-
-    pack $f.hidden.yn -side top -fill x
-    pack $f.hidden.options -side top -anchor w
-     
-    ###########################################################################
-    # alignment displays
-    entrybox $f.align_length \
-	-title "Maximum alignment length to list (bp)" \
+    #--- Alignment display size
+    xentry $f.align_length \
+	-label "Maximum alignment length to list (bp)" \
 	-default [keylget gap5_defs FIJ.MAX_ALIGNMENT] \
-	-type "CheckIntRange 0 10000000"
+	-type "check_int 0 10000000" \
+	-textvariable $w.ops(align_length)
+
+
+    pack $f.min_overlap -fill x
+    pack $f.max_overlap -fill x
+    pack $f.min_depth -fill x
+    pack $f.max_depth -fill x
+    pack $f.max_mis -fill x
+    pack $f.align_length -fill x
+    pack $f.unique_ends -fill x
+    pack $f.rp -fill x
+
 
 #    ###########################################################################
 #    #select mode
@@ -301,32 +423,21 @@ $f.rp.options configure -state normal"
 
     ###########################################################################
     #OK and Cancel buttons
-    okcancelhelp $f.ok_cancel \
-	    -ok_command "FIJ_OK_Pressed $f $io $f.infile1 $f.id1 \
-            $f.infile2 $f.id2 \
-	    $f.match.blocks $f.match.min_overlap $f.match.word_length\
-	    $f.match.f.min_match $f.match.f.use_band $f.match.s.max_diag\
-	    $f.match.s.band_size $f.match.max_mis \
-	    $f.hidden.yn $f.sel_mode.rl $f.ops $f.align_length \
-            $f.match.f.use_filter $f.match.f.filter_cutoff \
-            $f.rp.mode $f.rp_params" \
-	    -cancel_command "destroy $f" \
-	    -help_command "show_help gap5 {FIJ-Dialogue}" \
-	    -bd 2 \
-	    -relief groove
+    okcancelhelp $w.ok_cancel \
+	-ok_command "FIJ_OK_Pressed $w $io $w.ops \
+                    $f_i.l1.infile1 $f_i.l1.id1 $f_i.l2.infile2 $f_i.l2.id2 \
+                    $f_s.word_length $f_s.blocks $f_s.location $f_f.rp.mode" \
+	-cancel_command "destroy $f" \
+	-help_command "show_help gap5 {FIJ-Dialogue}" \
+	-bd 2 \
+	-relief groove
     ###########################################################################
 
-    pack $f.infile1 -fill x
-    pack $f.id1 -fill x
-    pack $f.infile2 -fill x
-    pack $f.id2 -fill x
 #    pack $f.sel_task -fill x
 #    pack $f.sc -fill x
-    pack $f.align_length -fill x
-    pack $f.hidden -fill x
-    pack $f.rp -fill x
-    pack $f.match -fill x
-    pack $f.ok_cancel -fill x
+
+    $w.book select 0
+    pack $w.ok_cancel -fill x
 
 }
 
@@ -334,30 +445,31 @@ proc FIJ_config_contig_ids { f id { state unchanged } } {
     # Set which of the contig_id boxes get updated when clicking in the
     # contig list or contig selector, and in which order.
     if { $state != "unchanged" } {
-	contig_id_configure "$f.$id" -state $state
+	if {$id == "id1"} {
+	    contig_id_configure "$f.l1.$id" -state $state
+	} else {
+	    contig_id_configure "$f.l2.$id" -state $state
+	}
     }
-    set id1_state [eval [entrybox_path $f.id1.ent] cget -state]
-    set id2_state [eval [entrybox_path $f.id2.ent] cget -state]
+    set id1_state [eval [entrybox_path $f.l1.id1.ent] cget -state]
+    set id2_state [eval [entrybox_path $f.l2.id2.ent] cget -state]
 
     set boxen []
     if { "$id" == "id1" } {
-	if { $id1_state == "normal" } { lappend boxen "$f.id1" }
-	if { $id2_state == "normal" } { lappend boxen "$f.id2" }
+	if { $id1_state == "normal" } { lappend boxen "$f.l1.id1" }
+	if { $id2_state == "normal" } { lappend boxen "$f.l2.id2" }
     } else {
-	if { $id2_state == "normal" } { lappend boxen "$f.id2" }
-	if { $id1_state == "normal" } { lappend boxen "$f.id1" }	
+	if { $id2_state == "normal" } { lappend boxen "$f.l1.id2" }
+	if { $id1_state == "normal" } { lappend boxen "$f.l2.id1" }	
     }
     # Need at least one item or we get errors...
-    if { [llength $boxen] == 0 } { lappend boxen "$f.id1" }
+    if { [llength $boxen] == 0 } { lappend boxen "$f.l1.id1" }
     SetCurFrame $f $boxen
 }
 
 ###########################################################################
-proc FIJ_OK_Pressed { f io infile1 id1 infile2 id2 blocks min_overlap
-		      word_length \
-		      min_match use_band max_diag band_size max_mis \
-		      yn sel_mode hidden_ops align_length \
-		      use_filter filter_cutoff rp_mode rp_params } {
+proc FIJ_OK_Pressed { f io aname infile1 id1 infile2 id2 
+		      word_length blocks location rp_mode } {
     
     global CurContig
     global LREG
@@ -365,8 +477,7 @@ proc FIJ_OK_Pressed { f io infile1 id1 infile2 id2 blocks min_overlap
     global NGRec
     global gap5_defs
 
-    set segment ""
-    set active_tags {}
+    upvar #0 $aname data
 
     if {[lorf_in_get $infile1] == 3} {
 	set list1 [CreateAllContigList $io]
@@ -386,8 +497,7 @@ proc FIJ_OK_Pressed { f io infile1 id1 infile2 id2 blocks min_overlap
 	set list2 [lorf_get_list $infile2]
     }
 
-    if {[yes_no_get $yn]} {
-        upvar #0 $hidden_ops data
+    if {$data(use_hidden)} {
 	set win_size $data($data(which_mode)_win_size)
 	set max_dash $data(base_max_dash)
 	set min_conf $data(conf_min_conf)
@@ -403,29 +513,14 @@ proc FIJ_OK_Pressed { f io infile1 id1 infile2 id2 blocks min_overlap
 
     set word_length [lindex {? 12 8 4} [radiolist_get $word_length]]
     
-    set max_prob [entrybox_get $max_diag]
-    set max_align_length [entrybox_get $align_length]
-
     set rp_mode_str [lindex {all_all end_all end_end off } \
 		     [expr {[radiolist_get $rp_mode] - 1} ]]
-    if { $rp_mode_str ne "off" } {
-	upvar #0 $rp_params rpdata
-	set rp_end_size $rpdata(end_size)
-	set rp_min_mq   $rpdata(min_mq)
-	set rp_min_freq [scalebox_get $f.rp.min_freq]
-	set rp_libs     $rpdata(libs)
-    } else {
-	set rp_end_size 1000
-	set rp_min_mq   0
-	set rp_min_freq 0
-	set rp_libs     {}
-    }
 
     set fast_mode 0
     if {[radiolist_get $blocks] <= 2} {
         # Quick method
-	set min_match [scalebox_get $min_match]
-	set band_size [yes_no_get $use_band]
+	set min_match $data(min_match)
+	set band_size $data(use_band)
 
 	if {[radiolist_get $blocks] == 1} {
 	    set fast_mode 1
@@ -433,16 +528,17 @@ proc FIJ_OK_Pressed { f io infile1 id1 infile2 id2 blocks min_overlap
     } else {
 	# Sensitive method
 	set min_match 0
-	set band_size [scalebox_get $band_size]
+	set band_size $data(band_size)
     }
 
-    set filter_words [yes_no_get $use_filter]
-    if {$filter_words != 0} {
-	set filter_words [$filter_cutoff get]
-    }
+    set ends         [expr {[radiolist_get $location]&1}]
+    set containments [expr {([radiolist_get $location]&2)==2}]
 
-    set min_overlap [scalebox_get $min_overlap]
-    set max_mis [scalebox_get $max_mis]
+    if {$data(use_filter) == 0} {
+	set filter_words 0
+    } else {
+	set filter_words $data(filter_words)
+    }
 
 
     # Destroy dialog before showing plot to avoid window activation problems
@@ -454,28 +550,36 @@ proc FIJ_OK_Pressed { f io infile1 id1 infile2 id2 blocks min_overlap
 
 
     SetBusy
-    set id [log_call find_internal_joins -io $io \
-		-min_overlap $min_overlap \
-		-max_pmismatch $max_mis \
-		-word_length $word_length \
-		-max_prob $max_prob\
-		-min_match $min_match \
-		-band $band_size \
-		-win_size $win_size \
-		-max_dashes $max_dash \
-		-min_conf $min_conf \
-		-use_conf $use_conf \
-		-use_hidden $use_hidden \
-		-max_display $max_align_length \
-		-fast_mode $fast_mode \
-		-filter_words $filter_words \
-		-rp_mode $rp_mode_str \
-		-rp_end_size $rp_end_size \
-		-rp_min_mq $rp_min_mq \
-		-rp_min_freq $rp_min_freq \
-		-rp_libraries $rp_libs \
-		-contigs1 $list1 \
-		-contigs2 $list2]
+    set id [log_call find_internal_joins \
+		-io            $io \
+		-min_overlap   $data(min_overlap) \
+		-max_overlap   $data(max_overlap) \
+		-min_depth     $data(min_depth) \
+		-max_depth     $data(max_depth) \
+		-max_pmismatch $data(max_mismatch) \
+		-word_length   $word_length \
+		-max_prob      $data(max_prob)\
+		-min_match     $min_match \
+		-band          $band_size \
+		-win_size      $win_size \
+		-max_dashes    $max_dash \
+		-min_conf      $min_conf \
+		-use_conf      $use_conf \
+		-use_hidden    $data(use_hidden) \
+		-max_display   $data(align_length) \
+		-fast_mode     $fast_mode \
+		-filter_words  $filter_words \
+		-rp_mode       $rp_mode_str \
+		-rp_end_size   $data(rp_end_size) \
+		-rp_min_mq     $data(rp_min_mq) \
+		-rp_min_freq   $data(rp_min_freq) \
+		-rp_min_perc   $data(rp_min_perc) \
+		-rp_libraries  $data(rp_libs) \
+		-unique_ends   $data(unique_ends) \
+		-containments  $containments \
+		-ends          $ends \
+		-contigs1      $list1 \
+		-contigs2      $list2]
 
     if {$id > 0} {
 	# Draw it too
@@ -667,36 +771,7 @@ proc ReadPairParametersDialog { w io aname } {
 	return
     }
     
-    set end_size [keylget gap5_defs FIJ.READPAIR.END_SIZE.VALUE]
-    if { $data(max_end_size) > $end_size } {
-	set end_size $data(max_end_size)
-    }
-    xentry $f.end_size \
-	-label [keylget gap5_defs FIJ.READPAIR.END_SIZE.NAME] \
-	-default $end_size
-
-    scalebox $f.min_mq \
-	-title [keylget gap5_defs FIJ.READPAIR.MIN_MAP_QUAL.NAME] \
-        -from [keylget gap5_defs FIJ.READPAIR.MIN_MAP_QUAL.MIN] \
-	-to [keylget gap5_defs FIJ.READPAIR.MIN_MAP_QUAL.MAX] \
-        -default [keylget gap5_defs FIJ.READPAIR.MIN_MAP_QUAL.VALUE] \
-        -width 5 \
-        -type CheckInt \
-        -orient horiz
-
-    # scalebox $f.min_freq \
-    #     -title [keylget gap5_defs FIJ.READPAIR.MIN_FREQ.NAME] \
-    #     -from [keylget gap5_defs FIJ.READPAIR.MIN_FREQ.MIN] \
-    # 	-to [keylget gap5_defs FIJ.READPAIR.MIN_FREQ.MAX] \
-    #     -default [keylget gap5_defs FIJ.READPAIR.MIN_FREQ.VALUE] \
-    #     -width 5 \
-    #     -type CheckInt \
-    #     -orient horiz
-
-    label $f.spacer -text ""
-
-    labelframe $f.libs -text ""
-
+    frame $f.libs
     label $f.libs.label -text "By default templates in all libraries are used to spot read pairs. To restrict to specific libraries, select them from the list below." -wrap 400 -justify left
 
     tablelist $f.libs.tl \
@@ -713,6 +788,7 @@ proc ReadPairParametersDialog { w io aname } {
 
     upvar #0 $f.libs.tl l_rec
 
+    FIJRPUpdateLibList $io data
     set nl $data(num_libs)
     for {set i 0} {$i < $nl} {incr i} {
 	set li $data($i)
@@ -729,7 +805,7 @@ proc ReadPairParametersDialog { w io aname } {
 	-bd 2 \
 	-relief groove
     
-    pack $f.end_size $f.min_mq $f.spacer $f.libs $f.ok_cancel \
+    pack $f.libs $f.ok_cancel \
 	-side top -fill both -expand 1
 }
 
@@ -738,30 +814,18 @@ proc ReadPairParametersDialogInit {io aname} {
     upvar #0 $aname data
 
     FIJRPUpdateLibList $io data
-
-    set end_size [keylget gap5_defs FIJ.READPAIR.END_SIZE.VALUE]
-    if { $data(max_end_size) >  $end_size } {
-	set end_size $data(max_end_size)
-    }
-
-    set data(end_size) $end_size
-    set data(min_mq)   [keylget gap5_defs FIJ.READPAIR.MIN_MAP_QUAL.VALUE]
-    # set data(min_freq) [keylget gap5_defs FIJ.READPAIR.MIN_FREQ.VALUE]
-    set data(libs)     {}
+    set data(rp_libs)     {}
 }
 
 proc ReadPairParametersDialogOK {w aname} {
     upvar #0 $aname data
-    upvar #0 $w.libs.tl l_rec
+    upvar #0 $w.tl l_rec
 
-    set data(end_size) [$w.end_size get]
-    set data(min_mq)   [scalebox_get $w.min_mq]
-    # set data(min_freq) [scalebox_get $w.min_freq]
     set libs {}
-    foreach idx [$w.libs.tl curselection] {
+    foreach idx [$w.tl curselection] {
 	lappend libs $l_rec($idx)
     }
-    set data(libs) $libs
+    set data(rp_libs) $libs
 
     destroy $w
 }

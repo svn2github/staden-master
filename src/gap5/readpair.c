@@ -69,13 +69,13 @@ void *readpair_obj_func(int job, void *jdata, obj_read_pair *obj,
 	    start_message();
 
 	    vmessage("Read pair:\n");
-	    vmessage("    From contig %s(#%"PRIrec") at %d reading %s(#%"PRIrec")\n",
+	    vmessage("    From contig %s(=%"PRIrec") at %d reading %s(#%"PRIrec")\n",
 		     get_contig_name(template->io, ABS(obj->c1)),
-		     io_clnbr(template->io, ABS(obj->c1)), obj->pos1,
+		     ABS(obj->c1), obj->pos1,
 		     get_read_name(template->io, obj->read1), obj->read1);
-	    vmessage("    With contig %s(#%"PRIrec") at %d reading %s(#%"PRIrec")\n",
+	    vmessage("    With contig %s(=%"PRIrec") at %d reading %s(#%"PRIrec")\n",
 		     get_contig_name(template->io, ABS(obj->c2)),
-		     io_clnbr(template->io, ABS(obj->c2)), obj->pos2,
+		     ABS(obj->c2), obj->pos2,
 		     get_read_name(template->io, obj->read2), obj->read2);
 	    {
 		seq_t *s;;
@@ -471,7 +471,7 @@ read_pair_t *spanning_pairs(GapIO *io, int num_contigs,
      * Any contig-pair with insufficient depth of read-pair is then
      * rejected;
      */
-    if (min_freq) {
+    if (min_freq > 0) {
 	ctg_hash = HashTableCreate(1024, HASH_FUNC_HSIEH | 
 				         HASH_DYNAMIC_SIZE |
 				         HASH_POOL_ITEMS);
@@ -746,7 +746,7 @@ read_pair_t *spanning_pairs(GapIO *io, int num_contigs,
 	pairs[npairs].mqual[0] = r1->mqual;
 	pairs[npairs].mqual[1] = r2->mqual;
 
-	if (min_freq) {
+	if (min_freq > 0) {
 	    HashData hd;
 
 	    ctg_pair[0] = pairs[npairs].contig[0];
@@ -764,7 +764,7 @@ read_pair_t *spanning_pairs(GapIO *io, int num_contigs,
     }
 
     /* Now filter by contig pair frequency */
-    if (min_freq) {
+    if (min_freq > 0) {
 	for (i = j = 0; i < npairs; i++) {
 	    HashItem *hi;
 

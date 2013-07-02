@@ -68,6 +68,8 @@ proc contig_id {path args} {
 		set command "$i"
       	    } elseif {$option == "-trace"} {
 		set trace "$i"
+      	    } elseif {$option == "-frame_relief"} {
+		$path configure -relief "$i"
       	    } elseif {$option == "-default"} {
 		set default "$i"
 	    } else {
