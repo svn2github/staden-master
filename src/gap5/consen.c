@@ -225,8 +225,6 @@ Contig_parms *get_contig_list (GapIO *io, int number_of_contigs,
 	    contig_list[i].contig_start_offset = 0;
 	    contig_list[i].contig_end_offset = 0;
 	}
-	contig_list[i].contig_left_gel =
-	    io_clnbr(io, contig_list[i].contig_number);
     }
 
     return contig_list;
@@ -1483,7 +1481,7 @@ int make_consensus( int task_mask, GapIO *io,
 		if (consensus) xfree(consensus);
 		return -1;
 	    }
-	    left_gel_number = contig_list[i].contig_left_gel;
+	    left_gel_number = contig_list[i].contig_number;
 
 	    (void) add_contig_title ( &consensus[*consensus_length], 
 				     project_name, left_gel_number);

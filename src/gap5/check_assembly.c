@@ -151,12 +151,12 @@ void *checkass_obj_func(int job, void *jdata, obj_checkass *obj,
 	case -1: /* Information from results manager */
 	    start_message();
 	    vmessage("check_assembly match:\n");
-	    vmessage("    From contig %s(#%"PRIrec") at %d\n",
+	    vmessage("    From contig %s(=%"PRIrec") at %d\n",
 		     get_contig_name(ca->io, ABS(obj->c1)),
-		     io_clnbr(ca->io, ABS(obj->c1)), obj->pos1);
-	    vmessage("    With contig %s(#%"PRIrec") at %d\n",
+		     ABS(obj->c1), obj->pos1);
+	    vmessage("    With contig %s(=%"PRIrec") at %d\n",
 		     get_contig_name(ca->io, ABS(obj->c2)),
-		     io_clnbr(ca->io, ABS(obj->c2)), obj->pos2);
+		     ABS(obj->c2), obj->pos2);
 	    vmessage("    Length %d, mismatch %2.2f%%\n\n",
 		     obj->length, ((float)obj->score)/10000);
 	    end_message(cs->window);

@@ -54,12 +54,12 @@ void *find_oligo_obj_func1(int job,
 
 	    start_message();
 	    vmessage("Sequence search:\n");
-	    vmessage("    From contig %s(#%"PRIrec") at %d\n",
+	    vmessage("    From contig %s(=%"PRIrec") at %d\n",
 		     get_contig_name(find_oligo->io, ABS(obj->c1)),
-		     io_clnbr(find_oligo->io, ABS(obj->c1)), obj->pos1);
-	    vmessage("    With contig %s(#%"PRIrec") at %d\n",
+		     ABS(obj->c1), obj->pos1);
+	    vmessage("    With contig %s(=%"PRIrec") at %d\n",
 		     get_contig_name(find_oligo->io, ABS(obj->c2)),
-		     io_clnbr(find_oligo->io, ABS(obj->c2)), obj->pos2);
+		     ABS(obj->c2), obj->pos2);
 	    vmessage("    Length %d, match %2.2f%%\n\n",
 		     obj->length,
 		     (float)obj->score / obj->length * 100.0 );
@@ -156,10 +156,8 @@ void *find_oligo_obj_func1(int job,
 	sprintf(buf,
 		"Oligo: %c#%"PRIrec"@%d with %c#%"PRIrec"@%d, "
 		"len %d, match %2.2f%%",
-		obj->c1 > 0 ? '+' : '-',
-		io_clnbr(find_oligo->io, ABS(obj->c1)), obj->pos1,
-		obj->c2 > 0 ? '+' : '-',
-		io_clnbr(find_oligo->io, ABS(obj->c2)), obj->pos2,
+		obj->c1 > 0 ? '+' : '-', ABS(obj->c1), obj->pos1,
+		obj->c2 > 0 ? '+' : '-', ABS(obj->c2), obj->pos2,
 		obj->length, (float)obj->score / obj->length * 100.0);
 	return buf;
     }
@@ -195,9 +193,9 @@ void *find_oligo_obj_func2(int job,
 
 	    start_message();
 	    vmessage("Sequence search\n");
-	    vmessage("    Contig %s(#%"PRIrec") at %d\n",
+	    vmessage("    Contig %s(=%"PRIrec") at %d\n",
 		     get_contig_name(find_oligo->io, ABS(obj->c1)),
-		     io_clnbr(find_oligo->io, ABS(obj->c1)), obj->pos1);
+		     ABS(obj->c1), obj->pos1);
 	    vmessage("    Length %d, match %2.2f%%\n\n",
 		   obj->length, (float)obj->score / obj->length * 100.0 );
 	    end_message(cs->window);
@@ -729,12 +727,11 @@ TagMatch(GapIO *io,                                                    /* in */
 
 			    sprintf(title, "Match found between tag on contig "
 				    "%d in the %c sense and contig %d",
-				    io_clnbr(io, ABS(c1[cnt])),
-				    c1[cnt] > 0 ? '+' : '-',
-				    io_clnbr(io, c2[cnt]));
+				    ABS(c1[cnt]), c1[cnt] > 0 ? '+' : '-',
+				    c2[cnt]);
 
-			    sprintf(name1, "%d", io_clnbr(io, ABS(c1[cnt])));
-			    sprintf(name2, "%d", io_clnbr(io, ABS(c2[cnt])));
+			    sprintf(name1, "%d", ABS(c1[cnt]));
+			    sprintf(name2, "%d", ABS(c2[cnt]));
 			    res = list_alignment(string, cons_match,
 						 name1, name2, pos1[cnt],
 						 pos2[cnt], title);
@@ -957,7 +954,7 @@ StringMatch(GapIO *io,                                                 /* in */
 			 pos1[j] <= contig_array[i].end) ||
 			(s != NULL && cutoff_data)) {
 
-			sprintf(name1, "%"PRIrec"", io_clnbr(io, ABS(c1[j])));
+			sprintf(name1, "%"PRIrec"", ABS(c1[j]));
 			sprintf(title, "Match found with contig #%"PRIrec
 				" read #%"PRIrec
 				" in the %c sense",

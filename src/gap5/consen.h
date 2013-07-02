@@ -37,7 +37,6 @@ typedef struct contig_parms_ {
     tg_rec contig_number;
     int contig_start;
     int contig_end;
-    tg_rec contig_left_gel;
     int contig_left_extension;
     int contig_right_extension;
     int contig_start_offset;

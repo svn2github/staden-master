@@ -56,8 +56,7 @@ renz_info(char *window,
     
     vfuncheader("%s result list", name);
     
-    vmessage("Contig %s (#%"PRIrec") \n", get_contig_name(io, contig),
-	     io_clnbr(io, contig));
+    vmessage("Contig %s (=%"PRIrec") \n", get_contig_name(io, contig), contig);
 
     vmessage("Number of enzymes = %d\n", num_enzymes);
     vmessage("Number of matches = %d\n", num_match);
