@@ -431,7 +431,7 @@ proc FIJDialog { w io } {
 	-ok_command "FIJ_OK_Pressed $w $io $w.ops \
                     $f_i.l1.infile1 $f_i.l1.id1 $f_i.l2.infile2 $f_i.l2.id2 \
                     $f_s.word_length $f_s.blocks $f_s.location $f_f.rp.mode" \
-	-cancel_command "destroy $f" \
+	-cancel_command "destroy $w" \
 	-help_command "show_help gap5 {FIJ-Dialogue}" \
 	-bd 2 \
 	-relief groove
@@ -458,17 +458,17 @@ proc FIJ_config_contig_ids { f id { state unchanged } } {
     set id1_state [eval [entrybox_path $f.l1.id1.ent] cget -state]
     set id2_state [eval [entrybox_path $f.l2.id2.ent] cget -state]
 
-    set boxen []
+    set boxen {}
     if { "$id" == "id1" } {
 	if { $id1_state == "normal" } { lappend boxen "$f.l1.id1" }
 	if { $id2_state == "normal" } { lappend boxen "$f.l2.id2" }
     } else {
-	if { $id2_state == "normal" } { lappend boxen "$f.l1.id2" }
-	if { $id1_state == "normal" } { lappend boxen "$f.l2.id1" }	
+	if { $id2_state == "normal" } { lappend boxen "$f.l2.id2" }
+	if { $id1_state == "normal" } { lappend boxen "$f.l1.id1" }	
     }
     # Need at least one item or we get errors...
     if { [llength $boxen] == 0 } { lappend boxen "$f.l1.id1" }
-    SetCurFrame $f $boxen
+    SetCurFrame $f.l1 $boxen
 }
 
 ###########################################################################
@@ -823,10 +823,10 @@ proc ReadPairParametersDialogInit {io aname} {
 
 proc ReadPairParametersDialogOK {w aname} {
     upvar #0 $aname data
-    upvar #0 $w.tl l_rec
+    upvar #0 $w.libs.tl l_rec
 
     set libs {}
-    foreach idx [$w.tl curselection] {
+    foreach idx [$w.libs.tl curselection] {
 	lappend libs $l_rec($idx)
     }
     set data(rp_libs) $libs
