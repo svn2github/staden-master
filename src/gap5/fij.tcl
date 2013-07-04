@@ -11,12 +11,12 @@ proc FIJDialog { w io } {
     global LREG
     global $w.ops
 
+    if {[xtoplevel $w -resizable 0] == ""} return
+    wm title $w "Find internal joins"
+
     if {[info exists $w.ops]} {
 	unset $w.ops
     }
-
-    if {[xtoplevel $w -resizable 0] == ""} return
-    wm title $w "Find internal joins"
 
     # 3 Panes
     # 
