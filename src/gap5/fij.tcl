@@ -54,8 +54,11 @@ proc FIJDialog { w io } {
     set b [ttk::notebook $w.book]
     pack $b -side top -fill both -expand 1
 
-    bind $w <Key-Left>  "$b select \[expr {(\[$b select\]-1)%%3}\]"
-    bind $w <Key-Right> "$b select \[expr {(\[$b select\]+1)%%3}\]"
+    bind $w <Alt-Left>  "$b select \[expr {(\[$b select\]-1)%%3}\]"
+    bind $w <Alt-Right> "$b select \[expr {(\[$b select\]+1)%%3}\]"
+    bind $w <Alt-c> "$b select 0"
+    bind $w <Alt-s> "$b select 1"
+    bind $w <Alt-f> "$b select 2"
 
     ###########################################################################
     # Contig identification
