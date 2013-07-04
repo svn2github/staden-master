@@ -770,8 +770,8 @@ int list_alignment ( char *seq1, char *seq2, char *name1, char *name2,
     vmessage("%s\n", title);
    
     i = identities ( seq1, seq2 );
-    vmessage(" Percentage mismatch %5.1f\n",
-	     100*(seq_len ? (float)(seq_len-i)/seq_len : (float)1));
+    vmessage(" Percentage mismatch %5.1f     Length %d\n",
+	     100*(seq_len ? (float)(seq_len-i)/seq_len : (float)1), seq_len);
 
     for ( i=0,p1=pos1,p2=pos2;i<seq_len;i+=line_length) {
 	vmessage("        ");
