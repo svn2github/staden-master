@@ -1038,6 +1038,15 @@ proc contig_editor {w args} {
 	set editor_right_click 0
     }
 
+    # We sometimes get given focus to the toplevel (eg .e1) and not the
+    # internal sheet (.e1.ed1.pane.seq.sheet). If so refocus to the correct
+    # component again.
+    bind $w <Any-FocusIn> "
+        if {\[string match \[focus\] {$w}\]} {
+            after idle {focus \[set ${w}(curr_editor)\]}
+        }
+    "
+
     # Packing
     grid rowconfigure $w 3 -weight 1
     grid columnconfigure $w 0 -weight 1
