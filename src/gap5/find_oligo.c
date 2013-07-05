@@ -982,8 +982,12 @@ StringMatch(GapIO *io,                                                 /* in */
 			    c2[k] = c2[j];
 			}
 
-			if (s)
-			    add_to_list("seq_hits", sequence_get_name(&s));
+			if (s) {
+			    char buf[8192];
+			    sprintf(buf, "#%"PRIrec" %s",
+				    s->rec, sequence_get_name(&s));
+			    add_to_list("seq_hits", buf);
+			}
 
 			k++;
 		    }
@@ -1018,6 +1022,11 @@ StringMatch(GapIO *io,                                                 /* in */
 		    free(seq2);
 		    seq2 = NULL;
 		}
+	    }
+
+	    if (ci) {
+		contig_iter_del(ci);
+		ci = NULL;
 	    }
 
 	    if (too_many)
