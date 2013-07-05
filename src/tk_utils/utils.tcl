@@ -316,3 +316,49 @@ if {[info command lreverse] == ""} {
 	lappend r [lindex $l 0]
     }
 }
+
+#############################################################################
+# Fixing of auto-repeat "run on" giving a laggy appearance to applications.
+
+namespace eval ::auto_repeat {
+    set release_time 0
+    set key_idle 1
+
+    # Key press. Consume any auto-repeat keys (detected as simultaneous
+    # KeyRelease and KeyPress events) when we're busy so we don't
+    # start accumulating a large queue.
+    proc AutoRepeatPress {k t} {
+	variable release_time
+	variable key_idle
+
+	if {$t == $release_time && !$key_idle} {
+	    return -code break;
+	}
+
+	set key_idle 0
+	after idle {set ::auto_repeat::key_idle 1}
+    }
+
+    # Key release. If we've had an idle event loop process since
+    # the last press then we're safe to assume auto-repeat is not
+    # swamping the application
+    proc AutoRepeatRelease {k t} {
+	variable release_time
+	variable key_idle
+
+	if {$key_idle} {
+	    set release_time 0
+	} else {
+	    set release_time $t
+	}
+    }
+
+    bind AutoRepeat <Any-KeyPress>   {::auto_repeat::AutoRepeatPress   %K %t}
+    bind AutoRepeat <Any-KeyRelease> {::auto_repeat::AutoRepeatRelease %K %t}
+}
+
+# Applies a correction to window $w to remove excess auto-repeated key
+# events if processing is failing to keep up.
+proc AutoRepeatCorrect {w} {
+    bindtags $w [linsert [bindtags $w] 0 AutoRepeat]
+}

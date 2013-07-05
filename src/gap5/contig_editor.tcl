@@ -1466,6 +1466,8 @@ proc editor_pane {top w above ind arg_array} {
     # Force the editing cursor to be visible
     eval $ed set_cursor [$ed get_cursor relative] 1
 
+    AutoRepeatCorrect $ed
+
     return $ed
 }
 
@@ -1785,7 +1787,10 @@ proc editor_group_by {w} {
 # a redraw.
 proc order_update_on_consensus {w} {
     global $w
-    
+
+    if {[lindex [$w configure -group_by_primary]   end] != 6 ||
+	[lindex [$w configure -group_by_secondary] end] != 6} return
+
     foreach {type rec pos} [$w get_number] break
     
     set tl [winfo toplevel $w]
