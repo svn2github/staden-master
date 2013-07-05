@@ -3582,10 +3582,14 @@ int edPrevDifference(edview *xx) {
 void edview_set_sort_order(edview *xx) {
     edview *linked;
 
-    contig_set_default_sort(&xx->sort_settings, xx->ed->group_primary, xx->ed->group_secondary);
+    contig_set_default_sort(&xx->sort_settings,
+			    xx->ed->group_primary,
+			    xx->ed->group_secondary);
     
     if ((linked = linked_editor(xx)) != NULL) {
-    	contig_set_default_sort(&linked->sort_settings, linked->ed->group_primary, linked->ed->group_secondary);
+    	contig_set_default_sort(&linked->sort_settings,
+				linked->ed->group_primary,
+				linked->ed->group_secondary);
     }
     
     if (xx->r) xx->r_start = xx->r_end; // force re-calc in edview_visible_items
