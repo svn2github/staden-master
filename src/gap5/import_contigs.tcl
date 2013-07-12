@@ -123,7 +123,11 @@ proc ImportSequences2 { old_io f job } {
     } else {
 	global $f.new_contigs $f.repad
 	set merge [ expr ! [set $f.new_contigs] ]
-	set repad [set $f.repad]
+	if { $merge } {
+	    set repad [set $f.repad]
+	} else {
+	    set repad 0
+	}
     }
     set refpos [set $f.refpos]
     set rmdup  [set $f.rmdup]
@@ -171,7 +175,8 @@ proc ImportSequences2 { old_io f job } {
 		       -merge_contigs $merge \
 		       -repad $repad         \
 		       -store_refpos $refpos \
-		       -remove_dups $rmdup } ]
+		       -remove_dups $rmdup   \
+		       -index_names 1 } ]
      } {
 	verror ERR_WARN "ImportSequences" "Import failed"
 	tk_messageBox -icon error -type ok -title "Import failed" \
