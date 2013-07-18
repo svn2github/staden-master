@@ -330,8 +330,8 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 		    sequence_get_range_pair_position(gr->io, r);
 		} else if (r->pair_ind == -1 && r->pair_contig == gr->crec) {
 		    /* Same contig, but out of date. Check boundary */
-		    if (r->pair_start > c->end || r->pair_end < c->start)
-			r->pair_contig = 0;
+		    //if (r->pair_start > c->end || r->pair_end < c->start)
+		    r->pair_contig = 0;
 		}
 	    }
 
