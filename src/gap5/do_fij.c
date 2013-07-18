@@ -205,6 +205,7 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
     contig_iterator *ci      = NULL;
     rangec_t        *r1, *r2;
     HashTable       *pairs   = NULL;
+    HashTable       *pairs2  = NULL;
     pool_alloc_t    *rp_pool = NULL;
     int              good_pairs = 0;
     int              all_pairs = 0;
@@ -234,8 +235,12 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
     if (NULL == ci) return -1;
     pairs = HashTableCreate(1024, HASH_DYNAMIC_SIZE | HASH_POOL_ITEMS);
     if (NULL == pairs) goto fail;
+    pairs2 = HashTableCreate(1024, HASH_DYNAMIC_SIZE | HASH_POOL_ITEMS);
+    if (NULL == pairs2) goto fail;
     rp_pool = pool_create(sizeof(rangec_t));
     if (NULL == rp_pool) goto fail;
+
+    /* Assumes only 2 reads per pair */
     while (NULL != (r1 = contig_iter_next(io, ci))) {
 	HashItem *hi;
 	HashData hd;
@@ -337,10 +342,101 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
 		    good_pairs++;
 		all_pairs++;
 	    }
+	} else if (cd->fij_args->rp_min_perc > 0) {
+	    HashItem *hi;
+	    HashData hd;
+
+	    /*
+	     * We have a minimum percentage, so we'll need to count all
+	     * pairs to see how many match to other contigs, rather than
+	     * just the absolute number matching this pair of contigs.
+	     */
+	    if (!r2->pair_rec) continue;  /* Unpaired */
+	    if (NULL != (hi = HashTableSearch(pairs2, (char *)&r2->pair_rec,
+					      sizeof(r2->pair_rec)))) {
+		/* internal read pair */
+		r1 = hi->data.p;
+		pool_free(rp_pool, r1);
+		HashTableDel(pairs2, hi, 0);
+		continue;
+	    }
+	    r1 = pool_alloc(rp_pool);
+	    if (NULL == r1) goto fail;
+	    *r1 = *r2;
+	    hd.p = r1;
+	    if (!HashTableAdd(pairs2, (char *)&r1->rec, sizeof(r1->rec), hd,0))
+		goto fail;
 	}
     }
 
+    if (cd->fij_args->rp_min_perc > 0) {
+	int max_all = 100 * good_pairs / cd->fij_args->rp_min_perc + 1;
+	HashIter *iter;
+	HashItem *hi;
+	tg_rec lib_rec;
+
+	/*
+	 * Iterate through pairs and pairs2 hashes checking any remaining
+	 * read-pairs to see if they match elsewhere in their designated
+	 * contigs or off to a new contig
+	 */
+	if (!(iter = HashTableIterCreate()))
+	    goto fail;
+	while (all_pairs < max_all && (hi = HashTableIterNext(pairs, iter))) {
+	    rangec_t *r = hi->data.p;
+
+	    /* Check filter-by-library */
+	    if (cd->lib_hash) {
+		if (!(lib_rec = r->library_rec)) {
+		    seq_t *s = cache_search(io, GT_Seq, r->rec);
+		    if (NULL == s) goto fail;
+		    if (s->parent_type == GT_Library)
+			lib_rec = s->parent_rec;
+		    if (!lib_rec)
+			continue;
+		}
+		if (!HashTableSearch(cd->lib_hash, (char *)&lib_rec,
+				     sizeof(lib_rec)))
+		    continue;
+	    }
+
+	    if (sequence_get_range_pair_position(io, r) < 0)
+		goto fail;
+	    if (r->pair_contig != crec1 && r->pair_contig != crec2)
+		all_pairs++;
+	}
+	HashTableIterDestroy(iter);
+
+	if (!(iter = HashTableIterCreate()))
+	    goto fail;
+	while (all_pairs < max_all && (hi = HashTableIterNext(pairs2, iter))) {
+	    rangec_t *r = hi->data.p;
+	    /* Check filter-by-library */
+
+	    if (cd->lib_hash) {
+		if (!(lib_rec = r->library_rec)) {
+		    seq_t *s = cache_search(io, GT_Seq, r->rec);
+		    if (NULL == s) goto fail;
+		    if (s->parent_type == GT_Library)
+			lib_rec = s->parent_rec;
+		    if (!lib_rec)
+			continue;
+		}
+		if (!HashTableSearch(cd->lib_hash, (char *)&lib_rec,
+				     sizeof(lib_rec)))
+		    continue;
+	    }
+
+	    if (sequence_get_range_pair_position(io, r) < 0)
+		goto fail;
+	    if (r->pair_contig != crec1 && r->pair_contig != crec2)
+		all_pairs++;
+	}
+	HashTableIterDestroy(iter);
+    }
+
     HashTableDestroy(pairs, 0);
+    HashTableDestroy(pairs2, 0);
     pool_destroy(rp_pool);
     contig_iter_del(ci);
 
@@ -353,7 +449,7 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
 
     if (!all_pairs || 100*good_pairs/all_pairs < cd->fij_args->rp_min_perc) {
 	vmessage("Rejecting join between =%"PRIrec" and =%"PRIrec
-		 " due to insufficient percentage of read-pairs (%d).\n",
+		 " due to insufficient percentage of read-pairs (<=%d).\n",
 		 crec1, crec2, all_pairs ? 100*good_pairs/all_pairs : 0);
 	return 1;
     }
