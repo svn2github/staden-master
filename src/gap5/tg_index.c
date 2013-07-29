@@ -138,7 +138,7 @@ int main(int argc, char **argv) {
 
     printf("\n\tg_index:\tShort Read Alignment Indexer, version 1.2.13"SVN_VERS"\n");
     printf("\n\tAuthor: \tJames Bonfield (jkb@sanger.ac.uk)\n");
-    printf("\t        \t2007-2011, Wellcome Trust Sanger Institute\n\n");
+    printf("\t        \t2007-2013, Wellcome Trust Sanger Institute\n\n");
 
     //mallopt(M_TRIM_THRESHOLD, 100000);
     //mallopt(M_MMAP_MAX, 0);
@@ -325,7 +325,7 @@ int main(int argc, char **argv) {
 	int fmt = a.fmt;
 
 	/* Open a temporary file for B+Tree indexing if needed */
-	a.tmp = a.no_tree ? NULL : bttmp_file_open();
+	a.tmp = a.no_tree ? NULL : bttmp_sort_initialise();
 
 	/* Auto detect file type if appropriate */
 	if (fmt == 'a')
@@ -401,31 +401,17 @@ int main(int argc, char **argv) {
 
 	/* Add to our sequence name B+Tree */
 	if (a.tmp) {
-	    char *name;
-	    tg_rec rec;
-	    int cnt = 0;
-
-	    puts("Sorting sequence name index");
-	    bttmp_file_sort(a.tmp);
-
-	    puts("Building index: one dot per 10k reads");
-	    while (NULL != (name = bttmp_file_get(a.tmp, &rec))) {
-		sequence_index_update(io, name, strlen(name), rec);
-		if (++cnt == 10000) {
-		    putchar('.'); fflush(stdout);
-		    cnt = 0;
-		    cache_flush(io);
-		}
-	    }
-	    putchar('\n');
-	
-	    bttmp_file_close(a.tmp);
+	    // save the last queue
+	    bttmp_build_index(io, a.tmp);
+	    bttmp_sort_delete(a.tmp);
 	}
     }
 
     /* system("ps lx"); */
 
     gio_close(io);
+    
+    printf("tg_index - done.\n");
 
     return err;
 }

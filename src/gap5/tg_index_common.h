@@ -19,7 +19,7 @@ typedef struct {
 } pair_loc_t;
 
 typedef struct {
-    FILE *fp;
+    bttmp_t *file;
     pair_loc_t *pair;
     string_alloc_t *name_pool;
     int index;
@@ -35,7 +35,7 @@ typedef struct {
     int write_size;
     int count;
     HacheTable *phache;
-    FILE *finish;
+    bttmp_t *finish;
     tg_rec max_bin;
 } tg_pair_t;
     
@@ -44,11 +44,21 @@ bttmp_t *bttmp_file_open(void);
 
 void bttmp_file_close(bttmp_t *tmp);
 
-void bttmp_file_store(bttmp_t *tmp,  size_t name_len, char *name, tg_rec rec);
+// void bttmp_file_store(bttmp_t *tmp,  size_t name_len, char *name, tg_rec rec);
 
 void bttmp_file_sort(bttmp_t *tmp);
 
 char *bttmp_file_get(bttmp_t *tmp, tg_rec *rec);
+
+int bttmp_build_index(GapIO *io, bttmp_sort_t *bs);
+
+bttmp_sort_t *bttmp_sort_initialise(void);
+
+int bttmp_build_index(GapIO *io, bttmp_sort_t *bs);
+
+void bttmp_sort_delete(bttmp_sort_t *bs);
+
+void bttmp_save_queue(bttmp_queue_t *que);
 
 tg_rec save_sequence(GapIO *io, seq_t *seq, bin_index_t *bin, range_t *r_out);
 

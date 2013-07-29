@@ -23,13 +23,70 @@
  * to delay generation of the B+Tree until after adding all the sequence
  * records.
  */
+ 
+static char *get_tmp_directory(void) {
+    
+    char *dir;
+    
+    /* Find a place to put the tmp files    
+       First *nix then Windows */
+    
+    if (NULL == (dir = getenv("TMP_DIR"))) {
+    	 dir = getenv("TEMP");
+    }
+    
+    /* if tmp_dir is null then we will just use the default locations */
+    
+    return dir;
+}
+
+
+static void c_replace(char *instr, char old, char new) {
+    int i;
+    size_t len = strlen(instr);
+    
+    for (i = 0; i < len; i++) {
+    	if (instr[i] == old) {
+	    instr[i] = new;
+	}
+    }
+}
+    
+
+static char *create_tmp_file_name(char *file_name) {
+    char *name;
+    char *dir;
+    
+    dir = get_tmp_directory();
+    
+    if (dir) {
+    	char *start;
+	int s_len;
+    
+	c_replace(file_name, '\\', '/');
+
+	if (NULL == (start = strrchr(file_name, '/'))) {
+    	    start = file_name;
+	} else {
+    	    start++;
+	}
+
+	s_len = strlen(dir) + strlen(start) + 2; // 2 for terminator and seperator
+	name = (char *)malloc(s_len);
+	sprintf(name, "%s/%s", dir, start);
+    } else {
+    	name = (char *)malloc(strlen(file_name) + 1);
+	strcpy(name, file_name);
+    }
+    
+    return name;
+}
+
 
 bttmp_t *bttmp_file_open(void) {
-    bttmp_t *tmp = malloc(sizeof(*tmp));
+    bttmp_t *tmp;
     int fd;
-
-    if (!tmp)
-	return NULL;
+    char file_name[L_tmpnam];
 
     /*
      * This emits a warning from gcc:
@@ -41,20 +98,35 @@ bttmp_t *bttmp_file_open(void) {
      * but in our case we need to know the file name too so we can sort
      * it later on.
      */
-    if (NULL == tmpnam(tmp->name)) {
-	perror("tmpnam()");
-	free(tmp);
+
+    if (NULL == tmpnam(file_name)) {
+    	perror("tmpnam()");
+	return NULL;
+    }
+    
+    if (NULL == (tmp = malloc(sizeof(bttmp_t)))) {
+    	fprintf(stderr, "Error: unable to allocate memory for tmp_file struct\n");
+	return NULL;
+    }
+    
+    tmp->name = create_tmp_file_name(file_name);
+    
+    if (tmp->name == NULL) {
+    	fprintf(stderr, "Error: unable to create tmp file name.\n");
+    	free(tmp);
 	return NULL;
     }
     
     if (-1 == (fd = open(tmp->name, O_RDWR|O_CREAT|O_EXCL, 0666))) {
 	perror(tmp->name);
+	free(tmp->name);
 	free(tmp);
 	return NULL;
     }
 
     if (NULL == (tmp->fp = fdopen(fd, "wb+"))) {
 	perror(tmp->name);
+	free(tmp->name);
 	free(tmp);
 	return NULL;
     }
@@ -63,22 +135,17 @@ bttmp_t *bttmp_file_open(void) {
 }
 
 void bttmp_file_close(bttmp_t *tmp) {
-    if (tmp->fp) {
-	fclose(tmp->fp);
-	tmp->fp = NULL;
+    if (tmp && tmp->name) {
+    	if (tmp->fp) {
+	    fclose(tmp->fp);
+	}
+	
+	unlink(tmp->name);
+	free(tmp->name);
+	free(tmp);
     }
-
-    unlink(tmp->name);
-    free(tmp);
 }
 
-/*
- * Stores a name and record in a temporary file suitable for sorting and
- * adding to the name index at a later stage.
- */
-void bttmp_file_store(bttmp_t *tmp,  size_t name_len, char *name, tg_rec rec) {
-    fprintf(tmp->fp, "%.*s %"PRIrec"\n", (int)name_len, name, rec);
-}
 
 /* Sort the temporary file, and rewind to start */
 void bttmp_file_sort(bttmp_t *tmp) {
@@ -94,7 +161,7 @@ void bttmp_file_sort(bttmp_t *tmp) {
     system(buf);
     printf("done\n");
 
-    unlink(tmp->name);
+    // unlink(tmp->name);
     strcpy(tmp->name, new_tmp);
     tmp->fp = fopen(tmp->name, "rb+");
 }
@@ -125,6 +192,247 @@ char *bttmp_file_get(bttmp_t *tmp, tg_rec *rec) {
 	
     return NULL;
 }
+
+
+bttmp_queue_t *bttmp_add_queue(bttmp_sort_t *bs) {
+    bttmp_queue_t *tmp;
+    int cur = bs->que_size;
+
+    bs->que_size++;
+    
+    tmp = realloc(bs->que, sizeof(bttmp_queue_t) * bs->que_size);
+    
+    if (tmp) {
+    	bs->que = tmp;
+    } else {
+    	return NULL;
+    }
+    
+    bs->que[cur].file = NULL;
+    bs->que[cur].data_pool = string_pool_create(1024 * 1024);
+    bs->que[cur].data  = malloc(bs->write_size * sizeof(char *));
+    bs->que[cur].index = 0;
+    bs->que[cur].size  = 0;
+    
+    if (!bs->que[cur].data_pool || !bs->que[cur].data) {
+    	fprintf(stderr, "Error: Unable to allocate memory for bttmp_queue_t.\n");
+	
+	if (bs->que[cur].data_pool) {
+	    string_pool_destroy(bs->que[cur].data_pool);
+	    bs->que[cur].data_pool = NULL;
+	} else if (bs->que[cur].data) {
+	    free(bs->que[cur].data);
+	    bs->que[cur].data = NULL;
+	}
+	
+	return NULL;
+    }
+    
+    return &bs->que[cur];
+}
+
+static int cmpstringp(const void *p1, const void *p2) {
+    return strcmp(* (char * const *) p1, * (char * const *) p2);
+}
+
+
+void bttmp_save_queue(bttmp_queue_t *que) {
+    int i;
+    
+    qsort(que->data, que->size, sizeof(que->data[0]), cmpstringp);
+    
+    que->file = bttmp_file_open();
+    
+    for (i = 0; i < que->size; i++) {
+    	fprintf(que->file->fp, "%s\n", que->data[i]);
+    }
+    
+    string_pool_destroy(que->data_pool);
+    free(que->data);
+}
+
+
+/*
+ * Stores a name and record in a temporary file suitable for sorting and
+ * adding to the name index at a later stage.
+ */
+static void bttmp_file_store(bttmp_sort_t *tmp,  size_t name_len, char *name, tg_rec rec) {
+    char entry[1024];
+    int cur = tmp->que_size - 1;
+    
+    sprintf(entry, "%.*s %"PRIrec"", (int)name_len, name, rec);
+    
+    tmp->que[cur].data[tmp->que[cur].size] = string_dup(tmp->que[cur].data_pool, entry);
+    tmp->que[cur].size++;
+    
+    if (tmp->que[cur].size == tmp->write_size) {
+    	bttmp_save_queue(&tmp->que[cur]);
+	bttmp_add_queue(tmp);
+    }
+}
+    
+
+// must find a better name for it than this
+bttmp_sort_t *bttmp_sort_initialise(void) {
+    bttmp_sort_t *tmp = malloc(sizeof(bttmp_sort_t));
+    
+    if (tmp == NULL) {
+    	fprintf(stderr, "Error: unable to malloc bttmp_sort_t\n");
+	return NULL;
+    }
+    
+    tmp->que = NULL;
+    tmp->que_size = 0;
+    tmp->working_size = 1000;
+    tmp->write_size = 50000;
+    tmp->count = 0;
+    
+    bttmp_add_queue(tmp);
+    
+    return tmp;
+}
+
+
+static int bttmp_load_data(bttmp_queue_t *bq) {
+    int i;
+    char *line_in = NULL;
+    long line_size = 0;
+    
+    if (bq->data_pool) {
+    	string_pool_destroy(bq->data_pool);
+    }
+    
+    bq->data_pool = string_pool_create(1024);
+    
+    for (i = 0; i < bq->size; i++) {
+    	int ret = tg_get_line(&line_in, &line_size, bq->file->fp);
+	
+	if (ret <= 0) break;
+	
+	bq->data[i] = string_dup(bq->data_pool, line_in);
+    }
+    
+    bq->size = i;
+    bq->index = 0;
+    
+    if (line_in) free(line_in);
+    
+    return bq->size;
+}
+
+
+static int bttmp_queues_initialise(bttmp_sort_t *bs) {
+    int i;
+    
+    for (i = 0; i < bs->que_size; i++) {
+    	rewind(bs->que[i].file->fp);
+	
+	if (NULL == (bs->que[i].data = malloc(sizeof(char *) * bs->working_size))) {
+	    fprintf(stderr, "Error: out of memory while allocating data in bttmp queue.\n");
+	    return -1;
+	}
+	
+	bs->que[i].data_pool = NULL;
+	bs->que[i].index = 0;
+	bs->que[i].size = bs->working_size;
+	
+	if (0 == bttmp_load_data(&bs->que[i])) {
+	    fprintf(stderr, "Error: initial data load failed on bttmp queue.\n");
+	    return -1;
+	}
+    }
+    
+    return 0;
+}
+
+
+static void bttmp_get_next_entry(bttmp_queue_t *que) {
+    que->index++;
+    
+    if (que->index == que->size) {
+    	bttmp_load_data(que);
+    }
+}
+
+
+int bttmp_build_index(GapIO *io, bttmp_sort_t *bs) {
+    int num_found = 0;
+    int still_looking = 1;
+    
+    puts("Sorting sequence name index");
+    bttmp_save_queue(&bs->que[bs->que_size - 1]);
+    bttmp_queues_initialise(bs);
+    
+    puts("Building index: one dot per 10k reads");
+    while (still_looking) {
+    	int i;
+	char *compare = NULL;
+	int file = 0;
+	int done = 0;
+	
+	for (i = 0; i < bs->que_size; i++) {
+	    bttmp_queue_t *que = &bs->que[i];
+	    
+	    if (que->size) {
+	    	done++;
+		
+		if (compare == NULL) {
+		    compare = que->data[que->index];
+		    file = i;
+		} else {
+		    int cmp = strcmp(compare, que->data[que->index]);
+		    
+		    if (cmp > 0) {
+		    	compare = que->data[que->index];
+			file = i;
+		    }
+		}
+	    }
+	}
+	
+	if (done) {
+	    char name[1024];
+	    tg_rec rec;
+	    int64_t recno;
+	    
+	    sscanf(compare, "%s %"PRId64"\n", name, &recno);
+    	    rec = recno;
+	    
+	    sequence_index_update(io, name, strlen(name), rec);
+	    bttmp_get_next_entry(&bs->que[file]);
+	    
+	    num_found++;
+	    
+	    if (!(num_found % 10000)) {
+	    	putchar('.'); fflush(stdout);
+		cache_flush(io);
+	    }
+	} else {
+	    still_looking = 0;
+	    putchar('\n');
+	}
+    }
+    
+    return num_found;
+}
+
+
+void bttmp_sort_delete(bttmp_sort_t *bs) {
+    int i;
+    
+    for (i = 0; i < bs->que_size; i++) {
+    	if (bs->que[i].file) bttmp_file_close(bs->que[i].file);
+	
+	if (bs->que[i].data_pool) string_pool_destroy(bs->que[i].data_pool);
+
+	if (bs->que[i].data) free(bs->que[i].data);
+    }
+    
+    if (bs->que) free(bs->que);
+    
+    free(bs);
+}
+  
 
 #if 0
 /* debugging functions */
@@ -201,7 +509,7 @@ static pair_queue_t *add_pair_queue(tg_pair_t *pair) {
     	return NULL;
     }
     
-    if (NULL == (pair->que[cur].fp = tmpfile())) {
+    if (NULL == (pair->que[cur].file = bttmp_file_open())) {
     	fprintf(stderr, "Cannot open tmp file in add_pair_queue\n");
     	return NULL;
     }
@@ -259,7 +567,7 @@ static void save_pair_data(tg_pair_t *pair) {
     }
 
     for (i = 0; i < i_max; i++) {
-    	fprintf(que->fp, "%s %s\n", save_pair[i].tname, save_pair[i].data);
+    	fprintf(que->file->fp, "%s %s\n", save_pair[i].tname, save_pair[i].data);
     }
 
     if (HacheTableEmpty(pair->phache, 1)) {
@@ -269,7 +577,7 @@ static void save_pair_data(tg_pair_t *pair) {
     
     string_pool_destroy(str_pool);
     free(save_pair);
-    fflush(que->fp);
+    fflush(que->file->fp);
 }
     	
 
@@ -325,7 +633,7 @@ static void find_pair(GapIO *io, tg_pair_t *pair, tg_rec recno, char *tname,
 	    int st = pl->pos;
 	    int en = pl->pos + (pl->orient ? - (pl->len-1) : pl->len-1);
 
-	    fprintf(pair->finish,
+	    fprintf(pair->finish->fp,
 		    "%"PRIrec" %d %"PRIrec" %d %d %d %d %"PRIrec"\n",
 		    po->bin, po->idx, pl->rec, pl->flags,
 		    MIN(st, en), MAX(st, en),
@@ -449,22 +757,22 @@ void create_new_contig(GapIO *io, contig_t **c, char *cname, int merge) {
     cache_incr(io, *c);
 }
 
-static void sort_file (FILE *old_files[], int div) {
-    FILE *new_files[10];
+static void sort_file (bttmp_t *old_files[], int div) {
+    bttmp_t *new_files[10];
     char line[100];
     int i;
 
-    memset(new_files, 0, sizeof(FILE *) * 10);
+    memset(new_files, 0, sizeof(bttmp_t *) * 10);
     
     for (i = 0; i < 10; i++) {
-	new_files[i] = tmpfile(); /* should auto-delete */
+	new_files[i] = bttmp_file_open(); 
     }
     
     for (i = 0; i < 10; i++) {
     	if (old_files[i]) {
-    	    rewind(old_files[i]);
+    	    rewind(old_files[i]->fp);
 
-	    while (fgets(line, 100, old_files[i])) {
+	    while (fgets(line, 100, old_files[i]->fp)) {
     		int bin;
 		int mod;
 
@@ -478,10 +786,10 @@ static void sort_file (FILE *old_files[], int div) {
 	    	    mod = 0;
 		}
 
-		fputs(line, new_files[mod]);
+		fputs(line, new_files[mod]->fp);
 	    }
 	    
-	    fclose(old_files[i]);
+	    bttmp_file_close(old_files[i]);
 	}
 	
 	old_files[i] = new_files[i];
@@ -679,7 +987,7 @@ tg_pair_t *create_pair(int queue) {
     pair->phache       = HacheTableCreate(32768, HASH_DYNAMIC_SIZE);
     pair->phache->name = "pair";
     
-    if (NULL == (pair->finish = tmpfile())) {
+    if (NULL == (pair->finish = bttmp_file_open())) {
     	free(pair);
 	return NULL;
     }
@@ -759,14 +1067,14 @@ tg_rec save_range_sequence(GapIO *io, seq_t *seq, uint8_t mapping_qual,
 
    
 static int sort_pair_file(tg_pair_t *pair) {
-    FILE  *old_files[11];
+    bttmp_t  *old_files[11];
     int div = 1;
     int max_div = 10; /* temp, needs to be variable */
     int i = 0;
-    FILE *final;
+    bttmp_t *final;
     tg_rec max_bin = pair->max_bin; 
     
-    memset(old_files, 0, sizeof(FILE *) * 11);
+    memset(old_files, 0, sizeof(bttmp_t *) * 11);
 
     old_files[0] = pair->finish;
     
@@ -782,17 +1090,17 @@ static int sort_pair_file(tg_pair_t *pair) {
     
     /* gather files together here */
     
-    final = tmpfile();
+    final = bttmp_file_open();
     
     while (old_files[i]) {
     	char line[100];
-     	rewind(old_files[i]);
+     	rewind(old_files[i]->fp);
 	
-	while (fgets(line, 100, old_files[i])) {
-  	    fputs(line, final);
+	while (fgets(line, 100, old_files[i]->fp)) {
+  	    fputs(line, final->fp);
 	}
  	
-     	fclose(old_files[i++]);
+     	bttmp_file_close(old_files[i++]);
     }
     
     pair->finish = final;
@@ -866,7 +1174,7 @@ static void merge_pairs(GapIO *io, tg_pair_t *pair) {
 	en = p->pos + (p->orient ? -(p->len-1) : p->len-1);
 
 	/* Link other end to us; done at end with others */
-	fprintf(pair->finish, "%"PRIrec" %d %"PRIrec" %d %d %d %d %"PRIrec"\n",
+	fprintf(pair->finish->fp, "%"PRIrec" %d %"PRIrec" %d %d %d %d %"PRIrec"\n",
 		bin_rec, bin_idx, p->rec, p->flags,
 		MIN(st, en), MAX(st, en), p->mq, p->crec);
 
@@ -875,14 +1183,14 @@ static void merge_pairs(GapIO *io, tg_pair_t *pair) {
 	bin_get_item_position(io, GT_Seq, r->rec, &contig, &st, &en,
 			      NULL, NULL, NULL, NULL);
 
-	fprintf(pair->finish, "%"PRIrec" %d %"PRIrec" %d %d %d %d %"PRIrec"\n",
+	fprintf(pair->finish->fp, "%"PRIrec" %d %"PRIrec" %d %d %d %d %"PRIrec"\n",
 		p->bin, p->idx, r->rec, r->flags, st, en, r->mqual, contig);
 
 	cache_decr(io, b2);
     }
 
     HacheTableIterDestroy(iter);
-    fflush(pair->finish);
+    fflush(pair->finish->fp);
 }
 
 
@@ -894,9 +1202,9 @@ static void complete_pairs(GapIO *io, tg_pair_t *pair) {
     int rec_count = 0;
     int total_count = 0;
     
-    rewind(pair->finish);
+    rewind(pair->finish->fp);
     
-    while (fgets(line, 1024, pair->finish)) {
+    while (fgets(line, 1024, pair->finish->fp)) {
 	int idx, flags;
 	tg_rec bin, rec, pair_contig;
 	int pair_start, pair_end, pair_mqual;
@@ -1015,7 +1323,7 @@ static int load_data(pair_queue_t *pq) {
     for (i = 0; i < pq->pair_size; i++) {
     	char name[1024];
     	int found;
-    	int ret = tg_get_line(&line_in, &line_size, pq->fp);
+    	int ret = tg_get_line(&line_in, &line_size, pq->file->fp);
 	
 	if (ret <= 0) break;
 	
@@ -1047,7 +1355,7 @@ static int initialise_queues(tg_pair_t *pair) {
     int i;
     
     for (i = 0; i < pair->que_size; i++) {
-    	rewind(pair->que[i].fp);
+    	rewind(pair->que[i].file->fp);
 	
 	if (NULL == (pair->que[i].pair = (pair_loc_t *)malloc(sizeof(pair_loc_t) * pair->working_size))) {
 	   fprintf(stderr, "Out of memory allocating pairs in initialise_queues\n");
@@ -1082,13 +1390,13 @@ static void save_match_pair(tg_pair_t *pair, pair_loc_t *p1, pair_loc_t *p2) {
 
     st = p2->pos;
     en = p2->pos + (p2->orient ? - (p2->len-1) : p2->len-1);
-    fprintf(pair->finish, "%"PRIrec" %d %"PRIrec" %d %d %d %d %"PRIrec"\n",
+    fprintf(pair->finish->fp, "%"PRIrec" %d %"PRIrec" %d %d %d %d %"PRIrec"\n",
 	    p1->bin, p1->idx, p2->rec, p2->flags,
 	    MIN(st, en), MAX(st, en), p2->mq, p2->crec);
 	
     st = p1->pos;
     en = p1->pos + (p1->orient ? - (p1->len-1) : p1->len-1);
-    fprintf(pair->finish, "%"PRIrec" %d %"PRIrec" %d %d %d %d %"PRIrec"\n",
+    fprintf(pair->finish->fp, "%"PRIrec" %d %"PRIrec" %d %d %d %d %"PRIrec"\n",
 	    p2->bin, p2->idx, p1->rec, p1->flags,
 	    MIN(st, en), MAX(st, en), p1->mq, p1->crec);
 }
@@ -1185,7 +1493,7 @@ void delete_pair(tg_pair_t *pair) {
     int i;
     
     for (i = 0; i < pair->que_size; i++) {
-    	if (pair->que[i].fp) fclose(pair->que[i].fp);
+    	if (pair->que[i].file) bttmp_file_close(pair->que[i].file);
 	
 	if (pair->que[i].pair) free(pair->que[i].pair);
 	
@@ -1196,7 +1504,7 @@ void delete_pair(tg_pair_t *pair) {
     
     if (pair->phache) HacheTableDestroy(pair->phache, 1);
     
-    if (pair->finish) fclose(pair->finish);
+    if (pair->finish) bttmp_file_close(pair->finish);
     
     free(pair);
 }
