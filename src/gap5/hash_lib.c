@@ -70,9 +70,7 @@ int init_hash8n (
 
     size_hash = 1 << (2 * word_length);
     
-    if ( HASH_JOB_BLKS & job ) {
-	min_match = MAX(min_match,word_length);
-    }
+    min_match = MAX(min_match,word_length);
 
     (*h)->values1 = NULL;
     (*h)->values2 = NULL;
