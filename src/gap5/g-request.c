@@ -689,6 +689,7 @@ static void update_header(GFile *gfile, GTimeStamp edtime)
      */
     gfile->header.last_time = edtime;
     err = g_write_aux_header(gfile);
+    fsync(gfile->fdaux);
     /*
      * If we get an error here, something is seriously wrong!
      */

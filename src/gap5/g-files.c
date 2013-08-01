@@ -703,15 +703,28 @@ int g_check_header(GFile *gfile)
  */
 {
     AuxHeader diskheader;
+    char fname[PATH_MAX+5];
+    int fd;
 
     if (gfile == NULL)
 	return gerr_set(GERR_INVALID_ARGUMENTS);
 
-    /* Re-read from disk */
-    if (-1==lseek(gfile->fdaux,0,0))
-	return gerr_set(GERR_SEEK_ERROR);
+    /* Re-read from disk, using a new fd to avoid the OS caching for us. */
+    sprintf(fname, "%s.g5x", gfile->fname);
+    if (-1 == (fd = open(fname, O_RDONLY))) {
+	fprintf(stderr, "** SERIOUS PROBLEM - file %s\n", g_filename(gfile));
+	fprintf(stderr, "** %s: %s\n", fname, strerror(errno));
+	fprintf(stderr, "** Did you rename the database while it was open?\n");
+    }
 
-    g_read_aux_header(gfile, &diskheader);
+    if (-1 == gfile->low_level_vector[GOP_READ_AUX_HEADER](fd, &diskheader,1)){
+	fprintf(stderr, "** SERIOUS PROBLEM - file %s\n", g_filename(gfile));
+	fprintf(stderr, "** Failed to re-read .g5x header\n");
+	close(fd);
+	panic_shutdown();
+    }
+
+    close(fd);
 
     if (diskheader.last_time != gfile->header.last_time) {
 	fprintf(stderr, "** SERIOUS PROBLEM - file %s\n",
