@@ -1873,7 +1873,9 @@ void *cache_search(GapIO *io, int type, tg_rec rec) {
 	if (!b->contig[sub_rec] && io->base) {
 	    return cache_search(io->base, otype, orec);
 	} else {
-	    return b->contig[sub_rec];
+	    return b->contig[sub_rec]->flags & CONTIG_FLAG_DELETED
+		? NULL
+		: b->contig[sub_rec];
 	}
 	break;
     }

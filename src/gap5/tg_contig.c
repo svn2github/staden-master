@@ -4351,6 +4351,14 @@ int contig_destroy(GapIO *io, tg_rec rec) {
     /* Remove from registration system */
     contig_register_delete(io, rec);
 
+    /*
+     * Contigs may be part of a ContigBlock which won't be removed, so
+     * manually mark it as removed too.
+     */
+    c = cache_rw(io, c);
+    c->bin = -1;
+    c->flags |= CONTIG_FLAG_DELETED;
+
     /* And finally, deallocate on disk to allow record to be reused */
     cache_deallocate(io, c);
 

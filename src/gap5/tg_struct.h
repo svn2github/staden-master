@@ -332,7 +332,7 @@ typedef struct {
     signed int clipped_start, clipped_end;
     tg_rec bin;
     tg_rec scaffold;
-    tg_rec flags; /* Placeholder for clipped_start/end updating. Unused atm */
+    tg_rec flags; /* For clipped_start/end updating and marking as deleted */
     int nseqs;
     int nanno;
     int nrefpos;
@@ -346,6 +346,7 @@ typedef struct {
 } contig_t;
 
 #define CONTIG_FLAG_CLIPPED_VALID 1 /* Indicates clipped start/end are valid */
+#define CONTIG_FLAG_DELETED       2
 
 #define CONTIG_BLOCK_BITS 10
 #define CONTIG_BLOCK_SZ (1<<CONTIG_BLOCK_BITS)
