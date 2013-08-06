@@ -1012,7 +1012,7 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
     Array gaps;
     HashTable *clip_hash;
 
-    printf("=== Checking contig %d ===\n", contig);
+    printf("=== Checking contig %"PRIrec" ===\n", contig);
 
     clip_hash = HashTableCreate(1024,
 				HASH_POOL_ITEMS);
