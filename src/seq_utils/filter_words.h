@@ -21,5 +21,11 @@ int filter_words(char *seq, char *filt, size_t len, char *rep,
 int filter_words_local(char *seq, char *filt, size_t len, char *rep,
 		       int minsize, int minscore, char filter_char);
 
+/* Optimised variants for 1 and 2 bp reps */
+int filter_words_local1(char *seq, char *filt, size_t len, char *rep,
+			int minsize, int minscore, char filter_char);
+int filter_words_local2(char *seq, char *filt, size_t len, char *rep,
+			int minsize, int minscore, char filter_char);
+
 
 #endif /* FILTER_WORDS_H */

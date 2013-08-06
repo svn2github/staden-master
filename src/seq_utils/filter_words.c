@@ -3,8 +3,8 @@
 #include "filter_words.h"
 #include "dna_utils.h"
 
-#define MATCH 1
-#define MISMATCH -1.9
+#define MATCH 100
+#define MISMATCH -190
 
 /*
  *      n
@@ -34,6 +34,9 @@ typedef int fkey_t;
  *
  * Seq can contain the standard ambiguity codes.
  */
+#ifndef MIN
+#define MIN(a,b) ((a)<(b)?(a):(b))
+#endif
 static fkey_t construct_key(char *seq, fkey_t *mask, int *keylen, int *keyjmp)
 {
     fkey_t k = 0, m = 0;
@@ -41,7 +44,8 @@ static fkey_t construct_key(char *seq, fkey_t *mask, int *keylen, int *keyjmp)
     int jumplen = seqlen;
     char seq2[202];
 
-    sprintf(seq2, "%.100s%.100s\n", seq, seq);
+    memcpy(seq2, seq, MIN(100,seqlen));
+    memcpy(seq2+seqlen, seq, MIN(100,seqlen));
     for (i = 1; i <= seqlen; i++) {
 	if (memcmp(&seq2[i], seq, seqlen) == 0) {
 	    jumplen = i;
@@ -221,7 +225,7 @@ int filter_words_local(char *seq, char *filt, size_t len, char *rep,
 		pads = maxscore = score = 0;
 		start = i-(keylen-1);
 	    }
-	    score += keyjump * MATCH*100;
+	    score += keyjump * MATCH;
 	    if (score >= maxscore) {
 		maxscore = score;
 		end = i;
@@ -235,11 +239,9 @@ int filter_words_local(char *seq, char *filt, size_t len, char *rep,
 		word = ((word << 4) | ambiguity2basebit(seq[i])) & keymask;
 	    }
 	} else {
-	    if (score > 0)
-		score += (MISMATCH*100.0);
-
+	    score += (MISMATCH);
 	    if (score <= 0) {
-		if (end-start+1 >= minsize && maxscore >= minscore) {
+		if (end-start+1-pads >= minsize && maxscore >= minscore) {
 		    memset(&filt[start], filter_char, end-start+1);
 		}
 		maxscore = pads = 0;
@@ -248,9 +250,143 @@ int filter_words_local(char *seq, char *filt, size_t len, char *rep,
 	}
     }
 
-    if (end-start+1 >= minsize && maxscore >= minscore) {
+    if (end-start+1-pads >= minsize && maxscore >= minscore) {
 	memset(&filt[start], filter_char, end-start+1);
     }
 
     return 0;
 }
+
+
+/*
+ * As per filter_words_local but without allowing for ambiguous bases
+ * in the rep string and the rep string is precisely 1 base.
+ *
+ * This version runs considerably faster due to being able to optimise for
+ * the 1-base case.
+ */
+int filter_words_local1(char *seq, char *filt, size_t len, char *rep,
+			int minsize, int minscore, char filter_char) {
+    size_t i, j;
+    int score = -1, maxscore = 0;
+    size_t start = 0, end = 0;
+    fkey_t key;
+    int pads = 0;
+
+    key = ambiguity2basebit(*rep);
+    minscore *= 100; /* precision to 2 decimal points */
+
+    /* Scan through looking for matches of a word */
+    for (i = 0; i < len; i++) {
+	if (seq[i] == '*'){
+	    pads++;
+	    continue;
+	}
+
+	if ((ambiguity2basebit(seq[i]) & key)) {
+	    score += MATCH;
+	    if (score >= maxscore) {
+		maxscore = score;
+		end = i;
+	    }
+	} else {
+	    score += (MISMATCH);
+	    if (score <= 0) {
+		if (end-start+1-pads >= minsize && maxscore >= minscore) {
+		    memset(&filt[start], filter_char, end-start+1);
+		}
+		maxscore = pads = 0;
+		score = -1;
+
+		/* Skip until we find a match again */
+		i++;
+		while (i < len && !(ambiguity2basebit(seq[i]) & key))
+		    i++;
+		maxscore = score = MATCH;
+		start = end = i;
+		pads = 0;
+	    }
+	}
+    }
+
+    if (end > len) end = len;
+
+    if (end-start+1-pads >= minsize && maxscore >= minscore) {
+	memset(&filt[start], filter_char, end-start+1);
+    }
+
+    return 0;
+}
+
+/* As per filter_words_local, but optimised for 2 character rep strings */
+int filter_words_local2(char *seq, char *filt, size_t len, char *rep,
+			int minsize, int minscore, char filter_char) {
+    size_t i, j;
+    fkey_t word = 0;
+    int score = -1, maxscore = 0;
+    size_t start = 0, end = 0;
+    fkey_t key;
+    int pads = 0;
+
+    key = (ambiguity2basebit(rep[0])<<4) | ambiguity2basebit(rep[1]);
+    minscore *= 100; /* precision to 2 decimal points */
+
+    /* Start with an entire word */
+    for (i = j = 0; i < len && j < 1; i++) {
+	if (seq[i] == '*') {
+	    pads++;
+	    continue;
+	}
+
+	word = ((word << 4) | ambiguity2basebit(seq[i])) & 255;
+	j++;
+    }
+
+    /* Scan through looking for matches of a word */
+    for (; i < len; i++) {
+	if (seq[i] == '*'){
+	    pads++;
+	    continue;
+	}
+
+	word = ((word << 4) | ambiguity2basebit(seq[i])) & 255;
+
+	/*
+	 * For exact matches with no ambiguity codes this can just be
+	 * (word & key) == key.
+	 */
+	if ((word & key) && !(word & ~key)) {
+	    if (score < 0) {
+		pads = maxscore = score = 0;
+		start = i-1;
+	    }
+	    score += 2 * MATCH;
+	    if (score >= maxscore) {
+		maxscore = score;
+		end = i;
+	    }
+	    while (seq[++i] == '*') {
+		pads++;
+		continue;
+	    }
+	    word = ((word << 4) | ambiguity2basebit(seq[i]));
+	} else {
+	    score += MISMATCH;
+	    if (score > 0)
+		continue;
+
+	    if (end-start+1-pads >= minsize && maxscore >= minscore) {
+		memset(&filt[start], filter_char, end-start+1);
+	    }
+	    maxscore = pads = 0;
+	    score = -1;
+	}
+    }
+
+    if (end-start+1-pads >= minsize && maxscore >= minscore) {
+	memset(&filt[start], filter_char, end-start+1);
+    }
+
+    return 0;
+}
+

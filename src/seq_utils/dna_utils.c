@@ -1079,6 +1079,7 @@ char basebit2ambiguity(int bits) {
     return "nTGKCYSBAWRDMHVN"[bits];
 }
 
+#if 0
 /*
  * As ambiguity2bases, except we return a bit-pattern instead of 4 values.
  */
@@ -1100,6 +1101,7 @@ char ambiguity_code(char b1, char b2) {
     int i2 = (cp = strchr(codes, b2)) ? cp - codes : 15;
     return codes[i1 | i2];
 }
+#endif
 
 #if 0 /* Not any faster than the above and short code */
 /*

@@ -172,7 +172,8 @@ void ambiguity2bases(char ambig, int *A, int *C, int *G, int *T);
 /*
  * As ambiguity2bases, except we return a bit-pattern instead of 4 values.
  */
-int ambiguity2basebit(char ambig);
+#define ambiguity2basebit(a) (unsigned char)("\020\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\010\007\004\013\017\017\002\015\017\017\003\017\014\017\017\017\017\012\006\001\017\016\011\017\005\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\000\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017\017"[(unsigned char)(a)])
+/* int ambiguity2basebit(char ambig); */
 
 /*
  * Given nucleotides (possibly ambiguity codes themselves) we return
@@ -181,6 +182,7 @@ int ambiguity2basebit(char ambig);
  * Logically speaking, this is equivalent to
  *    return basebit2ambiguity(ambiguity2basebit(b1) | ambiguity2basebit(b2));
  */
-char ambiguity_code(char b1, char b2);
+#define ambiguity_code(b1, b2) ("nTGKCYSBAWRDMHVN"[ambiguity2basebit((b1))|ambiguity2basebit((b2))])
+/* char ambiguity_code(char b1, char b2); */
 
 #endif
