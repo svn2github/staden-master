@@ -317,6 +317,90 @@ proc ::cmd::shuffle_pads::run {dbname _options} {
 
 
 #-----------------------------------------------------------------------------
+# COMMAND: auto_break
+namespace eval cmd::auto_break {
+    set name "Find and automatically break apart suspect joins"
+}
+
+set ::cmd::auto_break::opts {
+    h|help  0 0    {}     {Shows this help.}
+    {} {} {} {} {}
+    
+    contigs       1 {*} list {Compare only specific contigs against each other. 'list' is a space separated list of contig names}
+    n|dry_run     0 0   {}   {Find joins only, but do not make them}
+    {} {} {} {} {}    	  
+}
+
+proc lreverse l {set r "";foreach i $l {set r [linsert $r 0 $i]}; return $r}
+
+proc ::cmd::auto_break::run {dbname _options} {
+    upvar $_options opt
+
+    if {$opt(dry_run)} {
+	set io [db_open $dbname ro]
+    } else {
+	set io [db_open $dbname rw]
+    }
+
+    if {$opt(contigs) == "*"} {
+	set opt(contigs) [CreateAllContigList=Numbers $io]
+    }
+
+    # Auto_break does the analysis and returns a list of things to do,
+    # rather than making the breaks itself.
+    puts "\n>>>\n>>> Stage 1: finding regions to break part\n>>>"
+
+    set r [auto_break \
+	       -io            $io \
+	       -contigs       $opt(contigs)]
+
+    if {$opt(dry_run)} {
+	$io close
+	return
+    }
+
+    puts "\n===\n=== Stage 2: Breaking\n==="
+
+    # Process them in reverse order, as multiple holes in the same
+    # contig need to be broken right to left.
+    set r [lreverse $r]
+
+    foreach hole $r {
+	set crec [lindex $hole 0]
+	set pos  [lindex $hole 1]
+	set seqs [lrange $hole 2 end]
+
+	puts "> Processing contig $crec at position $pos"
+
+	if {$seqs != ""} {
+	    # Disassemble first. Move 2 => move group to new contig
+	    puts "Disassembling [llength $seqs] sequence(s) to new contig"
+	    if {[catch {log_call disassemble_readings \
+			    -io             $io \
+			    -readings       $seqs \
+			    -move           2 \
+			    -remove_holes   0 \
+			    -duplicate_tags 1} err]} {
+		puts "Disassemble_readings produced error message: $err"
+	    }
+	}
+
+	puts "Breaking contig #$crec at position $pos"
+	if {[catch {log_call break_contig \
+			-io          $io \
+			-contig      $crec \
+			-pos         $pos \
+			-break_holes 0} err]} {
+	    puts "Break_contig produced error message: $err"
+	}
+    }
+
+
+    $io close
+}
+
+
+#-----------------------------------------------------------------------------
 # COMMAND: auto_join
 namespace eval cmd::auto_join {
     set name "Find and automatically make joins"

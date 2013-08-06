@@ -1810,9 +1810,22 @@ int consensus_padded_pos(GapIO *io, tg_rec contig, int upos, int *pos) {
     return 0;
 }
 
+#if 0 /* Unused for now */
+
+/*
+ * TODO:
+ * - Store to disc.
+ *
+ * - Provide min/max expectations so we can detect outliers. This is
+ *   particularly useful to detect sequences which occur once in the 
+ *   consensus but with too high depth (meaning likely collapsed repeats)
+ *   or strings which occur very rarely (likely base-calling errors).
+ */
+
 #define WLEN 12
 #define WSIZE (1<<(2*WLEN))
-static unsigned char uhash[WSIZE];
+static float uhash[WSIZE];
+static uint64_t uhash_count = 0, ctg_len = 0;
 
 static char *s(uint32_t w) {
     static char s[WLEN+1];
@@ -1827,76 +1840,7 @@ static char *s(uint32_t w) {
     return s;
 }
 
-
-int update_uniqueness_hash(GapIO *io) {
-    int i, j, cnum;
-    char *cons = NULL;
-    size_t cons_l = 0;
-    uint32_t w, W;
-
-    consensus_init(P_HET);
-
-    memset(uhash, 0, WSIZE);
-
-    for (cnum = 0; cnum < io->db->Ncontigs; cnum++) {
-	tg_rec crec = arr(tg_rec, io->contig_order, cnum);
-	contig_t *c = cache_search(io, GT_Contig, crec);
-	size_t len;
-
-	if (!c) {
-	    if (cons)
-		xfree(cons);
-	    return -1;
-	}
-
-	len = c->end - c->start + 1;
-	if (cons_l < len) {
-	    cons_l = len;
-	    if (NULL == (cons = xrealloc(cons, cons_l)))
-		return -1;
-	}
-
-	//printf("%d/%d len %d\n", cnum+1, io->db->Ncontigs, len);
-
-	calculate_consensus_simple(io, crec, c->start, c->end, cons, NULL);
-	
-	for (W = w = i = j = 0; i < len && j < WLEN-1; i++) {
-	    uint8_t c = lookup[(uint8_t) cons[i]];
-	    if (c < 4) {
-		w = (w << 2) | c;
-		W = (W << 2) | (c ^ 3);
-		j++;
-	    }
-	}
-	for (; i < len; i++) {
-	    uint8_t c = lookup[(uint8_t) cons[i]];
-	    if (c < 4) {
-		w = (w << 2) | c;
-		w &= WSIZE-1;
-
-		if (uhash[w] < 255)
-		    uhash[w]++;
-
-		W = (W << 2) | (c^3);
-		W &= WSIZE-1;
-
-		if (uhash[W] < 255)
-		    uhash[W]++;
-
-		//printf("%s %d\n", s(w), uhash[w]);
-	    }
-	}
-    }
-
-//    for (i = 0; i < WSIZE; i++) {
-//	if (uhash[i])
-//	    printf("%d %d\n", i, uhash[i]);
-//    }
-
-    return 0;
-}
-
-int get_uniqueness(GapIO *io, tg_rec crec, int pos) {
+double get_uniqueness(GapIO *io, tg_rec crec, int pos) {
     char cons[WLEN*4+1];
     int i, j, w = 0;
     uint8_t *cp = (uint8_t *) &cons[WLEN*2];
@@ -1919,12 +1863,12 @@ int get_uniqueness(GapIO *io, tg_rec crec, int pos) {
 	}
     }
 
-    printf("%s %d\n", s(w), uhash[w]);
+    printf("%s %f\n", s(w), uhash[w]);
 
     return uhash[w];
 }
 
-int get_uniqueness_pos(char *str, int len, int pos) {
+double get_uniqueness_pos(char *str, int len, int pos) {
     int i, j, w = 0;
 
     for (i = pos, j = WLEN/2; i > 0 && j > 0; i--) {
@@ -1943,7 +1887,218 @@ int get_uniqueness_pos(char *str, int len, int pos) {
 	}
     }
 
-    printf("%s %d\n", s(w), uhash[w]);
+    printf("%s %f\n", s(w), uhash[w]);
 
     return uhash[w];
 }
+
+/*
+ * Computes the maximum theoretical redundancy of this word. Ie if we have
+ * a GT repeat then word GTGTGTGTGTGT occurs 6 times more frequently within
+ * a run than we'd expect.
+ *
+ * It does this by sliding word w along looking at the overlap. Ie:
+ * ABCDEABC
+ *  ABCDEABC          no match in overlap as BCDEABC != ABCDEAB
+ *
+ * ABCDEABC
+ *      ABCDEABC      matches as ABC == ABC
+ *
+ * Note that on average even a random word will have 1/4 chance of the last
+ * base matching the first base so claim to have a redundancy of WS/(WS-1).
+ * Similarly 1/16 times it'll have redundancy of WS/(WS-2). We could
+ * compensate for this by factoring this expectation into the equation, maybe
+ * even utilising the GC content in there too, but for now I think it skews
+ * things sufficiently little to not be too concerned.
+ *
+ * We also normalise by the expected number of unique words based on the
+ * consensus length (if it's too long we'll get duplicate hits by random
+ * chance) and by the number of words counted themselves (sequence depth).
+ */
+void normalise_hash_scores(uint64_t tc, uint64_t tl) {
+    int w;
+    double e = (double)tl / WSIZE;
+
+    if (e < 1)
+    	e = 1;
+
+    printf("tc=%lld tl=%lld => e=%f\n", tc, tl, e);
+
+    e *= (tc/2.0) / tl;
+
+    printf("tc=%lld tl=%lld => e=%f\n", tc, tl, e);
+    
+    for (w = 0; w < 1<<(2*WLEN); w++) {
+	int i, m = (1 << (2*(WLEN-1))) - 1;
+
+	if (!uhash[w])
+	    continue;
+
+	for (i = 1; i <= WLEN; i++, m >>= 2) {
+	    if ( (w >> (2*i)) == (w & m) )
+		break;
+	}
+	uhash[w] = uhash[w] / ((e * WLEN)/i);
+    }
+}
+
+/*  BY SEQUENCE */
+#if 1
+
+int update_uniqueness_hash(GapIO *io) {
+    int i, j, cnum;
+    uint32_t w, W;
+
+    consensus_init(P_HET);
+
+    //memset(uhash, 0, WSIZE);
+
+    for (cnum = 0; cnum < io->db->Ncontigs; cnum++) {
+	tg_rec crec = arr(tg_rec, io->contig_order, cnum);
+	contig_iterator *ci;
+	rangec_t *r;
+	char *seq;
+
+	ctg_len += io_clength(io, crec);;
+
+	ci = contig_iter_new(io, crec, 1, CITER_FIRST | CITER_ISTART,
+			     CITER_CSTART, CITER_CEND);
+	while (r = contig_iter_next(io, ci)) {
+	    seq_t *S, *Sorig;
+
+	    if ((r->flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISSEQ)
+		continue;
+
+	    Sorig = S = cache_search(io, GT_Seq, r->rec);
+	    if (!S) {
+		verror(ERR_WARN, "update_uniqueness_hash",
+		       "Failed to load seq #%"PRIrec, r->rec);
+		continue;
+	    }
+
+	    if ((S->len < 0) ^ r->comp) {
+		S = dup_seq(S);
+		complement_seq_t(S);
+	    }
+
+	    W = w = 0;
+	    seq = S->seq;
+	    for (i = S->left-1, j = 0; i < S->right && j < WLEN-1; i++) {
+		uint8_t c = lookup[(uint8_t)seq[i]];
+		if (c < 4) {
+		    w = (w << 2) | c;
+		    W = (W >> 2) | ((c^3) << (WLEN*2-2));
+		    j++;
+		}
+	    }
+
+	    for (; i < S->right; i++) {
+		uint8_t c = lookup[(uint8_t)seq[i]];
+		if (c < 4) {
+		    w = (w << 2) | c;
+		    w &= WSIZE-1;
+		    uhash[w]++;
+
+		    W = (W >> 2) | ((c^3) << (WLEN*2-2));
+		    uhash[W]++;
+
+		    uhash_count += 2;
+		    
+		    //printf("%s %d ",  s(w), uhash[w]);
+		    //printf("%s %d\n", s(W), uhash[W]);
+		}
+	    }
+	    
+	    if (S != Sorig)
+		free(S);
+	}
+
+	contig_iter_del(ci);
+    }
+
+    /* Convert uhash absolute counts into uhash_norm */
+    normalise_hash_scores(uhash_count, ctg_len);
+
+//    for (i = 0; i < WSIZE; i++) {
+//	if (uhash[i])
+//	    printf("%s %f\n", s(i), uhash[i]);
+//    }
+
+    return 0;
+}
+
+#else
+
+/* BY CONSENSUS */
+
+int update_uniqueness_hash(GapIO *io) {
+    int i, j, cnum;
+    char *cons = NULL;
+    size_t cons_l = 0;
+    uint32_t w, W;
+
+    consensus_init(P_HET);
+
+    //memset(uhash, 0, WSIZE);
+
+    for (cnum = 0; cnum < io->db->Ncontigs; cnum++) {
+	tg_rec crec = arr(tg_rec, io->contig_order, cnum);
+	contig_t *c = cache_search(io, GT_Contig, crec);
+	size_t len;
+
+	if (!c) {
+	    if (cons)
+		xfree(cons);
+	    return -1;
+	}
+
+	len = c->end - c->start + 1;
+	ctg_len += len;
+	if (cons_l < len) {
+	    cons_l = len;
+	    if (NULL == (cons = xrealloc(cons, cons_l)))
+		return -1;
+	}
+
+	//printf("%d/%d len %d\n", cnum+1, io->db->Ncontigs, len);
+
+	calculate_consensus_simple(io, crec, c->start, c->end, cons, NULL);
+	
+	for (W = w = i = j = 0; i < len && j < WLEN-1; i++) {
+	    uint8_t c = lookup[(uint8_t) cons[i]];
+	    if (c < 4) {
+		w = (w << 2) | c;
+		W = (W >> 2) | ((c^3) << (WLEN*2-2));
+		j++;
+	    }
+	}
+	for (; i < len; i++) {
+	    uint8_t c = lookup[(uint8_t) cons[i]];
+	    if (c < 4) {
+		w = (w << 2) | c;
+		w &= WSIZE-1;
+		uhash[w]++;
+
+		W = (W >> 2) | ((c^3) << (WLEN*2-2));
+		uhash[W]++;
+
+		uhash_count += 2;
+
+		//printf("%s %d\n", s(w), uhash[w]);
+	    }
+	}
+    }
+
+    normalise_hash_scores(uhash_count, ctg_len);
+
+//    for (i = 0; i < WSIZE; i++) {
+//	if (uhash[i])
+//	    printf("%d %f\n", i, uhash[i]);
+//    }
+
+    return 0;
+}
+
+#endif
+
+#endif /* #if 0; uniqueness code unused for now */

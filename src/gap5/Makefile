@@ -148,6 +148,7 @@ GAP5=\
 	restriction_enzymes.o \
 	gap_canvas_box.o \
 	contig_extend.o \
+	auto_break.o \
 	$(GOBJS) \
 	$(TG_IO) \
 	$(CEDITOR) \
