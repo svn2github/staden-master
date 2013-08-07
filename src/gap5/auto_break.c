@@ -1023,7 +1023,7 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 
     printf("  = Merging gaps\n");
     merge_gaps(gaps, MIN_OVERLAP*2);
-    dump_gaps(gaps);
+    //dump_gaps(gaps);
 
     printf("  = Confirming gaps\n");
     confirm_gaps(io, contig, gaps, good_score, bad_score, unknown_score);
