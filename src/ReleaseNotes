@@ -1,651 +1,392 @@
-Staden Package release 2.0.0b9: 5th Dec 2011
+Staden Package release 2.0.0b10: August 2013
 ============================================
 
-Firstly, it has been a long time since the last flagged release
-(February). Yes Gap5 is still in beta, but stability is improving
-fast.  (Gap4 and co are largely unchanged so please consider them as
-production worthy, or download an older set of binaries.)
+This release is primarily Gap5 changes. If you are a Gap4 user then
+there is little point to upgrading, unless you wish to test the newer
+Gap5.
 
-Primarily work has revolved around bug-fixing, initially spurred on by
-the creation of a Check Database function and internally using a
-random simulated user for automatically doing all manner of edits and
-observing the stability and correctness of the results.  Obviously
-bugs still exist, but we believe this is the most robust version of
-Gap5 to date.
+Once again it has been too long between releases given the large
+number of new features added and bug fixes to existing ones.  We still
+see sporadic crashes locally, but far fewer than before.  Hence Gap5
+is still, for now, considered beta.
 
-However during the year we have also added many new features, mostly
-driven by internal user requests, and improvements to existing
-features. (We are more than happy to receive ideas and feature
-requests from external users too.) Many of these are simply
-transported over from Gap4 (Shuffle Pads, Check Assembly, Restriction
-Enzyme Plot, Contigs to Readings, and so on), but some have been added
-to face the new challenges with NGS data typically caused by excessive
-depth (bulk clipping, Group Readings, depth searching).
+There have also been a number of significant additions and
+improvements, in addition to the usual round of bug fixing and
+robustness changes.
 
 A summary of changes is visible below, but the on-going NEWS summary
-is visible within the subversion repository at:
+for all releases is visible within the subversion repository at:
 
   http://staden.svn.sourceforge.net/viewvc/staden/staden/trunk/src/NEWS
 
-
-James Bonfield & Andrew Whitwham
-
+James Bonfield, Andrew Whitwham & Rob Davies
 
 
-Main Gap5 Updates
------------------
+Gap5 Updates
+------------
 
-*       Major overhaul of the consensus algorithm. It now allows for
-        the possibility of SNPs when computing the consensus
-        scores. Also added a discrepancy calculation where it compares
-        the number of observed differences against the expected
-        differences given the quality scores.
+NOTE: Due to the nature of many of these updates, the Gap5 database
+has had the internal version number increased. This means that while
+the new Gap5 can read old Gap5 databases, old Gap5s will not be able
+to read databases created by the latest Gap5 and/or Tg_index.
 
-*       Updated the SAM input/output code to use the new standard for
-        encoding annotations via CT and PT fields. Additionally tag
-        directions are now supported by Gap5.
+* Find Internal Joins
 
-*       New Shuffle Pads and Remove Pad Columns commands. The
-        latter is a fast and simple function, while Shuffle Pads
-        performs full realignments, much like Gap4.
+  - This has had a major face lift due to the addition of several new
+    features. It uses a tabbed notebook now to avoid the dialogue
+    growing excessively.
 
-*       New function: Disassemble Contigs. This is a fast alternative
-        to Disassemble Readings, but is limited to entire contigs at a
-        time.
+  - More join filtering; by min/max (joined) depth, maximum overlap
+    length, containments vs end/end joins, read-pairs and uniqueness.
 
-*       New function: Lists -> Contigs to Readings. Turns a list of
-        contig names into a list of sequences within those contigs.
+    Uniqueness here refers to only having one link out from each
+    contig end, for example a contig end matching 2 or more other
+    contigs would not be considered as unique.
 
-*       Find Read Pairs now has an option to filter the results by
-        library and by the number of spanning read-pairs between each
-        pair of contigs.
+    For read-pair filtering each potential match is checked to ensure
+    there are both a minimum number of read pairs and that a minimum
+    percentage of contig-spanning read pairs are between the two
+    specific contigs.
 
-*       Added Check Assembly function. This compares the used/visible
-        portion of a sequence against the consensus to identify
-        sequences that align badly. (It doesn't yet have the gap4
-        functionality of aligning the cutoff data too.)
+  - Better control over which contigs to compare.  We now have two
+    sets of contigs, A and B, and compare all contigs in set A with
+    all in set B. This is a generalisation of the old "all vs all" and
+    "single vs all" modes.
 
-*       The Restriction Enzyme Plot from gap4 has been added to
-        gap5. This works as per gap4 except for the ability to create
-        tags, which can be added at a later stage if desired. 
+  - The Hidden Data search mode now works.
 
-*       Added a Check Database function. It's slow, but a useful
-        sanity check for me during development, and maybe for others.
-        There is a CLI version of this called "gap5_check".
+  - Fewer hits missed in the quick alignment mode. In particular some
+    blatant exact matches were sometimes missing.
 
-        This function also has an option to fix any data corruptions
-        found. Please make sure you backup your database first before
-        using this feature as it is not guaranteed to be an improvement
-        in all scenarios.
-
-*       Numerous contig editor updates:
-
-        - Bulk trimming is now possible using < and > keys within the
-          consensus.
-        
-        - The contig editor now has functions to select and deselect all
-          sequences at a particular consensus column (or overlapping or
-          within a given range).
-        
-        - Added a Group Readings feature. This provides options to
-          vertically reorder the sequences by a variety of primary and
-          secondary collations.
-        
-        - More search modes: "depth <" and "depth >" to look for low and
-          high depth regions; SNP and discrepancy score searches,
-          utilising the new consensus algorithm; search from file
-          (equivalent to the old gapNav interface in Gap4).
-        
-        - The sequence names panel now colours the names according to
-          the consistency/validity of the templates. The colours are:
-        
-            white = ok pair
-            blue = single ended
-            orange = pair, spanning contigs
-            red = inconsistent orientation
-            grey = consistent orientation, but distance too large or too
-            small.
-        
-          This also required a few tweaks to the colouring of the name
-          display and UI controls. The Quality button now only turns
-          quality grey-scales on and off for sequence bases, not the
-          mapping qualities. Instead the Settings menu has two radio
-          buttons to toggle between template status and mapping quality
-          for the names panel. This only has an effect when in Pack
-          Sequences mode; the one sequence per line mode has room to
-          display both pieces of information and so always does so.
-        
-        - Added the Join To command in the names popup menu for
-          read-pairs that span contigs. The Go To menu item has also
-          been updated to report the observed insert size.
-        
-        - Added an option to Break Contig at a specific position.
-        
-        - Implemented a simplistic approach for computing unpadded
-          consensus coordinates. This uses the cached consensus
-          sequence, which can now be updated from within the contig
-          editor too (so it may ask to save changes even when it's
-          simply to add more cached data), so it is far faster than
-          gap4.  However it is still linear time based on the number of
-          fragments and consensus length.
-        
-          The editor "goto" box in the bottom left still works on padded
-          or reference coordinates as listed by the P or R button, but
-          manually adding the letter 'u' after a number will request
-          unpadded coord.  The P/R button hasn't been made P/R/U yet as
-          the display of coordinates will be too slow still.
-            
-          There are more explicit padded vs unpadded options in the
-          search dialogue, or hitting Return in the editor consensus
-          will also show that coordinate.
+  - Small speed increase.
 
 
-Other Gap5 Updates
-------------------
+* Contig Editor
 
-*       More contig editor updates:
+  - Realign Selection feature.  Underline a region and this will
+    realign it against the consensus.
 
-        - Added the ability to copy and paste contig names as well as
-          reading names from the editor window. Also rebound Button-2 to be
-          copy by #number, with Button-1 still being "name".
-          
-        - The contig editor now allows "n" or "-" to be typed in. Also
-          added Insert keybinding as for insertng pads ("i" still works).
+  - The Tag Editor now has Copy and Move buttons, as per Gap4.
+    These even allow moving tags between different editors.
 
-        - We now disallow tags at the ends of contigs in the "cutoff"
-          portion of a contig. Ie where sequence cutoff data resides,
-          but no more non-cutoff bases exist. It is still permitted to
-          have tags within a "hole" inside a contig, just not at the
-          ends.
+  - The names panel now allows bulk selection with button-1 click
+    followed by Shift-button-1 to select all reads between the two
+    clicked points. This is particularly powerful when combined with
+    the various Settings -> Group By orderings.
 
-        - Increased the default size of the tag editor window. Also
-          disabled the line wrapping, so the horizontal scrollbar should
-          be used for long lines.
-          
-        - Clicking on a base within the tag now displays the summary
-          data of the base underneath it instead of repeating the
-          mouse-over text. This is the same interface as gap4 now.
-          
-        - When invoking the editor by reading name it now brings the
-          editor up on the first visible base of that sequence, instead
-          of the first potentially-clipped base.
-          
-        - The Editor search dialogue window now has Page Up and Page
-          Down keybindings to perform previous and next search (as per
-          Gap4's key bindings). Control-S and Control-R no longer
-          create new windows each time either.
-          
-        - Improved editor search UI. Hovering over the Search button in
-          the dialogue window will now highlight which editor of an join
-          editor pair will be searched in. (As before, left-clicking in
-          an editor will change this, only now it's obvious this
-          happens.)  Plus the editor cursor of an inactive editor in a
-          join-editor pair is no longer solid, when visible. Instead it
-          is a hollow square.
-            
-        - Searching by sequence name or #number in the editor now
-          positions the editing cursor on the first used base instead of
-          the first base (whether or not in cutoff data).
-          
-        - The editor Trace Display is now aligned against sequences.
-          This means scrolling and dragging also works. In addition
-          the Lock button has been fixed.
+    When selecting names we can now also (de)select the mate-pair at
+    the same time by using Control+click instead of normal unmodified
+    clicks. (This is also listed in the right-click pop up menu.)
 
-        - Any case where the editor cursor goes off screen due to using
-          left/right arrow keys or performing a search now scrolls the
-          editor so the last 10 characters are now the first 10
-          characters, meaning it jumps by almost one screen
-          full. Previously it scrolled such that 10 more characters
-          would appear. 
-          
-        - The contig editor width and height and the horizontal position
-          of the name / sequence split pane is now remembered if the
-          Settings -> Save Settings menu item is used.
-          
-        - Added an editor method to shift entire portions of an alignment
-          left/right. (Experimental.)
+  - We can now control which list is being updated when clicking on
+    read names. The editor also shows the size of this list and has
+    options to load, save, delete and clear.
 
-*       Increased the word size in Find Repeats and some other
-        optimisations - now dramatically faster, often 100x
-        improvement. Improved FIJ speed some more too.
+  - The Settings -> Group By dialogue now has a "by sequence"
+    mode. This attempts to sort sequences by similarity to the
+    underlined (selected) sequence fragment.
 
-        Removing the Contig Selector plots is also now far faster
-        (approx 1500x faster in the extreme case of 1 million repeat
-        hits). 
+  - The sequence search now permits searching within individual
+    sequences, instead of only within the consensus.
 
-*       tg_index now has a "-v version" option to request generating
-        older format gap5 databases.
+  - More key bindings:
+    - Keypad Enter is now an alternative for the Return key.
+    - Control-S within the search window is the same as next search.
+    - Control-L and Control-R now move pads under the editor cursor
+      left or right. Alt-L/R is similar, but for any base type (be
+      careful).
+    - Control-Z is Undo
+    - Shift-Insert, Shift-Backspace and Shift-Delete act as per their
+      unmodified key presses but keep the right hand portion of the
+      alignment stationary, while moving the left portion instead.
 
-*       SAM support:
+  - Holding down keys in the editor and allowing auto-repeat to
+    operate should no longer run on after the key is released.
 
-        - Duplicates are no longer entered by default in tg_index. Use
-          tg_index -D to force these to be entered.
+  - We can now bring up the Template Display (via the Commands menu)
+    centred on a specific consensus base.
 
-        - We no longer need headers (eg @SQ) when reading SAM files.
-
-        - Improved support for "*" in sequence records within SAM. (They
-          get treated as "N" for now, in the absense of any reference.)
-          Also improved error handling for malformed files.
-
-        - Exporting in SAM format now provides an option to use unpadded
-          reference coordinates rather than the old mode of padded
-          only. This is more alike the pair-wise alignments that are
-          expected from short-read aligners.
-
-*       Major overhaul of insertion and deletion of pads in the
-        consensus. These used to insert to or delete from every
-        sequence overlapping that point regardless of whether that
-        position was in the sequence cutoff data. Now we only edit
-        sequences that overlap in used non-cutoff data.
-
-*       The List Contigs window now has a Control-A keybinding.
-        Additionally Copy and Paste should now copy all selected
-        rather than just the first 4Kb or so.
-
-*       Break Contig now has an option to further split the right-hand
-        contig up if the break caused "holes" to appear.
-
-        Also added a Remove Contig Holes command to break contigs
-        around sequence holes.
-
-*       Improved contig number handling: #<record> now works in addition
-        to =<record>; List Contigs report improved.
-
-*       The Contig ID component of dialogues now uses the visible
-        start/end portion of a contig instead of just going from base
-        1 to the contig length. This mainly prevents cases of runs of
-        Ns appearing on the ends of consensus when saving just a
-        single contig.
-
-*       Sequence Search (main menu, outside of the editor) no longer
-        brings up a separate editor every time the Next button is
-        pressed, instead preferring to reuse existing ones if
-        available. It also underlines the matched sequence in the
-        contig editor.
-
-*       The Template display now has various quality plots. They're
-        turned off by default as they incur a substantial speed
-        penalty.
-
-*       The number of annotations is now tracked per bin, and hence
-        per contig, as per sequences. Using this we now also have a
-        far faster algorithm for searching through annotations when
-        very few exist. (The needle in haystack problem.)
-
-*       Code reorganisation: merged the tgap and gap5 directories for
-        reasons of sanity and removal of circular dependencies between
-        the two.
-
-*       Removed a lot of the debugging output. It can be reenabled by
-        running "gap5 -debug 1".
-
-*       Improved debugging tools and checking for validity of data via
-        checksums.
-
-*       Added SVN revision numbers to the version strings reported by
-        most of the main programs.
-
-*       Improved robustness of databases; crashes while flushing
-        writes should now roll back to the previous state rather than
-        giving a corrupted DB.
-
-*       Removed error signal handlers in gap4 and gap5 so that crashes
-        are easier to debug on linux. For some reason calling abort
-        from a signal handler often ends up with a stack that gdb will
-        not list.
-
-*	Renamed Disassemble Contigs to Delete Contigs and rearranged
-        the Edit menu a bit.
-
-*	Tweaks to the Find Internal Joins algorithm to hopefully
-	find some more small matches.
-
-*	Added the ability to rename contigs and to change their
-        starting location.
+  - Shuffle Pads can now operatate over regions of a contig instead of
+    the entire thing. This is also available within the editor by
+    selecting (underlining) a region and using the Commands menu. The
+    scoring function has been slightly updated to provide better
+    alignments. Also sped up Shuffle Pads (typically 4-5x faster, more
+    so on deep data).
 
 
-Gap5 Bug Fixes
+* Template Display
+
+  - Tags/annotations can now be displayed as their own track (they are
+    also visible in the Contig Selector).
+
+  - Improved the calculation of read-pairs. It now considers the bulk
+    of the library to work out the expected orientation and insert
+    sizes.
+
+  - Spanning read-pairs now get a variety of colours, determined by
+    the other pairing contig record. This helps to visually identify
+    when read-pairs link to a mass of contigs or just 1 or 2 specific
+    contigs.
+
+  - Substantial speed increases in some modes, especially "accurate
+    mode".  This has been achieved by caching the read-pair
+    locations.  This information can become outdated by joining,
+    breaking and other edits, but will be automatically recomputed as
+    needed.  (Hence the template display speed can temporarily be
+    variable while it's recomputing this cached information.)
+
+  - Zooming via the mouse wheel is now centred on the mouse cursor.
+
+
+* Contig Selector / Lists Contigs
+
+  - This now shows clipped lengths. The clipped contig lengths are
+    also displayed in the List Contigs window.
+
+  - There are now options to save and load plots, tying in with the
+    "gap5_cmd fij" command too.
+
+  - There are now rudimentary tools for grouping contigs into
+    scaffolds in the List Contigs window. Internally we also support
+    contig links, potentially allowing a full graph (as in FASTG), but
+    this is not yet exposed to the GUI.
+
+
+* Lists
+
+  - Created an extended version of the List viewer for the readings
+    list, showing location of both ends of a read-pair and allowing
+    collation by pairing contigs. This provides an easy way to select
+    and produce sub-lists. Also updated the general list handling to be
+    more robust when containing readings or contigs that have been
+    removed.
+
+  - Added an in-memory list called "new_contigs". This is automatically
+    appended to for each new contig we create, such as by Break Contig,
+    Disassemble Readings or assembling in new data.
+
+  - The Search Sequence Names function now generates a list of "#num
+    name" instead of "name", correctly disambiguating cases with
+    duplicate reading names.
+
+    Similarly with Sequence Search and the seqs_hits list.
+
+
+* Input/Output
+
+  - There are now File -> New and File -> Import Sequences commands.
+    These allow creation of new databases without needing to run
+    tg_index on the command line (although it may still be desirable
+    due to not needing a GUI running.)
+
+  - The gap5_export, gap5_consensus, gap5_check (etc) commands are now
+    merged into a single gap5_cmd command using the gap5_cmd
+    <command_name> <arguments> syntax.
+    
+    Added shuffle_pads, fij, auto_join and auto_break to the available
+    sub-commands.
+
+  - Fastq export now automatically strips pads.
+
+  - ACE import now handles WR{} records, treats clip points -1
+    as unaligned data, and also handles the lack of DS lines.
+
+  - Overhauled the GFF import and export code: it now works with gzipped
+    files; GFF tags are now mini-GUIs controlled by the #!acdtag syntax
+    in the GTAGDB; Importing is more liberal when given malformed escape
+    codes.
+  
+  - Export Sequences can now also export in BAM and CRAM
+    format. When exporting in CRAM the consensus sequence is embedded to
+    act as a self-reference.
+  
+  - Temporary files used by tg_index can now honour the TMP_DIR and/or
+    TEMP environment variables. This may be helpful if /tmp is too
+    small.  Also changing the sorting algorithm to no longer depend on
+    the external Unix "sort" program.
+  
+  - Improved on attempts to auto-detect manual removal of the BUSY lock
+    file and updating of the gap5 database from multiple simultaneous
+    programs. If this happens the programs should abort before
+    corrupting the database.
+
+
+* Other new functions / commands
+
+  - "Extend Contigs". This looks at the cutoff data at the
+    ends of contigs and un-hides portions if the bulk of the cutoff data
+    is in agreement with each other.
+
+  - "Pair Reading List" in the Lists menu. This takes a
+    list of read IDs and produces a new list containing those reads plus
+    their mate-pairs.
+
+  - New function "Bulk rename contig".  This permits, for example,
+    renaming from contig* to Contig\1 (\1 being whatever the first *
+    matched in the pattern) or contig* to Contig_%06d with
+    auto-generated names (6 digits with leading zeros).
+  
+  - New function "Reading #numbers to names" list option.
+  
+  - New function "Delete Tags" option to remove all tags of a specific type.
+
+
+* Miscellaneous
+
+  - Internally we now group 1024 contigs into a single ContigBlock,
+    reducing disk I/O times and speeding up the Contig Selector.
+
+  - Various speed increases to Delete Contig, Disassemble Readings, Find
+    Read Pairs and the Contig Selector.
+
+
+Gap5 bug fixes
 --------------
 
-*       Numerous Disassemble Readings bug fixes:
-        
-        - Fixed numerous data corruptions: bin placements, contig
-          sizes, tag misplacments, sequence orientation (apparent
-          misaligments).
-
-        - Improved robustness when facing sequences which no longer
-          exist.
-
-        - Fixed an issue that could sometimes leave zero-read
-          contigs instead of deleting the contig.
-
-        - Fixes to the B+Tree sequence name index: now correctly
-        - removing the entry when duplicate names exist, fixed an
-        - issue where we removed whole branches of the tree.
-
-        - Improved contig hole detection.
-
-*       Break Contig bug fixes:
-
-        - Numerous data corruption fixes; bin placements, contig
-          sizes, tag misplacments, tag clipping at contig ends.
-
-        - Fixed an issue where cached consensus sequences were
-          sometimes counted in the number of sequences within a contig.
-
-        - Added a check to see if breaking at this position will
-          produce a contig with zero sequences. If so abort early
-          rather than create an inconsistency.
-
-        - Fixed cache reference counting issues.
-
-        - Fixed out by one error in determining whether to move data
-          to right contig.
-
-        - Removed referene counting errors.
-
-*       Join Contigs bug fixes:
-
-        - Major bug fix to prevent misaligned joins. If editing cursor
-          is not visible and lock mode is not enabled, the save while
-          joining caused the contigs to shift positions, breaking
-          alignment.
-
-        - Bringing up the join editor should now set the editing cursor
-          to the correct sequence.
-
-        - Fixed potential bug in joining contigs causing it to fail to
-          delete the old right hand contig. (We have seen this, but not
-          100% sure this fixes it.)
-
-        - When quitting the Join Editor and not making a join, it would
-          only offer to save changes to 1 of the 2 contigs. It now does
-          both.
-
-        - The differences line in the join editor should no longer find
-          false matches when searching backwards.
-
-	- Backwards searching for sequence should no longer mission
-          occasional (approx 1 in 1000) matches.
-
-        - It's no longer possible to attempt a join to itself. (Could be
-          achieved before by using multiple join editor windows up
-          simultaneously.)
-
-        - The join editor now has the top and bottom contigs correctly
-          ordered, once again agreeing with the title bar ("a / b"
-          meaning contig a on top and contig b on the bottom.
-
-        - Fixed some editor sizing issues when using non-standard font
-          sizes. This was showing up as the consensus line sometimes
-          being invisible in the Join Editor.
-
-        - Fixed some reference counting bugs. These typically showed
-          up as assertion failures and crashes.
-
-        - Create Tag now works on both editors in a Join Editor.
-
-*       Contig Editor bug fixes:
-
-        - Fixed a rather common crash & assertion failure (caused by
-          mismatching reference counting on copy-on-write objects).
-          
-        - Fixed redisplay bugs when edits are made in a join editor
-          being updated in another window.
-          
-        - The tags added by the Find Primer-Walk function are now
-          positioned correctly for both strands (reverse was incorrect
-          before).
-          
-        - Fixed a bug that caused empty Tk error dialogues to appear
-          when clicking on locations with no sequence data within the
-          contig editor, but only after attempting to edit a contig with
-          an invalid name.
-          
-        - Fixed a major issue with using Save in the Contig Editor
-          followed by continued editing. The items saved then became
-          "live" and any changes made could end up being automatically
-          written to disk regardless of whether the user did a second
-          save.
-          
-        - Removing tags via the editor was still leaving them in bin
-          hierarchies, causing corruptions in some cases. Fixed.
-          
-        - Fixed a contig editor bug where attempting to remove a column
-          in the contig cutoff regions (before first or after last
-          visible base) would work if the first/last base was "*".
-          
-        - Inserting columns in the consensus now behaves better at
-          extreme places (eg 1st base in far-left cutoff).
-          
-        - Many bug fixes to editor Undo, especially in relation to
-          inserting and removing columns at the first and last bases in
-          sequences or the contig.
-          
-        - The contig editor now correctly responds to notifications that
-          the program is trying to shut down, asking the user if they
-          wish to save. Formly it would sometimes simply crash.
-          
-          Cut and pasting of complemented sequences now works.
-
-*       Various caching/reference counting bug fixes:
-
-        - Fixed some caching bugs with the B+Tree code, showing up as
-          crashes or corruptions.
-
-        - Fixed a memory corruption in the consensus caching code,
-          caused when a bin considerably shrinks.
-
-        - Removed a few gap5-cache related bugs (assertions,
-          corruptions, crashes).
-
-        - Fixed issues with complementing of cached consensus sequences.
-
-        - The consensus cache can no longer return sections of blank N
-          data. This happened when a contig start precisely matched the
-          root bin start point.
-          
-        - Fixed a bug in reference counting in the consensus algorithm,
-          sometimes showing up as crashes in gap5_consensus tool.
-          
-        - Removed several reference count leaks in List Contigs, Save
-          Consensus and consensus iterators. This included things like
-          the consensus computed for Find Internal Joins.
-
-	- Fixed a problem causing the consensus cache invalidation to
-          sometimes miss invalidating regions.
-
-*       Contig ID handling:
-
-        - When using dialogues asking for a single contig and a range
-          within it (eg Save Consensus) it now correctly sets the
-          default start and end positions based on the clipped consensus
-          coordinates, instead of just 1 to contig-length.
-          
-        - It should no longer be possible to duplicate contig names when
-          importing new reads.
-          
-        - Lists containing the same contig multiple times (either
-          explicitly or implicitly by using different read IDs within
-          the same contig) are now filtered out in functions taking
-          lists of contigs (eg Find Internal Joins).
-
-*       Exporting data:
-
-        - Fixed a bug in Export Contigs to SAM format involving the
-          handling of template names. It could sometimes cause a crash.
-
-        - Exporting a portion of a single contig in Export Sequences now
-          correctly outputs all the annotations, even if they're outside
-          the desired range (by attached to readings that are
-          overlapping the range).
-
-        - Removed extraneous newline that sometimes appears in fasta or
-          fastq outputs.
-
-*       Importing Data:
-
-        - Sequences imported via Assembly -> Import... now have their
-          sequence names indexed, meaning we can search for them by
-          name.
-          
-        - Fixed parsing errors with CAF format; quality lines starting
-          with white space are no longer a problem; backslash \
-          continuation line support added; improved quote handling;
-          support for reading CAF on Windows.
-          
-        - Removed crashes when parsing malformed FASTA files.
-
-        - Importing from fasta files should be more robust now.
-
-        - Fixed a stack corruption when importing from ACE. Sequences
-          imported now also have a mapping score of 255.
-
-        - Fixed a bug in fasta import where the last sequence in a fasta
-          file often generated a blank contig.
-
-        - Use of binary I/O modes on Windows (BAM).
-
-*       Template display:
-
-        - Complemeted contigs in the Template Display sometimes wrongly
-          caused templates to be flagged as inconsistent. Now fixed.
-          
-        - The template display now correctly starts up showing the start
-          of a contig when that contig does not start as base 1.
-          
-        - The depth plot in the template display should more accurately
-          reflect the actual depth at a variety of zoom levels instead
-          of artificially increasing depth as we zoom out.
-
-*       Various data-editing fixes (mostly solving data corruptions):
-
-        - When removing a consensus column causes removal of an item
-          from the contig, we now also update the bin and contig extents
-          incase the removal changed them.
-          
-          Similarly inserting columns could sometimes fail to update
-          contig extents.
-          
-        - Deleting consensus bases such that entire tags or sequences
-          are removed now correctly updates no.seq and no.anno fields in
-          the bins.
-          
-        - Added write-lock to bins when removing items. This could cause
-          some data to not be written back to disk if unmodified by
-          another function, or for editor edits to be pushed to main
-          gap5 I/O without hitting Save. (A potentially major corruption)
-          
-        - Fixed bugs in range updates when inserting and removing to
-          sequences. (Minor issue)
-          
-        - Fixed a memory corruption when we remove the last item from a bin.
-          
-        - Adding new sequences to complemented contigs could create
-          incorrect sequencing positionings if the smallest bin had
-          grown, triggering a new leaf node. Also correted some
-          house-keeping coordinates (start/end used) for complemented
-          bins.
-          
-        - Fix for 1bp long sequences and updating the bin ranges.
-
-        - Moving sequences could sometimes cause them to flip
-          orientation.
-
-        - Fixed a major corruption involving reuse of bin-range
-          slots. This could cause overwriting of some data once we've
-          managed to remove 2 or more items from a bin and then start to
-          reuse those slots.
-
-        - Major bug fix to moving contigs in the contig selector - it
-          can no longer duplicate contigs and in the process remove an
-          existing one.
-
-        - Fixed a bug when writing bins that previously contained data
-          but no longer do.
-
-        - Added bin simple loop detection in the various functions to
-          increment or decrement the number of seqs, annotations and
-          reference position markers. (This shouldn't happen, but it's a
-          robustness improvement.)
-
-*       Internal change to storage of annotations. If attached to a
-        sequence they now should always be placed in the same internal
-        contig-bin as their associated sequence. This fixes a number
-        of bugs and simplifies some algorithms. Older databases are
-        not restricted in this manner and so the change is backwards
-        compatible.
-
-*       Tags are now displayed in strict left to right order rather than
-        the broken right to left order as before.
-
-*       Removed various bugs with allocating and deallocating tags
-        (caused by misunderstanding my own code and the meaning of the
-        "idx" field).
-
-*       Removed a memory overrun when running Find Internal Joins or
-        Find Repeats with lots of small contigs.
-
-*       Complement Contig via the List Contigs window now works.
-
-*       The program now knows the proper filename of the database when
-        opened using the File -> Open dialogue and browsing to another
-        directory. This was causing errors in Check Database.
-
-*       Worked around issues with metacity window manager and refusals
-        to raise windows. Ensure that as many dialogues as possible
-        are correctly parented, otherwise metacity can gift focus to a
-        window that isn't even visible. (This is a WM bug.)
-
-*       Several bug fixes involving detection of empty bins.
-
-*       Robustness improvements: consensus when faced with corrupted
-        databses and the contig selector when trying to draw zero
-        contigs.
-
-*       Fixed the consensus when consisting soley of reads of N.
-
-*       Fixed crashes in Complement Contig in some cases (typically
-        very deep data).
-
-*       Saved settings in various dialogues now write to .gap5rc
-        instead of .gaprc.
-
-*       Gap5 now checks the master database version and will no longer
-        automatically start updating individual records to the latest
-        encoding/formats if the database is an older format. This
-        allows testing of newer versions without risking the inability
-        to revert back.
-
-*       Truncated read system calls now handled in bam reading,
-        instead of interpreting these as EOF.
-
-*       The lowest level of Gap5 I/O code no longer simply aborts on
-        an error, but now whinges instead and passes the error up one
-        level. (The calling procedure may still abort though.)
-
-
-
-Gap4 fixes
-----------
-
-
-*       Fixed a (rare) infinite loop in the trace display code.
-
-*       Fix crash in Find Internal Joins when faces with lots of small
-        contigs and insufficient reserved space for the consensus.
-
-
-Misc
-----
-
-*       Bug fixed the "File does not exist" error dialogue
-
-*       Various compilation improvements: PPC64 detection for MacOS X;
-        rpath support.
-
-*       Various minor compilation improvements, removing warnings and
-        fixing compilation issues with gcc 4.4.4 onwards and use of
-        _FORTIFY_SOURCE.
-
-*	Support added for using Tcl 8.5.
+Many internal bug fixes not so easily describable have been omitted
+from this list as they have no single apparent end-user affect.
+
+* Added numerous robustness checks to prevent crashes.
+
+* Removed a few memory leaks.
+
+* Fixed a large category of bugs that surfaced when closing one
+  database and opening a new one without shutting down Gap5
+  inbetween. 
+
+* Fixed a crashes in the contig editor and join editor when exiting
+  with the trace display open.
+
+* Editor search by position now works when the cursor is not on the
+  consensus.
+
+* The editor was sometimes reporting the << and >> sequence
+  orientations incorrectly after joining. This could also occur when
+  exporting back to SAM format.
+
+* Editor insertion/deletion into tags now correctly works with Undo in
+  all cases.
+
+* Renaming the contig in the editor and then using undo was causing
+  problems with the contig name index.
+
+* Bug fixes to contig shift (Control Left/Right arrow in the editor),
+  which could occasionally cause bin start/end errors.
+
+* Fixed sporadic crashes after lots of contig joining.
+
+* Reference position markers when updated by Join Contigs should
+  behave better; previously they sometimes caused bin "used start/end
+  range are incorrect" warnings.
+
+* The Join Editor when invoked from a Find Internal Joins line in the
+  contig selector should now come up at more sensible positions,
+  especially in the case of reverse alignments.
+
+* Fixed an error causing Find Internal Joins to miss some blatantly
+  obvious joins. Also tweaked the block-stitching heuristics;
+  typically finding 2% more joins, with slightly lower percentage
+  mismatches.
+
+* Fixed an issue with consensus caching whereby after joining we would
+  sometimes get incorrect consensus being used / exported. Caching was
+  also applying multiple times over, causing slow downs. In a related
+  fix the last base would (rarely) be omitted.
+
+* Fixed a few errors in the consensus caching code.
+
+* Extra checking when importing and exporting annotations, preventing
+  crashes when faced with corrupted data.
+
+* Export Contigs is now more robust to various sorts of data
+  corruptions, making it a more viable tool for reconstructing dataabses.
+
+* Importing MAQ and Fasta data no longer leaves the template name with
+  random values. Also fixed potential crash in MAQ import.
+
+* Fixed error in CAF files where the last quality value per
+  sequence could be loaded incorrectly.
+
+* Fixed SAM/BAM output when requesting to fix mate-pair data and only
+  exporting a single contig.
+
+* More robust handling of SAM cigar strings starting with I or P
+  operators.
+
+* CAF/AFG bug fixes when reading lines longer than 32Kb.
+
+* Fixed errors in Map Reads / Import Reads, also updated the name to
+  match the newer bwa options.
+
+* Saving consensus quality would sometimes produce incorrect output
+  due to qualities being interpreted as UTF8 codes.
+
+* Attempting to save a consensus from a list containing duplicate
+  contigs (specified by different reads within the same contig) no
+  longer creates duplicate consensus output.  The contig names are now
+  also output instead of #number.
+
+* Check Database can now fix tags that extend beyond the contig extents.
+
+* Break Contig was sometimes failing after making correctly making a
+  break. When faced with very long sequences it could also break into
+  too many pieces.
+
+* Break contig now ensures the cached number of sequences and
+  annotations are always updated correctly in the child contigs.
+
+* Disassemble Readings can no longer corrupt consensus annotations.
+
+* Disassembling a set of reads where some reads are invalid (no longer
+  exist) no longer aborts mid-way.
+
+* Fixed a memory corruption bug in Shuffle Pads that could cause
+  crashes. It is also more resilient to errors in the input data.
+
+* Shuffle Pads would sometimes leave tags in the incorrect location.
+
+* The Template Display has better analysis of the consistency of
+  templates that span regions that have been joined together.
+
+* Fixed crashes in the Template Display when making joins.
+
+* Fixed occasional Template Display crash during Y zooming.
+
+* Double clicking on a hyperlinked contig name no longer crashes when
+  that contig doesn't exist any more. Similarly attempting to edit a
+  disassembled/deleted contig via #number or =number no longer dies.
+
+* The Contig ID portions of dialogues now always update the start/end
+  ranges correctly when selecting new contigs.
+
+* Fixed occasional errors when updating the name and contig B+Tree
+  index, which showed up as being unable to edit contigs by name.
+
+* Fixed a bug in the Sequence Search function which caused it to find
+  the same match multiple times if the match started on a pad.
+
+* Fixed off-by-one error in Find Repeats and also prevented it from
+  occasionally finding matches off the ends of the contigs.
+
+* The Results Manager was displaying incorrect #ID values.
+
+* Fixed a bug in decoding of PT/CT tags in SAM files when multiple
+  tags are combined into a single auxiliary field.
+
+* Attempting to open a previously deleted contig via #number should no
+  longer apparently work.
+
+* Many code tidyups to remove compilation warning messages.
+
+* Improved compilation on Ubuntu 11.10 and RedHat.
+
+* The code should now compile with zlib-1.2.6 and newer.
+
+
+Io_lib Updates
+--------------
+
+* New tool - scramble.  This converts between various NGS formats
+  including SAM, BAM and CRAM.
+
+
