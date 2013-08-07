@@ -688,8 +688,8 @@ static int consistent_pair(GapIO *io, rangec_t *r, HashTable *lt_h) {
 
 	lib_type = lib->lib_type;
 	isize_max = isize_min = lib->insert_size[lib->lib_type];
-	isize_min -= 2*lib->sd[lib->lib_type];
-	isize_max += 2*lib->sd[lib->lib_type];
+	isize_min -= 3*lib->sd[lib->lib_type];
+	isize_max += 3*lib->sd[lib->lib_type];
     } else {
 	lib_type = LIB_T_INWARD;
 	isize_min = 20;
@@ -732,7 +732,8 @@ static int consistent_pair(GapIO *io, rangec_t *r, HashTable *lt_h) {
 
 
     /* Check insert size */
-    isize = MAX(r->pair_start, r->pair_end) - MIN(r->start,r->end);
+    isize = MAX(MAX(r->pair_start, r->pair_end), MAX(r->start, r->end))
+	  - MIN(MIN(r->pair_start, r->pair_end), MIN(r->start, r->end));
     isize = ABS(isize);
     if (!(isize >= isize_min && isize <= isize_max))
 	return 0;
