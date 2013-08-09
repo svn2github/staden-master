@@ -1955,8 +1955,10 @@ int sequence_fix_anno_bins(GapIO *io, seq_t **s) {
  * Returns 0 on success
  *        -1 on failure
  */
-int sequence_get_range_pair_position(GapIO *io, rangec_t *r) {
+int sequence_get_range_pair_position(GapIO *io, rangec_t *r,
+				     tg_rec contig1, tg_rec contig2) {
     range_t r_out;
+    int time_valid = 1, time_checked = 0;
 
     if (r->pair_rec == 0)
 	return 0; /* Not an error as it's up to date anyway */
@@ -1967,13 +1969,37 @@ int sequence_get_range_pair_position(GapIO *io, rangec_t *r) {
     if (r->pair_timestamp == io->db->timestamp)
 	return 0;
 
-    /* May also match the mate coting time stamp */
-    if (r->pair_contig && cache_exists(io, GT_Contig, r->pair_contig)) {
+    /* May also match the (mate) contig time stamp */
+    if (contig1) {
+	contig_t *c = cache_search(io, GT_Contig, contig1);
+
+	if (c) {
+	    if (r->pair_timestamp < c->timestamp)
+		time_valid = 0;
+	    time_checked++;
+	}
+    }
+    if (contig2 && time_valid) {
+	contig_t *c = cache_search(io, GT_Contig, contig2);
+
+	if (c) {
+	    if (r->pair_timestamp < c->timestamp)
+		time_valid = 0;
+	    time_checked++;
+	}
+    }
+    if (time_valid && r->pair_contig &&
+	cache_exists(io, GT_Contig, r->pair_contig)) {
 	contig_t *c = cache_search(io, GT_Contig, r->pair_contig);
 
-	if (r->pair_timestamp >= c->timestamp)
-	    return 0;
+	if (c) {
+	    if (r->pair_timestamp < c->timestamp)
+		time_valid = 0;
+	    time_checked++;
+	}
     }
+    if (time_checked && time_valid)
+	return 0;
 
     //printf("%d,%d Updating pair %"PRIrec"/%"PRIrec" pos=%d in %"PRIrec,
     //	   r->pair_timestamp, io->db->timestamp,

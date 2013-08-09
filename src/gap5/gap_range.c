@@ -327,7 +327,7 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 	    if (r->pair_timestamp < gr->io->db->timestamp) {
 		if (gr->new_filter.accuracy) {
 		    /* Pair was off-screen, so get more accurate results */
-		    sequence_get_range_pair_position(gr->io, r);
+		    sequence_get_range_pair_position(gr->io, r, gr->crec, 0);
 		} else if (r->pair_ind == -1 && r->pair_contig == gr->crec) {
 		    /* Same contig, but out of date. Check boundary */
 		    //if (r->pair_start > c->end || r->pair_end < c->start)

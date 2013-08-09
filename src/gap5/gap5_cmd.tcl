@@ -329,6 +329,12 @@ set ::cmd::auto_break::opts {
     contigs       1 {*} list {Compare only specific contigs against each other. 'list' is a space separated list of contig names}
     n|dry_run     0 0   {}   {Find joins only, but do not make them}
     {} {} {} {} {}    	  
+    min_mqual     1 0   int  {Minimum mapping quality. Used during problem finding. 0 => use all readings.}
+    good          1 10  int  {Weight for all good read pairs; >0}
+    bad           1 -20 int  {Weight for all bad read pairs; <0}
+    unknown       1 -5  int  {Weight for unknown/marginal read pairs; <= 0}
+    singleton     1 -1  int  {Weight for singletons that should be pairs; <=0}
+    min_score     1 0   int  {Minimum combined score after applying the weights above; may be negative.}
 }
 
 proc lreverse l {set r "";foreach i $l {set r [linsert $r 0 $i]}; return $r}
@@ -351,8 +357,14 @@ proc ::cmd::auto_break::run {dbname _options} {
     puts "\n>>>\n>>> Stage 1: finding regions to break part\n>>>"
 
     set r [auto_break \
-	       -io            $io \
-	       -contigs       $opt(contigs)]
+	       -io                $io \
+	       -contigs           $opt(contigs) \
+	       -good_weight       $opt(good) \
+	       -bad_weight        $opt(bad) \
+	       -unknown_weight    $opt(unknown) \
+	       -singleton_weight  $opt(singleton) \
+	       -min_score         $opt(min_score) \
+	       -min_mqual         $opt(min_mqual)]
 
     if {$opt(dry_run)} {
 	$io close

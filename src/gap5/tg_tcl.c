@@ -1992,7 +1992,7 @@ static int sequence_cmd(ClientData clientData, Tcl_Interp *interp,
     case GET_PAIR_POS: {
 	rangec_t *r;
 	r = sequence_get_rangec(ts->io, ts->seq, 0);
-	sequence_get_range_pair_position(ts->io, r);
+	sequence_get_range_pair_position(ts->io, r, 0, 0);
 	vTcl_SetResult(interp, "%"PRIrec" %"PRIrec" %d %d",
 		       r->pair_rec, r->pair_contig,
 		       r->pair_start, r->pair_end);

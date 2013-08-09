@@ -66,10 +66,6 @@
 #define ALLB(ws) ((1<<(2*(ws)))-1)
 
 #define MIN_OVERLAP 5
-#define MAXTSIZE 10000
-#define MIN_HARD_SCORE -9
-#define MIN_SOFT_SCORE 0
-#define MIN_SOFT_VALID 4
 /* #define NORMALISE_FOR_GC 1 */
 
 #define CONTIG_END_IGNORE 200
@@ -119,36 +115,6 @@ static count_t counts[1<<(2*WS)]; /* 4^WS */
 static int lookup[256];
 static int clookup[256];
 static double probs[4];
-
-/*
- * Checks the region from 'start' to 'end' to see whether it can be
- * validated by nearby read-pairs.
- *
- * It does this by looking up to MAXTSIZE either size of start/end
- * identifying readings that point inwards to the hole. For these reads it
- * then verifies if they validate, have no impact, or reject the region.
- *
- * Returns a score, +ve for confirmed, -ve for denied and 0 for unknown.
- */
-static int check_read_pairs(GapIO *io, tg_rec contig,
-			    contig_region_t *gap) {
-    int i;
-    int valid = 0, invalid = 0;
-
-#ifdef DEBUG    
-    printf("\n***** Contig %"PRIrec", gap %d..%d *****\n",
-	   contig, gap->start, gap->end);
-#endif
-
-    if (valid - invalid < MIN_HARD_SCORE ||
-	(valid - invalid < MIN_SOFT_SCORE &&
-	 valid < MIN_SOFT_VALID))
-	gap->valid = 0;
-    else
-	gap->valid = 1;
-
-    return valid - invalid;
-}
 
 /*
  * Turns an array of coverage data (0 => no coverage) to an Array of
@@ -441,9 +407,9 @@ void filter_consen_diffs(char *in, char *out, int len, char *cons, int N) {
  * Returns: an Array of type contig_region_t on success
  *          NULL on failure
  */
-static Array suspect_joins(GapIO *io, tg_rec contig, int tw,
-			   double filter_score,
-			   double depth, HashTable *clip_hash) {
+static Array suspect_joins(GapIO *io, tg_rec contig,
+			   //double filter_score, double depth
+			   int min_mq, HashTable *clip_hash) {
     int i, clen, cstart, cend;
     char *valid, *cp;
     char legal_chars[256];
@@ -451,7 +417,6 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int tw,
     char *cons;
     contig_iterator *ci;
     rangec_t *r;
-    int min_mq = 3;
     int skip_non_paired = 1;
 
     consensus_valid_range(io, contig, &cstart, &cend);
@@ -619,11 +584,6 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int tw,
     return gaps;
 }
 
-#define GOOD_SCORE +5
-#define BAD_SCORE  -10
-#define UNKNOWN_SCORE -4
-#define SINGLETON_SCORE 0
-
 /* Cache the lib_type for this library rec so we can
  * identify whether it is expected to be pointing
  * inwards or outwards.
@@ -649,6 +609,13 @@ static int compute_lib_type(GapIO *io, tg_rec library_rec, HashTable *lt_h,
 			 hd, NULL);
 	}
 
+	/*
+	 * FIXME, consider isize_min/max to be not gaussian, but just scan
+	 * through the table to compute the actual size? Eg 99% of reads
+	 * are between < and >, regardless of distribution shape?
+	 *
+	 * If so, this belongs in update_library_stats().
+	 */
 	*isize_max = *isize_min = lib->insert_size[lib->lib_type];
 	*isize_min -= 3*lib->sd[lib->lib_type];
 	*isize_max += 3*lib->sd[lib->lib_type];
@@ -740,7 +707,7 @@ static int consistent_pair(GapIO *io, rangec_t *r, HashTable *lt_h,
  */
 static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 			 int good_score, int bad_score, int unknown_score,
-			 int singleton_score) {
+			 int singleton_score, int min_score) {
     int i, severity;
     HashTable *lt_h;
     int cstart, cend;
@@ -770,14 +737,12 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	if (gap->deleted)
 	    continue;
 
-	score = check_read_pairs(io, contig, gap);
-	printf("Gap %d..%d,  validity %d\n",
-	       gap->start, gap->end, score);
+	printf("Gap %d..%d\n", gap->start, gap->end);
 
 	if (!(c = cache_search(io, GT_Contig, contig)))
 	    continue;
 
-//FIXME: query library info
+//FIXME: use template_max_size(io) instead.
 #define INS_SIZE 1000
 
 	r = contig_seqs_in_range(io, &c,
@@ -1006,17 +971,13 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 
 	score =  num_good * good_score
 	        + num_bad * bad_score
-	    + num_unknown * unknown_score;
+	    + num_unknown * unknown_score
 	     + num_single * singleton_score;
 
 	printf("GAP %d good, %d bad, %d unknown, %d single => score %d\n",
 	       num_good, num_bad, num_unknown, num_single, score);
 
-	/* FIXME: parameterise this via scoring function.
-	 * Eg +1 for good, -2 for bad?
-	 * Or just require a percentage?
-	 */
-	gap->valid = score >= 0 ? 1 : 0;
+	gap->valid = score >= min_score ? 1 : 0;
 
 	HashTableDestroy(h, 0);
 
@@ -1136,7 +1097,8 @@ static void break_gaps(GapIO *io, tg_rec contig, Array gaps,
 }
 
 void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
-			      int tw, double filter_score, double depth,
+			      //double filter_score, double depth,
+			      int min_mq, int min_score,
 			      int good_score, int bad_score,
 			      int unknown_score, int singleton_score,
 			      dstring_t *ds) {
@@ -1149,7 +1111,8 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 				HASH_POOL_ITEMS);
 
     printf("  = Identifying suspect joins\n");
-    gaps = suspect_joins(io, contig, tw, filter_score, depth, clip_hash);
+    gaps = suspect_joins(io, contig, //filter_score, depth,
+			 min_mq, clip_hash);
 
     printf("  = Merging gaps\n");
     merge_gaps(gaps, MIN_OVERLAP*2);
@@ -1157,7 +1120,7 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 
     printf("  = Confirming gaps\n");
     confirm_gaps(io, contig, gaps, good_score, bad_score, unknown_score,
-		 singleton_score);
+		 singleton_score, min_score);
 
     printf("  = Finding break points\n");
     break_gaps(io, contig, gaps, clip_hash, ds);
@@ -1168,18 +1131,22 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 }
 
 dstring_t *auto_break_contigs(GapIO *io, int argc, contig_list_t *argv,
-			      double filter_score, int by_consensus) {
-    int tw, i;
+			      //double filter_score, int by_consensus,
+			      int min_mq, int min_score,
+			      int good_score, int bad_score,
+                              int unknown_score, int singleton_score) {
+    int i;
     double gc;
     int depth;
 
     dstring_t *ds = dstring_create(NULL);
 
     for (i = 0; i < argc; i++) {
-	auto_break_single_contig(io, argv[i].contig, argv[i].start,
-				 argv[i].end, tw, filter_score, depth,
-				 GOOD_SCORE, BAD_SCORE, UNKNOWN_SCORE,
-				 SINGLETON_SCORE, ds);
+	auto_break_single_contig(io, argv[i].contig,
+				 argv[i].start, argv[i].end,
+				 //filter_score, depth,
+				 min_mq, min_score, good_score, bad_score,
+				 unknown_score, singleton_score, ds);
     }
 
     return ds;

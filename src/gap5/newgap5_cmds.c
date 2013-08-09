@@ -2246,8 +2246,14 @@ int tcl_auto_break(ClientData clientData, Tcl_Interp *interp,
     cli_args a[] = {
         {"-io",      ARG_IO,    1, NULL,  offsetof(abreak_arg, io)},
         {"-contigs", ARG_STR,   1, NULL,  offsetof(abreak_arg, inlist)},
-        {"-score",   ARG_FLOAT, 1, "2.0", offsetof(abreak_arg, score)},
-        {"-by_consensus", ARG_INT,1, "1", offsetof(abreak_arg, by_consensus)},
+        //{"-score",   ARG_FLOAT, 1, "2.0", offsetof(abreak_arg, score)},
+        //{"-by_consensus", ARG_INT,1, "1", offsetof(abreak_arg, by_consensus)},
+	{"-min_mqual",        ARG_INT, 1, "0",    offsetof(abreak_arg, min_mqual)},
+	{"-min_score",        ARG_INT, 1, "0",    offsetof(abreak_arg, min_score)},
+	{"-good_weight",      ARG_INT, 1, "10",    offsetof(abreak_arg, good_weight)},
+	{"-bad_weight",       ARG_INT, 1, "-20",  offsetof(abreak_arg, bad_weight)},
+	{"-unknown_weight",   ARG_INT, 1, "-5",   offsetof(abreak_arg, unknown_weight)},
+	{"-singleton_weight", ARG_INT, 1, "-1",   offsetof(abreak_arg, singleton_weight)},
         {NULL,       0,       0, NULL, 0}
     };
     int rargc;
@@ -2260,8 +2266,11 @@ int tcl_auto_break(ClientData clientData, Tcl_Interp *interp,
     vfuncheader("Auto-break");
 
     active_list_contigs(args.io, args.inlist, &rargc, &rargv);
-    ds = auto_break_contigs(args.io, rargc, rargv, args.score,
-                            args.by_consensus);
+    ds = auto_break_contigs(args.io, rargc, rargv,
+			    //args.score, args.by_consensus);
+			    args.min_mqual, args.min_score, args.good_weight,
+			    args.bad_weight, args.unknown_weight,
+			    args.singleton_weight);
 
     xfree(rargv);
     if (NULL != ds) {

@@ -195,9 +195,13 @@ rangec_t *sequence_get_rangec(GapIO *io, seq_t *s, int abs_pos);
  * Fills out the r->pair_{start,end,mqual,contig} fields of a rangec_t
  * struct and the cooresponding bin range_t element.
  *
+ * If contig is specified, check against that contig's timestamp, otherwise
+ * check against the cached c->pair_contig timestamp.
+ *
  * Returns 0 on success
  *        -1 on failure
  */
-int sequence_get_range_pair_position(GapIO *io, rangec_t *r);
+int sequence_get_range_pair_position(GapIO *io, rangec_t *r,
+				     tg_rec contig1, tg_rec contig2);
 
 #endif /* _TG_SEQUENCE_H_ */

@@ -400,7 +400,7 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
 		    continue;
 	    }
 
-	    if (sequence_get_range_pair_position(io, r) < 0)
+	    if (sequence_get_range_pair_position(io, r, crec1, crec2) < 0)
 		goto fail;
 	    if (r->pair_contig != crec1 && r->pair_contig != crec2)
 		all_pairs++;
@@ -427,7 +427,7 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
 		    continue;
 	    }
 
-	    if (sequence_get_range_pair_position(io, r) < 0)
+	    if (sequence_get_range_pair_position(io, r, crec1, crec2) < 0)
 		goto fail;
 	    if (r->pair_contig != crec1 && r->pair_contig != crec2)
 		all_pairs++;
