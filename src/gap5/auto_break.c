@@ -41,6 +41,7 @@
   (x/2)^R * ((1-x)/2)^(N-R) * 2^N * N! / ((N-R)!R!) matches.
 */
 
+#include <assert.h>
 #include <io_lib/hash_table.h>
 
 #include "tg_gio.h"
@@ -118,62 +119,6 @@ static count_t counts[1<<(2*WS)]; /* 4^WS */
 static int lookup[256];
 static int clookup[256];
 static double probs[4];
-
-/*
- * This checks if an inconsistent template appears to be capable of
- * spanning 'gap'.
- *
- * As there are so many reasons why a template can be inconsistent this
- * iterates through all readings on the template in 'contig' to see if the
- * range of possibilities for the "other end" could be on the opposite side
- * to the gap.
- *
- * eg where F is invalid and may span if repositioned.
- * <---F---.........---R--->   |gap|
- *  ---F--->........---R--->   |gap|
- *
- * eg where no span is possible unless both readings are misassembled.
- * <---F---........<---R---    |gap|
- *
- * Returns 1 for potentially spanning
- *         0 for not spanning
- */
-#if 0
-static int bad_template_span(GapIO *io, int contig, template_c *t,
-			     contig_region_t *gap) {
-    GTemplates te;
-    item_t *item;
-
-    template_read(io, t->num, te);
-
-    for (item = head(t->gel_cont); item; item = item->next) {
-	GReadings r;
-	gel_cont_t *gc = (gel_cont_t *)(item->data);
-
-	if (gc->contig != contig)
-	    continue;
-
-	gel_read(io, gc->read, r);
-
-	/* ---> |gap| */
-	if (r.position < gap->start &&
-	    r.sense == GAP_SENSE_ORIGINAL &&
-	    r.position + te.insert_length_max > gap->end) {
-	    return 1;
-	}
-
-	/* |gap| <--- */
-	if (r.position + r.sequence_length - 1 > gap->end &&
-	    r.sense != GAP_SENSE_ORIGINAL &&
-	    r.position + r.sequence_length - 1 - te.insert_length_max <
-	        gap->start) {
-	    return 1;
-	}
-    }
-
-    return 0;
-}
-#endif
 
 /*
  * Checks the region from 'start' to 'end' to see whether it can be
@@ -506,7 +451,8 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int tw,
     char *cons;
     contig_iterator *ci;
     rangec_t *r;
-    int min_mq = 1;
+    int min_mq = 3;
+    int skip_non_paired = 1;
 
     consensus_valid_range(io, contig, &cstart, &cend);
     clen = cend - cstart + 1;
@@ -537,7 +483,12 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int tw,
 	seq_t *s = cache_search(io, GT_Seq, r->rec), *sorig = s;
 	char *seq, *fseq;
 	size_t len;
-	int unique, first, last;
+	int unique, first, last, firstq, lastq;
+
+	if (skip_non_paired) {
+	    if (!r->library_rec || r->pair_rec == 0)
+		continue;
+	}
 
 	/* Complement data on-the-fly */
 	if ((s->len < 0) ^ r->comp) {
@@ -559,7 +510,7 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int tw,
 
 	/* Filter low mapping quality */
 	if (r->mqual < min_mq) {
-	    memset(fseq, '/', len);
+	    memset(fseq, 'q', len);
 	} else {
 	    
 	    /* Filter where the seq is low qual and disagrees with consen */
@@ -600,6 +551,7 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int tw,
 		unique++;
 	}
 	first = i-1 + r->start;
+	firstq = i-1;
 
 	/* Check for last good base */
 	unique = 0;
@@ -611,21 +563,38 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int tw,
 		unique++;
 	}
 	last = i + r->start;
+	lastq = i;
 
 #ifdef DEBUG
 	printf("Seq %"PRIrec", first=%d, last=%d\n", s->rec, first, last);
 #endif
 
-	if (clip_hash && (first != r->start + MIN_OVERLAP+1 ||
-			  last  != r->end - MIN_OVERLAP)) {
+	/*
+	 * Adjust first/last to take into account mapping quality too. We want
+	 * low quality regions to be flagged as gaps to validate, but
+	 * we don't want to consider them in the clips[] array as
+	 * it'll end up being the entire reading and is too blunt an
+	 * instrument.
+	 */
+	while (firstq >= s->left+1 && fseq[firstq] == 'q')
+	    firstq--;
+	while (lastq < s->right && fseq[lastq] == 'q')
+	    lastq++;
+	if ((firstq += r->start) < r->start + MIN_OVERLAP+1)
+	    firstq = r->start + MIN_OVERLAP+1;
+	if ((lastq += r->start) > r->end - MIN_OVERLAP)
+	    lastq = r->end - MIN_OVERLAP;
+
+	if (clip_hash && (firstq != r->start + MIN_OVERLAP+1 ||
+			  lastq  != r->end - MIN_OVERLAP)) {
 	    clip_pos_t *c = malloc(sizeof(*c));
 	    HashData hd;
 
 	    if (!c)
 		return NULL;
 
-	    c->left  = first;
-	    c->right = last;
+	    c->left  = firstq;
+	    c->right = lastq;
 	    hd.p = c;
 	    HashTableAdd(clip_hash, (char *)&r->rec, sizeof(r->rec), hd, 0);
 	}
@@ -650,52 +619,63 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int tw,
     return gaps;
 }
 
-#define GOOD_SCORE +1
-#define BAD_SCORE  -2
-#define UNKNOWN_SCORE -1
+#define GOOD_SCORE +5
+#define BAD_SCORE  -10
+#define UNKNOWN_SCORE -4
+#define SINGLETON_SCORE 0
 
-/*
- * Determines whether a pair within the same contig should be
- * considered as consistent or not.
- * Returns 1 for yes;
- *         0 for no.
+/* Cache the lib_type for this library rec so we can
+ * identify whether it is expected to be pointing
+ * inwards or outwards.
  */
-static int consistent_pair(GapIO *io, rangec_t *r, HashTable *lt_h) {
-    int isize_min, isize_max, isize, lib_type;
-
-    /* Cache the lib_type for this library rec so we can
-     * identify whether it is expected to be pointing
-     * inwards or outwards.
-     */
-    if (r->library_rec) {
+static int compute_lib_type(GapIO *io, tg_rec library_rec, HashTable *lt_h, 
+			    int *isize_min, int *isize_max, int *valid) {
+    if (library_rec) {
 	HashItem *hi;
 	library_t *lib;
 
-	if ((hi = HashTableSearch(lt_h, (char *)&r->library_rec,
+	if ((hi = HashTableSearch(lt_h, (char *)&library_rec,
 				  sizeof(tg_rec)))) {
 	    lib = hi->data.p;
 	} else {
 	    HashData hd;
 
-	    lib = cache_search(io, GT_Library, r->library_rec);
+	    lib = cache_search(io, GT_Library, library_rec);
 	    update_library_stats(io, lib->rec, 100,
 				 NULL, NULL, NULL);
 	    hd.p = lib;
-	    HashTableAdd(lt_h, (char *)&r->library_rec,
+	    HashTableAdd(lt_h, (char *)&library_rec,
 			 sizeof(tg_rec),
 			 hd, NULL);
 	}
 
-	lib_type = lib->lib_type;
-	isize_max = isize_min = lib->insert_size[lib->lib_type];
-	isize_min -= 3*lib->sd[lib->lib_type];
-	isize_max += 3*lib->sd[lib->lib_type];
+	*isize_max = *isize_min = lib->insert_size[lib->lib_type];
+	*isize_min -= 3*lib->sd[lib->lib_type];
+	*isize_max += 3*lib->sd[lib->lib_type];
+	if (valid) *valid = (lib->flags & 2) ? 0 : 1;
+	return lib->lib_type;
     } else {
-	lib_type = LIB_T_INWARD;
-	isize_min = 20;
-	isize_max = 2000;
+	*isize_min = 20;
+	*isize_max = 2000;
+	if (valid) *valid = 0;
+	return LIB_T_INWARD;
     }
+}
 
+/*
+ * Determines whether a pair WITHIN the same contig should be
+ * considered as consistent or not.
+ *
+ * Returns severity.
+ *         1 for OK
+ *         0 for error, with *severity filled out if not NULL
+ */
+static int consistent_pair(GapIO *io, rangec_t *r, HashTable *lt_h,
+			   int *severity) {
+    int isize_min, isize_max, isize, lib_type;
+
+    lib_type = compute_lib_type(io, r->library_rec, lt_h,
+				&isize_min, &isize_max, NULL);
 
     /* Check COMP1 vs COMP2 */
     switch (lib_type) {
@@ -703,30 +683,30 @@ static int consistent_pair(GapIO *io, rangec_t *r, HashTable *lt_h) {
 	if (r->start < r->pair_start &&
 	    !((r->flags & GRANGE_FLAG_COMP1) == 0 &&
 	      (r->flags & GRANGE_FLAG_COMP2) != 0))
-	    return 0;
+	    return severity?*severity=2,0:0;
 
 	if (r->start > r->pair_start &&
 	    !((r->flags & GRANGE_FLAG_COMP1) != 0 &&
 	      (r->flags & GRANGE_FLAG_COMP2) == 0))
-	    return 0;
+	    return severity?*severity=2,0:0;
 	break;
 
     case LIB_T_OUTWARD:
 	if (r->start > r->pair_start &&
 	    !((r->flags & GRANGE_FLAG_COMP1) == 0 &&
 	      (r->flags & GRANGE_FLAG_COMP2) != 0))
-	    return 0;
+	    return severity?*severity=2,0:0;
 
 	if (r->start < r->pair_start &&
 	    !((r->flags & GRANGE_FLAG_COMP1) != 0 &&
 	      (r->flags & GRANGE_FLAG_COMP2) == 0))
-	    return 0;
+	    return severity?*severity=2,0:0;
 	break;
 
     case LIB_T_SAME:
 	if (((r->flags & GRANGE_FLAG_COMP1) == 0) !=
 	    ((r->flags & GRANGE_FLAG_COMP2) == 0))
-	    return 0;
+	    return severity?*severity=2,0:0;
 	break;
     }
 
@@ -735,10 +715,19 @@ static int consistent_pair(GapIO *io, rangec_t *r, HashTable *lt_h) {
     isize = MAX(MAX(r->pair_start, r->pair_end), MAX(r->start, r->end))
 	  - MIN(MIN(r->pair_start, r->pair_end), MIN(r->start, r->end));
     isize = ABS(isize);
+    if (!(isize >= isize_min/2 && isize <= isize_max*2))
+	return severity?*severity=2,0:0;
     if (!(isize >= isize_min && isize <= isize_max))
-	return 0;
+	return severity?*severity=1,0:0;
 
-    return 1;
+    /* FIXME: difference seriousness of badness for isize issues?
+     * Eg orientation = BAD
+     * >5x sd size = BAD
+     * 3-5x sd size = minor bad
+     * within 3 sd size = good
+     */
+
+    return severity?*severity=0,1:1;
 }
 
 /*
@@ -750,12 +739,17 @@ static int consistent_pair(GapIO *io, rangec_t *r, HashTable *lt_h) {
  * 3. Score... (also consider spanning as bad?)
  */
 static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
-			 int good_score, int bad_score, int unknown_score) {
-    int i;
+			 int good_score, int bad_score, int unknown_score,
+			 int singleton_score) {
+    int i, severity;
     HashTable *lt_h;
+    int cstart, cend;
     
     lt_h = HashTableCreate(256, HASH_POOL_ITEMS | HASH_DYNAMIC_SIZE);
     if (!lt_h)
+	return;
+
+    if (consensus_valid_range(io, contig, &cstart, &cend) == -1)
 	return;
 
     /* Now process gaps validating by read-pair */
@@ -771,6 +765,7 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	int num_good = 0;
 	int num_bad = 0;
 	int num_unknown = 0;
+	int num_single = 0;
 
 	if (gap->deleted)
 	    continue;
@@ -802,21 +797,80 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	    HashData hd;
 	    int new;
 
-	    if (!r[j].pair_rec)
-		continue;
+	    /*
+	     * Reads without read-pairs that come from a paired end library
+	     * are inherently suspicious. Why don't we have the other end?
+	     * Presumably it didn't align, which typically means we have
+	     * a contig missing.
+	     */
+	    if (!r[j].pair_rec) {
+		int x, valid = 0, lib_type;
+		int isize_min, isize_max, isize_mid;
 
+		if (!r[j].library_rec)
+		    continue;
+
+		lib_type = compute_lib_type(io, r[j].library_rec, lt_h,
+					    &isize_min, &isize_max,
+					    &valid);
+		if (!valid)
+		    continue;
+
+		/* 3 s.d. is a bit harsh for penalising things, so limit
+		 * it to 1 s.d.
+		 */
+		isize_mid = (2*isize_min + isize_max) / 3;
+
+		// Other end didn't align?
+		switch (lib_type) {
+		case LIB_T_INWARD:
+		    if ((r[j].flags & GRANGE_FLAG_COMP1) == 0) {
+			if (gap->start > r[j].start && 
+			    gap->start - r[j].start < isize_mid)
+			    num_single++;
+		    } else {
+			if (r[j].end > gap->end &&
+			    r[j].end - gap->end < isize_mid)
+			    num_single++;
+		    }
+		    break;
+
+		case LIB_T_OUTWARD:
+		    if ((r[j].flags & GRANGE_FLAG_COMP1) != 0) {
+			if (gap->start > r[j].start &&
+			    gap->start - r[j].start < isize_mid)
+			    num_single++;
+		    } else {
+			if (r[j].end > gap->end &&
+			    r[j].end - gap->end < isize_mid)
+			    num_single++;
+		    }
+		    break;
+
+		case LIB_T_SAME:
+		    num_single++;
+		    break;
+		}
+		continue;
+	    }
+
+	    /* Paired in this contig, so see if also spans the problem. */
 	    if ((hi = HashTableSearch(h, (char *)&r[j].pair_rec,
 				      sizeof(r[j].pair_rec)))) {
 		rangec_t *p = (rangec_t *)hi->data.p;
-		sequence_get_range_pair_position(io, p);
+		sequence_get_range_pair_position(io, p, contig, 0);
 
 		if (MIN(p->start, p->pair_start) <= gap->start &&
 		    MAX(p->end, p->pair_end) >= gap->end) {
 		    /* Spans the gap */
-		    if (consistent_pair(io, p, lt_h))
+		    if (consistent_pair(io, p, lt_h, &severity)) {
 			num_good++;
-		    else
-			num_bad++;
+		    } else {
+			if (severity == 1)
+			    num_unknown++;
+			else 
+			    num_bad++;
+		    }
 		}
 		HashTableDel(h, hi, 0);
 		continue;
@@ -832,7 +886,20 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	    }
 	}
 
-	/* Count unmatched pairs remaining in the hash table */
+	/*
+	 * Count unmatched pairs remaining in the hash table.
+	 *
+	 * Some of these will be due to the edges of our search
+	 * window; they're in this contig, but pointing outwards. We
+	 * discard those.
+	 *
+	 * The remainder are either singletons or contig spanning
+	 * read-pairs. Singletons are counted as "unknowns" if it's a
+	 * paired end library. Spanning read-pairs are counted as bad
+	 * if and only if they're pointing towards the problem and
+	 * aren't within the likely insert-size of the end of the
+	 * contig.
+	 */
 	if (!(iter = HashTableIterCreate())) {
 	    HashTableDestroy(h, 0);
 	    free(r);
@@ -841,9 +908,10 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 
 	while (((hi = HashTableIterNext(h, iter)))) {
 	    rangec_t *r = hi->data.p;
-	    sequence_get_range_pair_position(io, r);
+	    sequence_get_range_pair_position(io, r, contig, 0);
+	    int isize_min, isize_max, isize_mid, lib_type;
 
-	    /* FIXME:
+	    /*
 	     * Paired end libraries with singletons should be
 	     * considered as an unknown states.
 	     *
@@ -851,27 +919,87 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	     * although they probably should have been filtered out
 	     * before reachign this point.
 	     */
-
+	    assert(r->pair_contig);
 	    if (!r->pair_contig) {
-		num_unknown++;
+		/* Shouldn't get here as we only added pairs */
+		int x, valid;
+		compute_lib_type(io, r->library_rec, lt_h, &x, &x, &valid);
+		if (valid)
+		    num_unknown++;
 		continue;
 	    }
-
-	    /* Make sure it spans the gap */
-	    if (!(MIN(r->start, r->pair_start) <= gap->start &&
-		  MAX(r->end, r->pair_end) >= gap->end))
-		continue;
-
 	    /* Check consistency */
 	    if (contig == r->pair_contig) {
-		if (consistent_pair(io, r, lt_h)) {
-		    num_good++;
+		/* Make sure it spans the gap */
+		if (!(MIN(r->start, r->pair_start) <= gap->start &&
+		      MAX(r->end, r->pair_end) >= gap->end))
 		    continue;
+
+		/* Shouldn't be here, unless our INS_SIZE param is wrong? */
+		if (consistent_pair(io, r, lt_h, &severity)) {
+		    num_good++;
+		} else {
+		    if (severity == 1)
+			num_unknown++;
+		    else 
+			num_bad++;
 		}
+		continue;
 	    }
 
-	    /* Spanning => bad */
-	    num_bad++;
+	    /* Spanning => bad, but only if it points towards this gap */
+	    lib_type = compute_lib_type(io, r->library_rec, lt_h,
+					&isize_min, &isize_max, NULL);
+	    isize_mid = (2*isize_min + isize_max) / 3;
+
+	    switch (lib_type) {
+	    case LIB_T_INWARD:
+		if ((r->flags & GRANGE_FLAG_COMP1) == 0) {
+		    if (cend - r->start < isize_max)
+			// pointing off end of contig, maybe real join
+			break;
+
+		    if (gap->start > r->start &&
+			gap->start - r->start < isize_mid)
+			// just left of gap
+			num_bad++;
+		} else {
+		    if (r->end - cstart < isize_max)
+			break;
+
+		    if (r->end > gap->end && r->end - gap->end < isize_mid)
+			num_bad++;
+		}
+		break;
+
+	    case LIB_T_OUTWARD:
+		if ((r->flags & GRANGE_FLAG_COMP1) != 0) {
+		    if (cend - r->start < isize_max)
+			break;
+
+		    if (gap->start > r->start &&
+			gap->start - r->start < isize_mid)
+			num_bad++;
+		} else {
+		    if (r->end - cstart < isize_max)
+			break;
+
+		    if (r->end > gap->end && r->end - gap->end < isize_mid)
+			num_bad++;
+		}
+		break;
+
+	    case LIB_T_SAME:
+		/* We can't tell which is 1st and 2nd read easily? */
+		if (gap->start > r->start && gap->start - r->start < isize_mid)
+		    num_unknown++;
+		else if (r->end > gap->end && r->end - gap->end < isize_mid)
+		    num_unknown++;
+		break;
+
+	    default:
+		num_bad++;
+	    }
 	}
 
 	HashTableIterDestroy(iter);
@@ -879,9 +1007,10 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	score =  num_good * good_score
 	        + num_bad * bad_score
 	    + num_unknown * unknown_score;
+	     + num_single * singleton_score;
 
-	printf("GAP %d good, %d bad, %d unknown => score %d\n",
-	       num_good, num_bad, num_unknown, score);
+	printf("GAP %d good, %d bad, %d unknown, %d single => score %d\n",
+	       num_good, num_bad, num_unknown, num_single, score);
 
 	/* FIXME: parameterise this via scoring function.
 	 * Eg +1 for good, -2 for bad?
@@ -1009,11 +1138,12 @@ static void break_gaps(GapIO *io, tg_rec contig, Array gaps,
 void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 			      int tw, double filter_score, double depth,
 			      int good_score, int bad_score,
-			      int unknown_score, dstring_t *ds) {
+			      int unknown_score, int singleton_score,
+			      dstring_t *ds) {
     Array gaps;
     HashTable *clip_hash;
 
-    printf("=== Checking contig %"PRIrec" ===\n", contig);
+    printf("\n=== Checking contig %"PRIrec" ===\n", contig);
 
     clip_hash = HashTableCreate(1024,
 				HASH_POOL_ITEMS);
@@ -1026,7 +1156,8 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
     //dump_gaps(gaps);
 
     printf("  = Confirming gaps\n");
-    confirm_gaps(io, contig, gaps, good_score, bad_score, unknown_score);
+    confirm_gaps(io, contig, gaps, good_score, bad_score, unknown_score,
+		 singleton_score);
 
     printf("  = Finding break points\n");
     break_gaps(io, contig, gaps, clip_hash, ds);
@@ -1048,7 +1179,7 @@ dstring_t *auto_break_contigs(GapIO *io, int argc, contig_list_t *argv,
 	auto_break_single_contig(io, argv[i].contig, argv[i].start,
 				 argv[i].end, tw, filter_score, depth,
 				 GOOD_SCORE, BAD_SCORE, UNKNOWN_SCORE,
-				 ds);
+				 SINGLETON_SCORE, ds);
     }
 
     return ds;
