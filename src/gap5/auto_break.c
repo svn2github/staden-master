@@ -600,9 +600,11 @@ static int compute_lib_type(GapIO *io, tg_rec library_rec, HashTable *lt_h,
 	} else {
 	    HashData hd;
 
-	    lib = cache_search(io, GT_Library, library_rec);
-	    update_library_stats(io, lib->rec, 100,
+	    update_library_stats(io, library_rec, 100,
 				 NULL, NULL, NULL);
+	    lib = cache_search(io, GT_Library, library_rec);
+	    if (NULL == lib) goto give_up;
+	    cache_incr(io, lib);
 	    hd.p = lib;
 	    HashTableAdd(lt_h, (char *)&library_rec,
 			 sizeof(tg_rec),
@@ -622,6 +624,7 @@ static int compute_lib_type(GapIO *io, tg_rec library_rec, HashTable *lt_h,
 	if (valid) *valid = (lib->flags & 2) ? 0 : 1;
 	return lib->lib_type;
     } else {
+    give_up:
 	*isize_min = 20;
 	*isize_max = 2000;
 	if (valid) *valid = 0;
@@ -710,14 +713,20 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 			 int singleton_score, int min_score) {
     int i, severity;
     HashTable *lt_h;
+    HashIter *iter;
+    HashItem *hi;
     int cstart, cend;
     
     lt_h = HashTableCreate(256, HASH_POOL_ITEMS | HASH_DYNAMIC_SIZE);
     if (!lt_h)
 	return;
 
+    iter = HashTableIterCreate();
+    if (!iter)
+	goto cleanup;
+
     if (consensus_valid_range(io, contig, &cstart, &cend) == -1)
-	return;
+	goto cleanup;
 
     /* Now process gaps validating by read-pair */
     for (i = 0; i < ArrayMax(gaps); i++) {
@@ -727,8 +736,6 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	int j, nr;
 	rangec_t *r;
 	HashTable *h;
-	HashIter *iter;
-	HashItem *hi;
 	int num_good = 0;
 	int num_bad = 0;
 	int num_unknown = 0;
@@ -865,11 +872,7 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	 * aren't within the likely insert-size of the end of the
 	 * contig.
 	 */
-	if (!(iter = HashTableIterCreate())) {
-	    HashTableDestroy(h, 0);
-	    free(r);
-	    continue;
-	}
+	HashTableIterReset(iter);
 
 	while (((hi = HashTableIterNext(h, iter)))) {
 	    rangec_t *r = hi->data.p;
@@ -967,8 +970,6 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	    }
 	}
 
-	HashTableIterDestroy(iter);
-
 	score =  num_good * good_score
 	        + num_bad * bad_score
 	    + num_unknown * unknown_score
@@ -989,6 +990,16 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	}
     }
 
+ cleanup:
+    /* Clean up cached library information */
+    if (NULL != iter) {
+	HashTableIterReset(iter);
+	while (NULL != (hi = HashTableIterNext(lt_h, iter))) {
+	    library_t *lib = hi->data.p;
+	    if (lib) cache_decr(io, lib);
+	}
+	HashTableIterDestroy(iter);
+    }
     HashTableDestroy(lt_h, 0);
 
     //uninit_template_checks(io, tarr);
