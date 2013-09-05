@@ -105,15 +105,17 @@ int test_if_locked(char *fname) {
 #endif
 
 int actf_lock(int read_only, char *file, int new) {
-    char fname[2048];
+    char *fname = NULL;
     struct stat statbuf;
     int fd;
-    char dir[1025];
+    char dir[1024];
     char *cp, *db_name;
-    char db_path[2048];
-    char aux_path[2048];
-    char hostname[1024];
+    char *db_path  = NULL;
+    char *aux_path = NULL;
+    char content[1024];
+    size_t namelen;
     int locked;
+    int ret = 6;
 
     /*
      * This may appear useless as we're using dir for creating the BUSY file,
@@ -136,7 +138,7 @@ int actf_lock(int read_only, char *file, int new) {
     *dir=0;
 #else
     if (*file != '/') {
-	if (NULL == getcwd(dir, 1024)) {
+	if (NULL == getcwd(dir, sizeof(dir) - 1)) {
 	    *dir = 0;
 	} else {
 	    strcat(dir, "/");
@@ -153,18 +155,24 @@ int actf_lock(int read_only, char *file, int new) {
     } else {
 	db_name = file;
     }
-
-   if (new) {
+    
+    if (new) {
+	db_path  = malloc(strlen(db_name) + 5);
+	aux_path = malloc(strlen(db_name) + 5);
+	if (NULL == db_path || NULL == aux_path) { ret = 6; goto out; }
 	sprintf(db_path,  "%s.g5d", db_name);
 	sprintf(aux_path, "%s.g5x", db_name);
     } else {
-	if (0 != find_db_files(db_name, dir, db_path, aux_path)) {
-	    return 7;
+	if (0 != find_db_files(db_name, dir, &db_path, &aux_path)) {
+	    ret = 7; goto out;
 	}
     }
 
-    sprintf(fname,    "%s%s.BUSY", dir, db_name);
-
+    fname = malloc(strlen(dir) + strlen(db_name) + 6);
+    if (NULL == fname) {
+	ret = 6; goto out;
+    }
+    sprintf(fname, "%s%s.BUSY", dir, db_name);
 
     /* Check for existance of lock on the BUSY file (from older gap4s) */
     locked = 0;
@@ -202,17 +210,18 @@ int actf_lock(int read_only, char *file, int new) {
     if (locked) {
 	if (read_only) {
 	    verror(ERR_WARN, "actf_lock", "Database is currently in use\n");
-	    return 0;
+	    ret = 0; goto out;
 	} else {
 	    /* lock already exists */
 	    actferr(5);
-	    return 5;
+	    ret = 5; goto out;
 	}
     }
 
     /* Nothing more to do in read only mode */
-    if (read_only)
-	return 0;
+    if (read_only) {
+	ret = 0; goto out;
+    }
 
     if (numu_lock_files >= numa_lock_files) {
 	numa_lock_files += 10;
@@ -220,23 +229,23 @@ int actf_lock(int read_only, char *file, int new) {
 					     sizeof(lock_file_t));
 	if (lock_files == NULL) {
 	    actferr(6);
-	    return 6;
+	    ret = 6; goto out;
 	}
     }
 
-    /* Sanity check - done the database actually exist? */
+    /* Sanity check - does the database actually exist? */
     if (!new) {
         if (stat(db_path, &statbuf) == -1 ||
             stat(aux_path, &statbuf)== -1) {
             actferr(7);
-            return 7;
+            ret = 7; goto out;
         }
     }
 
     /* Create the BUSY file */
     if ((fd = open(fname, O_CREAT | O_RDWR | O_TRUNC, 0666)) == -1) {
 	actferr(3);
-	return 3;
+	ret = 3; goto out;
     }
     /* Lock it */
 #if !defined(NOLOCKF)
@@ -244,22 +253,27 @@ int actf_lock(int read_only, char *file, int new) {
 #endif
 
 #if defined(__MINGW32__)
-   strcpy(hostname, "unknown");
+    strcpy(content, "unknown");
 #else
     /* Write the hostname and process id to it */
-    if (SOCKET_ERROR == gethostname(hostname, 1023))
-        strcpy(hostname, "unknown");
-    hostname[1023] = 0;
+    if (0 != gethostname(content, sizeof(content) - 16))
+        strcpy(content, "unknown");
+    content[sizeof(content) - 16] = 0;
 #endif
-    sprintf(db_path, "%s %d\n", hostname, (int)getpid());
-    write(fd, db_path, strlen(db_path));
+    namelen = strlen(content);
+    sprintf(content + namelen, " %d\n", (int)getpid());
+    write(fd, content, namelen + strlen(content + namelen));
 
-    lock_files[numu_lock_files].pathname = strdup(fname);
+    lock_files[numu_lock_files].pathname = fname; fname = NULL;
     lock_files[numu_lock_files].db_name = strdup(db_name);
     lock_files[numu_lock_files].fd = fd;
     numu_lock_files++;
-
-    return 0;
+    ret = 0;
+ out:
+    if (NULL != fname)    free(fname);
+    if (NULL != db_path)  free(db_path);
+    if (NULL != aux_path) free(aux_path);
+    return ret;
 }
 
 /*

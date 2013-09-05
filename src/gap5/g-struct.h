@@ -101,6 +101,8 @@ typedef struct {
 
 typedef struct _gfile_ {
     char *fname; /* name of file */
+    char *fndb;  /* Name of database file */
+    char *fnaux; /* Name of aux file */
     int fd;
     int fdaux;
     AuxHeader header;

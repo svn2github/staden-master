@@ -58,6 +58,8 @@ GFile *g_new_gfile(int bitsize)
 	return NULL;
 
     gfile->fname = NULL;
+    gfile->fndb  = NULL;
+    gfile->fnaux = NULL;
     gfile->fd = gfile->fdaux = -1;
     gfile->dheap = NULL;
     gfile->Nidx = 0; gfile->idx = NULL;
@@ -90,6 +92,8 @@ void g_free_gfile(GFile *gfile)
 {
     if (gfile != NULL) {
 	if (gfile->fname != NULL) xfree(gfile->fname);
+	if (gfile->fndb  != NULL) free(gfile->fndb);
+	if (gfile->fnaux != NULL) free(gfile->fnaux);
 	/* LOW LEVEL IO HERE */
 	errno = 0;
 	if (gfile->dheap != NULL) heap_destroy(gfile->dheap, 0); 

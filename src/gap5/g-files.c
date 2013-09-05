@@ -132,8 +132,9 @@ static GToggle g_toggle_state(GTimeStamp time, AuxIndex *idx)
  */    
 
 /*
- * Given an input filename 'fn' output to fndb[] and fnaux[].
+ * Given an input filename 'fn' output to *fndb and *fnaux.
  * We also trim fn to be the root, removing any suffix.
+ * N.B.: This now allocates *fndb and *fnaux.  The caller should free them.
  *
  * We support foo.0 + foo.0.aux as before, but also now handle
  * foo.0.g5d and foo.0.g5x.
@@ -143,47 +144,54 @@ static GToggle g_toggle_state(GTimeStamp time, AuxIndex *idx)
  * Returns 0 on success
  *        -1 on failure (no obvious derivations of fn found).
  */
-int find_db_files(char *fn, char *dir, char *fndb, char *fnaux) {
-    char fn2[2048];
+int find_db_files(char *fn, char *dir, char **fndb, char **fnaux) {
+    size_t fn2l = (NULL != dir ? strlen(dir) : 0) + strlen(fn);
+    char *fn2 = malloc(fn2l + 1);
+    char *cp = NULL;
     int try;
     
+    if (NULL == fn2) return -1;
+    *fndb = *fnaux = NULL;
+    *fndb = malloc(fn2l + strlen(G5_DB_SUFFIX) + 1);
+    if (NULL == *fndb)  goto fail;
+    *fnaux = malloc(fn2l + strlen(G5_AUX_SUFFIX) + 1);
+    if (NULL == *fnaux) goto fail;
+
     if (dir) {
-    	sprintf(fn2, "%s%s", dir, fn);
+	sprintf(fn2, "%s%s", dir, fn);
     } else {
-    	strncpy(fn2, fn, 2048);
+	strcpy(fn2, fn);
     }
 
     for (try = 0; try < 2; try++) {
-	char *cp;
-
 	/* Try new format first */
-	strcpy(fndb ,fn2);
-	strcat(fndb ,G5_DB_SUFFIX);
-	strcpy(fnaux,fn2);
-	strcat(fnaux,G5_AUX_SUFFIX);
+	strcpy(*fndb,  fn2);
+	strcat((*fndb) + fn2l,  G5_DB_SUFFIX);
+	strcpy(*fnaux, fn2);
+	strcat((*fnaux) + fn2l, G5_AUX_SUFFIX);
 	
-	if (file_exists(fndb) && file_exists(fnaux))
+	if (file_exists(*fndb) && file_exists(*fnaux))
 	    break;
 
 	/* Not new. Maybe we specified suffix too though? Strip and repeat */
 	if (try == 1) {
 	    /* Second pass of trying new format (with/without suffix */
 	    /* Fail back to old format instead then */
-	    strcpy(fndb ,fn);
-	    strcpy(fnaux,fn);
-	    strcat(fnaux,G_AUX_SUFFIX);
+	    strcpy(*fndb , fn2);
+	    strcpy(*fnaux, fn2);
+	    strcat((*fnaux) + fn2l, G_AUX_SUFFIX);
     
-	    if (file_exists(fndb) && file_exists(fnaux))
+	    if (file_exists(*fndb) && file_exists(*fnaux))
 		break;
 
-	    return -1;
+	    goto fail;
 	}
 
 	/* Not root of new, but maybe we specified a full name */
-	if (!(cp = strrchr(fn2, '.'))) {
+	if (!(cp = strrchr(fn, '.'))) {
 	    if (try == 0)
 		continue;
-	    return -1;
+	    goto fail;
 	}
 
 	if (strcmp(cp, G_AUX_SUFFIX)     != 0 &&
@@ -193,13 +201,29 @@ int find_db_files(char *fn, char *dir, char *fndb, char *fnaux) {
 	    if (try == 0)
 		continue;
 
-	    return -1;
+	    goto fail;
 	}
 	
-	*cp = 0;
+	/* Strip suffix and have another go */
+	fn2l -= strlen(cp);
+	fn2[fn2l] = '\0';
     }
 
+     /*
+      * Strip suffix in *fn if we found one.  Done here so that we only modify
+      * the value if we succeed.
+      */
+    if (NULL != cp)
+	*cp = 0;
+
+    free(fn2);
     return 0;
+
+ fail:
+    if (NULL != *fndb)  free(*fndb);
+    if (NULL != *fnaux) free(*fnaux);
+    free(fn2);
+    return -1;
 }
 
 
@@ -212,7 +236,7 @@ GFile *g_open_file(char *fn, int read_only)
  */
 {
     GFile *gfile;
-    char fnaux[1024], fndb[1024];
+    char *fnaux = NULL, *fndb = NULL;
     AuxIndex *idx_arr = NULL;
     int64_t recsize;
 
@@ -230,12 +254,8 @@ GFile *g_open_file(char *fn, int read_only)
 	 return NULL; \
     }
 
-    /* check file name isn't too long */
-    if ( strlen(fn) + strlen(G_AUX_SUFFIX) >= sizeof(fnaux) )
-	ABORT(GERR_NAME_TOO_LONG);
-
     /* Attempt to work alternative file names. */
-    if (find_db_files(fn, 0, fndb, fnaux) == -1) {
+    if (find_db_files(fn, 0, &fndb, &fnaux) == -1) {
 	gerr_set(GERR_OPENING_FILE);
 	return NULL;
     }
@@ -255,9 +275,11 @@ GFile *g_open_file(char *fn, int read_only)
     /* check access privilages */
     /* YUK! - to do */
 
-    /* set file name */
+    /* set file names */
     if ( (gfile->fname = (char *)xmalloc(strlen(fn)+1)) != NULL )
 	strcpy(gfile->fname,fn);
+    gfile->fndb  = fndb;
+    gfile->fnaux = fnaux;
     
     /* open file and its aux */
     /* LOW LEVEL IO HERE */
@@ -692,32 +714,31 @@ int g_check_header(GFile *gfile)
  * The rationale behind this is that users still manually remove the BUSY
  * file because "they know best". They then act all suprised when their
  * database becomes corrupt. Our alternative here is to check the master
- * time-stamp in the Aux header and to simply abort Gap4 (losing all unsaved
+ * time-stamp in the Aux header and to simply abort Gap5 (losing all unsaved
  * edits) if it has been changed external to this process.
  *
  * For efficiencies sake, we do not want to call this function too often.
  * Hence it is planned to be called only on the first disk update after a
  * flush. This still leaves room for race conditions (multiple people editing
- * simultaenously), but it covers the more common case of a gap4 session
+ * simultaenously), but it covers the more common case of a gap5 session
  * left open for ages and then going back to it later.
  */
 {
     AuxHeader diskheader;
-    char fname[PATH_MAX+5];
     int fd;
 
     if (gfile == NULL)
 	return gerr_set(GERR_INVALID_ARGUMENTS);
 
     /* Re-read from disk, using a new fd to avoid the OS caching for us. */
-    sprintf(fname, "%s.g5x", gfile->fname);
-    if (-1 == (fd = open(fname, O_RDONLY))) {
+    if (-1 == (fd = open(gfile->fnaux, O_RDONLY))) {
 	fprintf(stderr, "** SERIOUS PROBLEM - file %s\n", g_filename(gfile));
-	fprintf(stderr, "** %s: %s\n", fname, strerror(errno));
+	fprintf(stderr, "** %s: %s\n", gfile->fnaux, strerror(errno));
 	fprintf(stderr, "** Did you rename the database while it was open?\n");
+	panic_shutdown();
     }
 
-    if (-1 == gfile->low_level_vector[GOP_READ_AUX_HEADER](fd, &diskheader,1)){
+    if (0 != gfile->low_level_vector[GOP_READ_AUX_HEADER](fd, &diskheader,1)){
 	fprintf(stderr, "** SERIOUS PROBLEM - file %s\n", g_filename(gfile));
 	fprintf(stderr, "** Failed to re-read .g5x header\n");
 	close(fd);

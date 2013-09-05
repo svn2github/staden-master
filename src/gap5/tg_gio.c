@@ -64,8 +64,9 @@ static void open_log_file(GapIO *io, char *fn) {
     logfn = malloc(name_len + 5);
     if (NULL != logfn) {
 	memcpy(logfn, fn, name_len + 1);
-	if (0 == strcmp(logfn + name_len - 4, ".g5d")
-	    || 0 == strcmp(logfn + name_len - 4, ".g5x")) {
+	if (name_len > 4
+	    && (0 == strcmp(logfn + name_len - 4, ".g5d")
+		|| 0 == strcmp(logfn + name_len - 4, ".g5x"))) {
 	    /* chop off suffix */
 	    name_len -= 4;
 	}
