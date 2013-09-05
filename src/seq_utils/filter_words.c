@@ -4,7 +4,7 @@
 #include "dna_utils.h"
 
 #define MATCH 100
-#define MISMATCH -190
+#define MISMATCH -100
 
 /*
  *      n
@@ -194,7 +194,7 @@ int filter_words_local(char *seq, char *filt, size_t len, char *rep,
     int pads = 0;
 
     key = construct_key(rep, &keymask, &keylen, &keyjump);
-    minscore *= 100; /* precision to 2 decimal points */
+    minscore *= MATCH*100; /* precision to 2 decimal points */
 
     /* Start with an entire word */
     for (i = j = 0; i < len && j < keylen-1; i++) {
@@ -240,7 +240,7 @@ int filter_words_local(char *seq, char *filt, size_t len, char *rep,
 	    }
 	} else {
 	    score += (MISMATCH);
-	    if (score <= 0) {
+	    if (score <= 0 || maxscore-score > minscore) {
 		if (end-start+1-pads >= minsize && maxscore >= minscore) {
 		    memset(&filt[start], filter_char, end-start+1);
 		}
@@ -274,7 +274,7 @@ int filter_words_local1(char *seq, char *filt, size_t len, char *rep,
     int pads = 0;
 
     key = ambiguity2basebit(*rep);
-    minscore *= 100; /* precision to 2 decimal points */
+    minscore *= MATCH;
 
     /* Scan through looking for matches of a word */
     for (i = 0; i < len; i++) {
@@ -291,7 +291,7 @@ int filter_words_local1(char *seq, char *filt, size_t len, char *rep,
 	    }
 	} else {
 	    score += (MISMATCH);
-	    if (score <= 0) {
+	    if (score <= 0 || maxscore-score > minscore) {
 		if (end-start+1-pads >= minsize && maxscore >= minscore) {
 		    memset(&filt[start], filter_char, end-start+1);
 		}
@@ -329,7 +329,7 @@ int filter_words_local2(char *seq, char *filt, size_t len, char *rep,
     int pads = 0;
 
     key = (ambiguity2basebit(rep[0])<<4) | ambiguity2basebit(rep[1]);
-    minscore *= 100; /* precision to 2 decimal points */
+    minscore *= MATCH;
 
     /* Start with an entire word */
     for (i = j = 0; i < len && j < 1; i++) {
@@ -372,7 +372,7 @@ int filter_words_local2(char *seq, char *filt, size_t len, char *rep,
 	    word = ((word << 4) | ambiguity2basebit(seq[i]));
 	} else {
 	    score += MISMATCH;
-	    if (score > 0)
+	    if (score > 0 && maxscore-score <= minscore)
 		continue;
 
 	    if (end-start+1-pads >= minsize && maxscore >= minscore) {
