@@ -3714,7 +3714,7 @@ static int range_populate(GapIO *io, contig_iterator *ci,
      * The reason is that these will be brought in during a subsequent
      * 
      */
-    if (ci->sort_mode == (CSIR_SORT_BY_X | CSIR_SORT_BY_CLIPPED)) {
+    if ((ci->sort_mode&~CSIR_PAIR) == (CSIR_SORT_BY_X | CSIR_SORT_BY_CLIPPED)) {
 	int i, j;
 	for (i = j = 0; i < ci->nitems; i++) {
 	    int c_start;
@@ -3739,7 +3739,7 @@ static int range_populate(GapIO *io, contig_iterator *ci,
 	ci->nitems = j;
     }
 
-    if (ci->sort_mode == (CSIR_SORT_BY_XEND | CSIR_SORT_BY_CLIPPED)) {
+    if ((ci->sort_mode&~CSIR_PAIR) == (CSIR_SORT_BY_XEND | CSIR_SORT_BY_CLIPPED)) {
 	int i, j;
 	for (i = j = 0; i < ci->nitems; i++) {
 	    int c_end;
@@ -3841,6 +3841,8 @@ contig_iterator *contig_iter_new_by_type(GapIO *io, tg_rec cnum,
 	ci->sort_mode = CSIR_SORT_BY_XEND | CSIR_SORT_BY_CLIPPED;
 	break;
     }
+    if (whence & CITER_PAIR)
+	ci->sort_mode |= CSIR_PAIR;
 
     /*
      * Generic bug fix - sorry! Expand c->start/end by +/- a small amount

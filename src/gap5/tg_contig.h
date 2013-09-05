@@ -134,6 +134,7 @@ typedef struct {
 #define CITER_SE_MASK       (3<<1)
 
 #define CITER_SMALL_BS (1<<3)
+#define CITER_PAIR     (1<<4)
 
 #define CITER_CSTART INT_MIN
 #define CITER_CEND   INT_MAX
@@ -162,6 +163,13 @@ int y_cmp(struct xy_pair *y1, struct xy_pair *y2);
  * The start and end parameters dictate the initial region to query. We
  * may specify them as either coordinates or use CITER_CSTART and CITER_CEND
  * as synonyms for the first and last coordinate in the contig.
+ *
+ * Whence with CITER_PAIR bit set will use the CSIR_PAIR option when
+ * requesting blocks of sequences. This won't necessarily set all pairings
+ * correctly (only those within a block), so be sure to call
+ * sequence_get_range_pair_position() if you need updated values. This will
+ * be a nop for most cases the CSIR_PAIR will have updated the timestamp for
+ * reads fetched within the same block.
  *
  * 'type' can be either GRANGE_FLAG_ISSEQ or GRANGE_FLAG_ISANNO to only
  * iterate around data of that specific type, or GRANGE_FLAG_ISANY to
