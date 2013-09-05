@@ -1959,6 +1959,7 @@ int sequence_get_range_pair_position(GapIO *io, rangec_t *r,
 				     tg_rec contig1, tg_rec contig2) {
     range_t r_out;
     int time_valid = 1, time_checked = 0;
+    int orient;
 
     if (r->pair_rec == 0)
 	return 0; /* Not an error as it's up to date anyway */
@@ -2008,9 +2009,32 @@ int sequence_get_range_pair_position(GapIO *io, rangec_t *r,
     /* Otherwise do a full search and update it */
     bin_get_item_position(io, GT_Seq, r->pair_rec,
 			  &r->pair_contig, &r->pair_start, &r->pair_end,
-			  NULL, NULL, &r_out, NULL);
+			  &orient, NULL, &r_out, NULL);
     r->pair_mqual = r_out.mqual;
     r->pair_timestamp = io->db->timestamp;
+
+    /* Also update COMP flags for this read (not the pair though) */
+
+    if (((r_out.flags & GRANGE_FLAG_COMP1) != 0) ^ orient)
+	r->flags |= GRANGE_FLAG_COMP2;
+    else
+	r->flags &= ~GRANGE_FLAG_COMP2;
+
+    /* We can't update COMP1 though without doing another item_pos call */
+    if (r->pair_contig == contig1) {
+	range_t r_out2;
+	//printf("Same contig, but flags maybe not up to date\n");
+	bin_get_item_position(io, GT_Seq, r->rec,
+			      NULL, NULL, NULL,
+			      &orient, NULL, &r_out2, NULL);
+	if (((r_out2.flags & GRANGE_FLAG_COMP1) != 0) ^ orient)
+	    r->flags |= GRANGE_FLAG_COMP1;
+	else
+	    r->flags &= ~GRANGE_FLAG_COMP1;
+
+	r->flags |= GRANGE_FLAG_CONTIG;
+    }
+
 
     //printf(" / %d in %"PRIrec"\n", r->pair_start, r->pair_contig);
 
