@@ -576,7 +576,8 @@ typedef struct {
     int min_score;
     int good_weight;
     int bad_weight;
-    int unknown_weight;
+    int large_weight;
+    int spanning_weight;
     int singleton_weight;
 } abreak_arg;
 

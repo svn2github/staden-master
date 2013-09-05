@@ -42,6 +42,7 @@
 */
 
 #include <assert.h>
+#include <math.h>
 #include <io_lib/hash_table.h>
 
 #include "tg_gio.h"
@@ -65,7 +66,7 @@
 
 #define ALLB(ws) ((1<<(2*(ws)))-1)
 
-#define MIN_OVERLAP 5
+#define MIN_OVERLAP 10
 /* #define NORMALISE_FOR_GC 1 */
 
 #define CONTIG_END_IGNORE 200
@@ -442,8 +443,8 @@ static Array suspect_joins(GapIO *io, tg_rec contig,
      * Loop through readings computing new clip points after masking.
      * Mark the remainder as 'valid' to identify the invalid bits.
      */
-    ci = contig_iter_new(io, contig, 1, CITER_FIRST | CITER_ISTART |
-			 CITER_SMALL_BS, CITER_CSTART, CITER_CEND);
+    ci = contig_iter_new(io, contig, 1, CITER_FIRST |CITER_ISTART |CITER_PAIR,
+			 CITER_CSTART, CITER_CEND);
     while (r = contig_iter_next(io, ci)) {
 	seq_t *s = cache_search(io, GT_Seq, r->rec), *sorig = s;
 	char *seq, *fseq;
@@ -481,19 +482,20 @@ static Array suspect_joins(GapIO *io, tg_rec contig,
 	    /* Filter where the seq is low qual and disagrees with consen */
 	    filter_consen_diffs(&seq[s->left-1], &fseq[s->left-1],
 				s->right - s->left +1,
-				&cons[r->start + s->left - cstart -1], 2);
-	
+				&cons[r->start + s->left - cstart -1],
+				5);
+
 	    /* Filter specific low-complexity regions */
-	    filter_words_local1(seq, fseq, len, "A",   12, 10, '#');
-	    filter_words_local1(seq, fseq, len, "C",   12, 10, '#');
-	    filter_words_local1(seq, fseq, len, "G",   12, 10, '#');
-	    filter_words_local1(seq, fseq, len, "T",   12, 10, '#');
-	    filter_words_local2(seq, fseq, len, "AC",  12, 10, '#');
-	    filter_words_local2(seq, fseq, len, "AG",  12, 10, '#');
-	    filter_words_local2(seq, fseq, len, "AT",  12, 10, '#');
-	    filter_words_local2(seq, fseq, len, "CG",  12, 10, '#');
-	    filter_words_local2(seq, fseq, len, "CT",  12, 10, '#');
-	    filter_words_local2(seq, fseq, len, "GT",  12, 10, '#');
+	    filter_words_local1(seq, fseq, len, "A",   12, 8, '#');
+	    filter_words_local1(seq, fseq, len, "C",   12, 8, '#');
+	    filter_words_local1(seq, fseq, len, "G",   12, 8, '#');
+	    filter_words_local1(seq, fseq, len, "T",   12, 8, '#');
+	    filter_words_local2(seq, fseq, len, "AC",  12, 8, '#');
+	    filter_words_local2(seq, fseq, len, "AG",  12, 8, '#');
+	    filter_words_local2(seq, fseq, len, "AT",  12, 8, '#');
+	    filter_words_local2(seq, fseq, len, "CG",  12, 8, '#');
+	    filter_words_local2(seq, fseq, len, "CT",  12, 8, '#');
+	    filter_words_local2(seq, fseq, len, "GT",  12, 8, '#');
 	}
 
 #ifdef DEBUG_SEQ
@@ -577,6 +579,8 @@ static Array suspect_joins(GapIO *io, tg_rec contig,
 	xfree(fseq);
     }
 
+    contig_iter_del(ci);
+
     gaps = coverage2contig_regions(valid, cstart, clen);
     xfree(valid);
     xfree(cons);
@@ -638,7 +642,13 @@ static int compute_lib_type(GapIO *io, tg_rec library_rec, HashTable *lt_h,
  *
  * Returns severity.
  *         1 for OK
- *         0 for error, with *severity filled out if not NULL
+ *         0 for warning/error, with *severity filled out if not NULL
+ *
+ * Severity ratings:
+ *         0 for OK
+ *         1 for OK, but slightly too large/small
+ *         2 for contig spanning (shouldn't happen in this code)
+ *         3 for OK
  */
 static int consistent_pair(GapIO *io, rangec_t *r, HashTable *lt_h,
 			   int *severity) {
@@ -653,30 +663,30 @@ static int consistent_pair(GapIO *io, rangec_t *r, HashTable *lt_h,
 	if (r->start < r->pair_start &&
 	    !((r->flags & GRANGE_FLAG_COMP1) == 0 &&
 	      (r->flags & GRANGE_FLAG_COMP2) != 0))
-	    return severity?*severity=2,0:0;
+	    return severity?*severity=3,0:0;
 
 	if (r->start > r->pair_start &&
 	    !((r->flags & GRANGE_FLAG_COMP1) != 0 &&
 	      (r->flags & GRANGE_FLAG_COMP2) == 0))
-	    return severity?*severity=2,0:0;
+	    return severity?*severity=3,0:0;
 	break;
 
     case LIB_T_OUTWARD:
 	if (r->start > r->pair_start &&
 	    !((r->flags & GRANGE_FLAG_COMP1) == 0 &&
 	      (r->flags & GRANGE_FLAG_COMP2) != 0))
-	    return severity?*severity=2,0:0;
+	    return severity?*severity=3,0:0;
 
 	if (r->start < r->pair_start &&
 	    !((r->flags & GRANGE_FLAG_COMP1) != 0 &&
 	      (r->flags & GRANGE_FLAG_COMP2) == 0))
-	    return severity?*severity=2,0:0;
+	    return severity?*severity=3,0:0;
 	break;
 
     case LIB_T_SAME:
 	if (((r->flags & GRANGE_FLAG_COMP1) == 0) !=
 	    ((r->flags & GRANGE_FLAG_COMP2) == 0))
-	    return severity?*severity=2,0:0;
+	    return severity?*severity=3,0:0;
 	break;
     }
 
@@ -686,18 +696,223 @@ static int consistent_pair(GapIO *io, rangec_t *r, HashTable *lt_h,
 	  - MIN(MIN(r->pair_start, r->pair_end), MIN(r->start, r->end));
     isize = ABS(isize);
     if (!(isize >= isize_min/2 && isize <= isize_max*2))
-	return severity?*severity=2,0:0;
+	return severity?*severity=3,0:0; // Far too big/small
     if (!(isize >= isize_min && isize <= isize_max))
-	return severity?*severity=1,0:0;
-
-    /* FIXME: difference seriousness of badness for isize issues?
-     * Eg orientation = BAD
-     * >5x sd size = BAD
-     * 3-5x sd size = minor bad
-     * within 3 sd size = good
-     */
+	return severity?*severity=1,0:0; // Slightly too big/small
 
     return severity?*severity=0,1:1;
+}
+
+
+struct range_loc {
+    RB_ENTRY(range_loc) link;
+    int start;
+    int end;
+};
+
+int rl_cmp(struct range_loc *l1, struct range_loc *l2) {
+    int d = l1->end - l2->end;
+    // exact matches still need to return +/- otherwise RB_INSERT will fail
+    return d ? d : (l1 < l2 ?1 :-1);
+}
+
+
+RB_HEAD(rlTREE, range_loc);
+RB_PROTOTYPE(rlTREE, range_loc, link, rl_cmp);
+RB_GENERATE(rlTREE, range_loc, link, rl_cmp);
+
+/*
+ * FIXME: implement per library (if sufficiently well sampled).
+ */
+static void dump_template_dist(GapIO *io, tg_rec contig) {
+    HashTable *lt_h = NULL;
+    int cstart, cend;
+    int *tdist = NULL;
+    contig_iterator *ci;
+    rangec_t *r;
+    int i, n, last_i;
+    int64_t sum, sum_sq;
+    struct range_loc *node, *next;
+
+    struct rlTREE rltree = RB_INITIALIZER(&rltree);
+
+    lt_h = HashTableCreate(256, HASH_POOL_ITEMS | HASH_DYNAMIC_SIZE);
+    if (!lt_h)
+	goto cleanup;
+
+    if (consensus_valid_range(io, contig, &cstart, &cend) == -1)
+	goto cleanup;
+
+    if (!(tdist = calloc(cend-cstart+1, sizeof(*tdist))))
+	goto cleanup;
+
+    ci = contig_iter_new(io, contig, 1, CITER_FIRST |CITER_ISTART |CITER_PAIR,
+			 CITER_CSTART, CITER_CEND);
+
+    n = 0;
+    sum = 0;
+    sum_sq = 0;
+    last_i = cstart;
+    while (r = contig_iter_next(io, ci)) {
+	int st, en, severity;
+
+	sequence_get_range_pair_position(io, r, contig, 0);
+
+	if (contig != r->pair_contig)
+	    continue;
+
+	if (!consistent_pair(io, r, lt_h, &severity)) {
+	    // Reject unless this read is overlapping the boundary of
+	    // the template. Hence extreme long range templates don't count
+	    // except for when we're at the actual ends.
+
+	    //printf("Rec %"PRIrec" inconsistent pair\n", r->rec);
+	    if (severity > 1)
+		continue;
+	}
+
+	// Only do left end per pair
+	if (r->pair_start < r->start ||
+	    (r->pair_start == r->start && r->pair_rec < r->rec))
+	    continue;
+	
+	en = MAX(MAX(r->pair_start, r->pair_end), MAX(r->start, r->end));
+	st = MIN(MIN(r->pair_start, r->pair_end), MIN(r->start, r->end));
+
+	//printf("Rec %"PRIrec" consistent pair %d..%d\n", r->rec, st, en);
+	if (st < cstart) st = cstart;
+	if (en > cend)   en = cend;
+	for (i = st; i <= en; i++)
+	    tdist[i-cstart]++;
+
+	//printf("#%"PRIrec" %d..%d %d..%d\n", r->rec, r->start, r->end, st, en);
+
+	/* Check tree for templates ending before start 'st' */
+	//RB_FOREACH(node, rlTREE, &rltree) {
+	for (node = RB_MIN(rlTREE, &rltree); node != NULL; node = next) {
+	    next = RB_NEXT(rlTREE, &rltree, node);
+	    if (node->end >= st)
+		break;
+	    //printf("    Node %d..%d\n", node->start, node->end);
+	    if (node->end >= last_i)
+		printf("  depth %d %d\t%d\t%f\t%f\n", last_i, node->end, n,
+		       (double)sum/n,
+		       31/sqrt(n));
+		    //sqrt((double)sum_sq/n-((double)sum/n)*((double)sum/n)));
+	    last_i = node->end+1;
+	    RB_REMOVE(rlTREE, &rltree, node);
+	    n--;
+	    sum -= node->end - node->start;
+	    sum_sq -= (node->end - node->start) * (node->end - node->start);
+	    free(node);
+	}
+
+	/*
+	 * Given N samples from a distribution with mean M and SD S,
+	 * we can calculate the observed mean with an SD of S/sqrt(N).
+	 * 
+	 * This means we have a quick way of estimating whether an insert size
+	 * adjustment is significant.
+	 */
+	
+//	if (last_i == 6183) {
+//	    RB_FOREACH(node, rlTREE, &rltree) {
+//		printf("@6183 size %d\n", node->end - node->start + 1);
+//	    }
+//	}
+
+	//if (last_i == 6183) {
+	//if (last_i == 62321) {
+	//if (last_i == 103605) {
+	//if (st-1 >= last_i) {
+	if (0) {
+	    double chi2 = 0;
+	    double count = 0;
+	    int stats[500], N = 0, x;
+
+	    memset(stats, 0, 500*sizeof(*stats));
+
+	    library_t *lib = cache_search(io, GT_Library, 10); // FIXME
+	    RB_FOREACH(node, rlTREE, &rltree) {
+		int isz  = node->end - node->start + 1;
+		int ibin = isize2ibin(isz);
+		int iwid = ibin_width(isz);
+		if (isz > 0 && isz < 500) {
+		    stats[isz]++;
+		    N++;
+		}
+		count += (double)lib->size_hist[0][ibin] / iwid;
+	    }
+	    //printf("@count at %d = %f, N=%d\n", last_i, count, N);
+	    for (x = 0; x < 500; x++) {
+		if (!stats[x])
+		    continue;
+
+		int isz  = x;
+		int ibin = isize2ibin(x);
+		int iwid = ibin_width(x);
+		double e = ((double)lib->size_hist[0][ibin]/iwid) / count * N;
+		//printf("@%d %d %f\n", x, stats[x], e);
+
+		chi2 += (stats[x]-e)*(stats[x]-e)/e;
+	    }
+	    //printf("@chi2 = %f, N=%d\n", chi2, N);
+	    
+	    {
+		int dof = N-1, i;
+		double lgamma = 0, p;
+		for (i = 1; i <= (dof/2)-1; i++)
+		    lgamma += log(i);
+		
+		p = (dof/2.0 - 1)*log(chi2) - chi2/2 - (dof/2.0)*log(2)
+		    - lgamma;
+		//printf("@ln(p) = %f, p=%g\n", p, exp(p));
+
+		printf("%f", p);
+	    }
+	}
+	
+	if (st-1 >= last_i)
+	    printf("  Depth %d %d\t%d\t%f\t%f\n", last_i, st-1, n,
+		   (double)sum/n,
+		   31/sqrt(n));
+		   //sqrt((double)sum_sq/n - ((double)sum/n)*((double)sum/n)));
+	last_i = st;
+
+	/* Insert new node */
+	node = malloc(sizeof(*node));
+	node->start = st;
+	node->end   = en;
+	RB_INSERT(rlTREE, &rltree, node);
+	n++;
+	sum += en-st;
+	sum_sq += (en-st)*(en-st);
+    }
+    contig_iter_del(ci);
+
+    printf("### n1=%d\n", n);
+    n = 0;
+    RB_FOREACH(node, rlTREE, &rltree)
+	printf("Remaining %d..%d\n", node->start, node->end),n++;
+    printf("### n2=%d\n", n);
+
+    printf("\n\nDist for contig =%"PRIrec"\n", contig);
+    for (i = cstart; i <= cend; i++) {
+	printf("%d\t%d\n", i, tdist[i-cstart]);
+    }
+    printf("\n");
+
+ cleanup:
+    if (lt_h)
+	HashTableDestroy(lt_h, 0);
+
+    if (tdist)
+	free(tdist);
+
+    RB_FOREACH(node, rlTREE, &rltree) {
+	RB_REMOVE(rlTREE, &rltree, node);
+	free(node);
+    }
 }
 
 /*
@@ -709,8 +924,9 @@ static int consistent_pair(GapIO *io, rangec_t *r, HashTable *lt_h,
  * 3. Score... (also consider spanning as bad?)
  */
 static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
-			 int good_score, int bad_score, int unknown_score,
-			 int singleton_score, int min_score) {
+			 int good_score, int bad_score, int large_score,
+			 int spanning_score, int singleton_score,
+			 int min_score) {
     int i, severity;
     HashTable *lt_h;
     HashIter *iter;
@@ -736,9 +952,10 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	int j, nr;
 	rangec_t *r;
 	HashTable *h;
-	int num_good = 0;
+	double num_good = 0;
 	int num_bad = 0;
-	int num_unknown = 0;
+	int num_large = 0;
+	int num_spanning = 0;
 	int num_single = 0;
 
 	if (gap->deleted)
@@ -750,7 +967,7 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	    continue;
 
 //FIXME: use template_max_size(io) instead.
-#define INS_SIZE 1000
+#define INS_SIZE 10000
 
 	r = contig_seqs_in_range(io, &c,
 				 gap->start-INS_SIZE, gap->end+INS_SIZE,
@@ -832,14 +1049,19 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 		rangec_t *p = (rangec_t *)hi->data.p;
 		sequence_get_range_pair_position(io, p, contig, 0);
 
-		if (MIN(p->start, p->pair_start) <= gap->start &&
-		    MAX(p->end, p->pair_end) >= gap->end) {
+		if (MIN(p->start, p->pair_start) <= gap->start-MIN_OVERLAP &&
+		    MAX(p->end, p->pair_end) >= gap->end+MIN_OVERLAP) {
 		    /* Spans the gap */
 		    if (consistent_pair(io, p, lt_h, &severity)) {
-			num_good++;
+			num_good += r->mqual >= 10
+			    ? 0.5
+			    : r->mqual/25.0+.1;
+			num_good += r->pair_mqual >= 10
+			    ? 0.5
+			    : r->pair_mqual/25.0+.1;
 		    } else {
 			if (severity == 1)
-			    num_unknown++;
+			    num_large++;
 			else 
 			    num_bad++;
 		    }
@@ -853,7 +1075,6 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 			      hd, &new);
 	    if (!new) {
 		fprintf(stderr, "Error: seq already in hash\n");
-		num_unknown++;
 		HashTableDel(h, hi, 0);
 	    }
 	}
@@ -893,22 +1114,27 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 		int x, valid;
 		compute_lib_type(io, r->library_rec, lt_h, &x, &x, &valid);
 		if (valid)
-		    num_unknown++;
+		    num_single++;
 		continue;
 	    }
 	    /* Check consistency */
 	    if (contig == r->pair_contig) {
 		/* Make sure it spans the gap */
-		if (!(MIN(r->start, r->pair_start) <= gap->start &&
-		      MAX(r->end, r->pair_end) >= gap->end))
+		if (!(MIN(r->start, r->pair_start) <= gap->start-MIN_OVERLAP &&
+		      MAX(r->end, r->pair_end) >= gap->end+MIN_OVERLAP))
 		    continue;
 
 		/* Shouldn't be here, unless our INS_SIZE param is wrong? */
 		if (consistent_pair(io, r, lt_h, &severity)) {
-		    num_good++;
+		    num_good += r->mqual >= 10
+			? 0.5
+			: r->mqual/25.0+.1;
+		    num_good += r->pair_mqual >= 10
+			? 0.5
+			: r->pair_mqual/25.0+.1;
 		} else {
 		    if (severity == 1)
-			num_unknown++;
+			num_large++;
 		    else 
 			num_bad++;
 		}
@@ -930,13 +1156,13 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 		    if (gap->start > r->start &&
 			gap->start - r->start < isize_mid)
 			// just left of gap
-			num_bad++;
+			num_spanning++;
 		} else {
 		    if (r->end - cstart < isize_max)
 			break;
 
 		    if (r->end > gap->end && r->end - gap->end < isize_mid)
-			num_bad++;
+			num_spanning++;
 		}
 		break;
 
@@ -947,22 +1173,22 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 
 		    if (gap->start > r->start &&
 			gap->start - r->start < isize_mid)
-			num_bad++;
+			num_spanning++;
 		} else {
 		    if (r->end - cstart < isize_max)
 			break;
 
 		    if (r->end > gap->end && r->end - gap->end < isize_mid)
-			num_bad++;
+			num_spanning++;
 		}
 		break;
 
 	    case LIB_T_SAME:
 		/* We can't tell which is 1st and 2nd read easily? */
 		if (gap->start > r->start && gap->start - r->start < isize_mid)
-		    num_unknown++;
+		    num_spanning++;
 		else if (r->end > gap->end && r->end - gap->end < isize_mid)
-		    num_unknown++;
+		    num_spanning++;
 		break;
 
 	    default:
@@ -972,11 +1198,13 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 
 	score =  num_good * good_score
 	        + num_bad * bad_score
-	    + num_unknown * unknown_score
+	      + num_large * large_score
+	   + num_spanning * spanning_score
 	     + num_single * singleton_score;
 
-	printf("GAP %d good, %d bad, %d unknown, %d single => score %d\n",
-	       num_good, num_bad, num_unknown, num_single, score);
+	printf("GAP %d good, %d bad, %d small/large, %d spanning, %d single"
+	       " => score %d\n",
+	       (int)num_good, num_bad, num_large, num_spanning, num_single, score);
 
 	gap->valid = score >= min_score ? 1 : 0;
 
@@ -1110,8 +1338,8 @@ static void break_gaps(GapIO *io, tg_rec contig, Array gaps,
 void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 			      //double filter_score, double depth,
 			      int min_mq, int min_score,
-			      int good_score, int bad_score,
-			      int unknown_score, int singleton_score,
+			      int good_score, int bad_score, int large_score,
+			      int spanning_score, int singleton_score,
 			      dstring_t *ds) {
     Array gaps;
     HashTable *clip_hash;
@@ -1130,8 +1358,8 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
     //dump_gaps(gaps);
 
     printf("  = Confirming gaps\n");
-    confirm_gaps(io, contig, gaps, good_score, bad_score, unknown_score,
-		 singleton_score, min_score);
+    confirm_gaps(io, contig, gaps, good_score, bad_score, large_score,
+		 spanning_score, singleton_score, min_score);
 
     printf("  = Finding break points\n");
     break_gaps(io, contig, gaps, clip_hash, ds);
@@ -1144,20 +1372,23 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 dstring_t *auto_break_contigs(GapIO *io, int argc, contig_list_t *argv,
 			      //double filter_score, int by_consensus,
 			      int min_mq, int min_score,
-			      int good_score, int bad_score,
-                              int unknown_score, int singleton_score) {
+			      int good_score, int bad_score, int large_score,
+			      int spanning_score, int singleton_score) {
     int i;
     double gc;
     int depth;
 
     dstring_t *ds = dstring_create(NULL);
-
+    
     for (i = 0; i < argc; i++) {
+	//dump_template_dist(io, argv[i].contig);
+
 	auto_break_single_contig(io, argv[i].contig,
 				 argv[i].start, argv[i].end,
 				 //filter_score, depth,
 				 min_mq, min_score, good_score, bad_score,
-				 unknown_score, singleton_score, ds);
+				 large_score, spanning_score, singleton_score,
+				 ds);
     }
 
     return ds;

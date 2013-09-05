@@ -2250,9 +2250,10 @@ int tcl_auto_break(ClientData clientData, Tcl_Interp *interp,
         //{"-by_consensus", ARG_INT,1, "1", offsetof(abreak_arg, by_consensus)},
 	{"-min_mqual",        ARG_INT, 1, "0",    offsetof(abreak_arg, min_mqual)},
 	{"-min_score",        ARG_INT, 1, "0",    offsetof(abreak_arg, min_score)},
-	{"-good_weight",      ARG_INT, 1, "10",    offsetof(abreak_arg, good_weight)},
+	{"-good_weight",      ARG_INT, 1, "10",   offsetof(abreak_arg, good_weight)},
 	{"-bad_weight",       ARG_INT, 1, "-20",  offsetof(abreak_arg, bad_weight)},
-	{"-unknown_weight",   ARG_INT, 1, "-5",   offsetof(abreak_arg, unknown_weight)},
+	{"-large_weight",     ARG_INT, 1, "-2",   offsetof(abreak_arg, large_weight)},
+	{"-spanning_weight",  ARG_INT, 1, "-5",   offsetof(abreak_arg, spanning_weight)},
 	{"-singleton_weight", ARG_INT, 1, "-1",   offsetof(abreak_arg, singleton_weight)},
         {NULL,       0,       0, NULL, 0}
     };
@@ -2269,8 +2270,8 @@ int tcl_auto_break(ClientData clientData, Tcl_Interp *interp,
     ds = auto_break_contigs(args.io, rargc, rargv,
 			    //args.score, args.by_consensus);
 			    args.min_mqual, args.min_score, args.good_weight,
-			    args.bad_weight, args.unknown_weight,
-			    args.singleton_weight);
+			    args.bad_weight, args.large_weight,
+			    args.spanning_weight, args.singleton_weight);
 
     xfree(rargv);
     if (NULL != ds) {

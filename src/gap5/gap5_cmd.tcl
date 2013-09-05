@@ -332,7 +332,8 @@ set ::cmd::auto_break::opts {
     min_mqual     1 0   int  {Minimum mapping quality. Used during problem finding. 0 => use all readings.}
     good          1 10  int  {Weight for all good read pairs; >0}
     bad           1 -20 int  {Weight for all bad read pairs; <0}
-    unknown       1 -5  int  {Weight for unknown/marginal read pairs; <= 0}
+    large         1 -2  int  {Weight for slightly poor sized read pairs}
+    spanning      1 -5  int  {Weight for contig-spanning read pairs; <= 0}
     singleton     1 -1  int  {Weight for singletons that should be pairs; <=0}
     min_score     1 0   int  {Minimum combined score after applying the weights above; may be negative.}
 }
@@ -354,14 +355,15 @@ proc ::cmd::auto_break::run {dbname _options} {
 
     # Auto_break does the analysis and returns a list of things to do,
     # rather than making the breaks itself.
-    puts "\n>>>\n>>> Stage 1: finding regions to break part\n>>>"
+    puts "\n>>>\n>>> Stage 1: finding regions to break apart\n>>>"
 
     set r [auto_break \
 	       -io                $io \
 	       -contigs           $opt(contigs) \
 	       -good_weight       $opt(good) \
 	       -bad_weight        $opt(bad) \
-	       -unknown_weight    $opt(unknown) \
+	       -large_weight      $opt(large) \
+	       -spanning_weight   $opt(spanning) \
 	       -singleton_weight  $opt(singleton) \
 	       -min_score         $opt(min_score) \
 	       -min_mqual         $opt(min_mqual)]
