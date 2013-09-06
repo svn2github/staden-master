@@ -144,18 +144,19 @@ static GToggle g_toggle_state(GTimeStamp time, AuxIndex *idx)
  * Returns 0 on success
  *        -1 on failure (no obvious derivations of fn found).
  */
-int find_db_files(char *fn, char *dir, char **fndb, char **fnaux) {
+int find_db_files(char *fn, char *dir, char **fndb_out, char **fnaux_out) {
     size_t fn2l = (NULL != dir ? strlen(dir) : 0) + strlen(fn);
     char *fn2 = malloc(fn2l + 1);
     char *cp = NULL;
+    char *fndb = NULL;
+    char *fnaux = NULL;
     int try;
     
     if (NULL == fn2) return -1;
-    *fndb = *fnaux = NULL;
-    *fndb = malloc(fn2l + strlen(G5_DB_SUFFIX) + 1);
-    if (NULL == *fndb)  goto fail;
-    *fnaux = malloc(fn2l + strlen(G5_AUX_SUFFIX) + 1);
-    if (NULL == *fnaux) goto fail;
+    fndb = malloc(fn2l + strlen(G5_DB_SUFFIX) + 1);
+    if (NULL == fndb)  goto fail;
+    fnaux = malloc(fn2l + strlen(G5_AUX_SUFFIX) + 1);
+    if (NULL == fnaux) goto fail;
 
     if (dir) {
 	sprintf(fn2, "%s%s", dir, fn);
@@ -165,23 +166,23 @@ int find_db_files(char *fn, char *dir, char **fndb, char **fnaux) {
 
     for (try = 0; try < 2; try++) {
 	/* Try new format first */
-	strcpy(*fndb,  fn2);
-	strcat((*fndb) + fn2l,  G5_DB_SUFFIX);
-	strcpy(*fnaux, fn2);
-	strcat((*fnaux) + fn2l, G5_AUX_SUFFIX);
+	strcpy(fndb,  fn2);
+	strcat((fndb) + fn2l,  G5_DB_SUFFIX);
+	strcpy(fnaux, fn2);
+	strcat((fnaux) + fn2l, G5_AUX_SUFFIX);
 	
-	if (file_exists(*fndb) && file_exists(*fnaux))
+	if (file_exists(fndb) && file_exists(fnaux))
 	    break;
 
 	/* Not new. Maybe we specified suffix too though? Strip and repeat */
 	if (try == 1) {
 	    /* Second pass of trying new format (with/without suffix */
 	    /* Fail back to old format instead then */
-	    strcpy(*fndb , fn2);
-	    strcpy(*fnaux, fn2);
-	    strcat((*fnaux) + fn2l, G_AUX_SUFFIX);
+	    strcpy(fndb , fn2);
+	    strcpy(fnaux, fn2);
+	    strcat((fnaux) + fn2l, G_AUX_SUFFIX);
     
-	    if (file_exists(*fndb) && file_exists(*fnaux))
+	    if (file_exists(fndb) && file_exists(fnaux))
 		break;
 
 	    goto fail;
@@ -216,12 +217,15 @@ int find_db_files(char *fn, char *dir, char **fndb, char **fnaux) {
     if (NULL != cp)
 	*cp = 0;
 
+    *fndb_out  = fndb;
+    *fnaux_out = fnaux;
+
     free(fn2);
     return 0;
 
  fail:
-    if (NULL != *fndb)  free(*fndb);
-    if (NULL != *fnaux) free(*fnaux);
+    if (NULL != fndb)  free(fndb);
+    if (NULL != fnaux) free(fnaux);
     free(fn2);
     return -1;
 }
