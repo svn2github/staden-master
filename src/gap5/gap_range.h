@@ -10,6 +10,7 @@
  
 #include <tcl.h>
 #include <tk.h>
+#include "io_lib/hash_table.h"
 #include "tg_gio.h"
 
 typedef struct {
@@ -28,6 +29,7 @@ typedef struct {
     int max_qual;
     int c_mode;
     int accuracy;
+    int libs_ctr;
 } gap_filter_t;
 
 typedef struct {
@@ -72,11 +74,12 @@ void gap_range_destroy(gap_range_t *gr);
 int  gap_range_test(gap_range_t *gr);
 int  gap_range_recalculate(gap_range_t *gr, int width, double new_wx0, double new_wx1, int new_mode, int force); 
 void gap_range_reset(gap_range_t *gr);
-void set_filter(gap_range_t *gr, int filter, int min, int max, int mode, int accuracy);
+void set_filter(gap_range_t *gr, int filter, int min, int max, int mode,
+		int accuracy, int libs_counter);
 int  gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv, 
 		 int forward_col, int reverse_col, int single_col,
 		 int *span_col, int inconsistent_col,
-		 int force, int reads_only);
+		 int force, int reads_only, HashTable *lib_recs);
 
 
 #endif

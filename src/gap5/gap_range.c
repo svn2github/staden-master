@@ -102,7 +102,7 @@ static int tcl_range(ClientData clientData, Tcl_Interp *interp,
     gr->template_mode = -1;
     gr->width         = -1;
     gr->ntl           = -1;
-    set_filter(gr, -1, -1, -1, -1, -1);
+    set_filter(gr, -1, -1, -1, -1, -1, 0);
     update_filter(gr);
     
     sprintf(name, "grange=%p", gr);
@@ -161,7 +161,8 @@ static int is_filter_change(gap_range_t *gr) {
     if (gr->old_filter.filter   != gr->new_filter.filter ||
     	gr->old_filter.min_qual != gr->new_filter.min_qual ||
 	gr->old_filter.max_qual != gr->new_filter.max_qual ||
-	gr->old_filter.c_mode   != gr->new_filter.c_mode) {
+	gr->old_filter.c_mode   != gr->new_filter.c_mode ||
+	gr->old_filter.libs_ctr != gr->new_filter.libs_ctr) {
 	    
     	changed = 1;
     }
@@ -169,13 +170,15 @@ static int is_filter_change(gap_range_t *gr) {
     return changed;
 }
 
-void set_filter(gap_range_t *gr, int filter, int min, int max, int mode, int accuracy) {
+void set_filter(gap_range_t *gr, int filter, int min, int max, int mode,
+		int accuracy, int libs_ctr) {
 
     gr->new_filter.filter   = filter;
     gr->new_filter.min_qual = min;
     gr->new_filter.max_qual = max;
     gr->new_filter.c_mode   = mode;
     gr->new_filter.accuracy = accuracy;
+    gr->new_filter.libs_ctr = libs_ctr;
 }
 
 
@@ -186,6 +189,7 @@ static void update_filter(gap_range_t *gr) {
     gr->old_filter.max_qual = gr->new_filter.max_qual;
     gr->old_filter.c_mode   = gr->new_filter.c_mode;
     gr->old_filter.accuracy = gr->new_filter.accuracy;
+    gr->old_filter.libs_ctr = gr->new_filter.libs_ctr;
 }
     
 
@@ -251,7 +255,8 @@ int gap_range_recalculate(gap_range_t *gr, int width, double new_wx0,
 
 int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv, 
     	    	int fwd_col, int rev_col, int single_col, int *span_col,
-		int inconsistent_col, int force, int reads_only) {
+		int inconsistent_col, int force, int reads_only,
+		HashTable *lib_recs) {
     int i, j;
     double max_height = 0;
     int lib_type;
@@ -280,6 +285,12 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 	double mq;
 	rangec_t *r  = &gr->r[i];
 	tline    *tl = &gr->tl[gr->ntl];
+
+	if (lib_recs) {
+	    if (!HashTableSearch(lib_recs, (char *)r->library_rec,
+				 sizeof(r->library_rec)))
+		continue;
+	}
 	    
 	sta = r->start;
 	end = r->end;

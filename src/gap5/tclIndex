@@ -290,6 +290,7 @@ set auto_index(ExportSequences) [list source [file join $dir export_contigs.tcl]
 set auto_index(ExportTags) [list source [file join $dir export_contigs.tcl]]
 
 set auto_index(ListLibraries) [list source [file join $dir libraries.tcl]]
+set auto_index(ListLibrariesPopulate) [list source [file join $dir libraries.tcl]]
 
 set auto_index(MapReads_bwa_aln) [list source [file join $dir map_reads.tcl]]
 set auto_index(MapReads_bwa_bwasw) [list source [file join $dir map_reads.tcl]]

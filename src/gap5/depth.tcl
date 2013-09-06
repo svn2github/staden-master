@@ -19,6 +19,7 @@ package require Tk
 #
 proc 1.5Dplot {w io wid hei {cnum {}} {pos {}}} {
     global $w
+    global gap5_defs
 
     # Create the window
     if {[toplevel $w] == ""} return
@@ -48,6 +49,7 @@ proc 1.5Dplot {w io wid hei {cnum {}} {pos {}}} {
     set ${w}(last_x1) -9999999
     set ${w}(last_x2) -9999999
     set ${w}(ntracks) 0
+    set ${w}(FilterAutoUpdate) [keylget gap5_defs TEMPLATE.AUTO_UPDATE]
 
     # something to store the common x range information
     set ${w}(grange) [g5::range -io $io -cnum $cnum]
@@ -87,7 +89,7 @@ proc 1.5Dplot {w io wid hei {cnum {}} {pos {}}} {
 
     scale $bc.xzoom -from 1 -to 250 -orient horiz -label "X Scale" \
 	-resolution 0.1 -command "set_xzoom $w" -repeatinterval 20
-    $bc.xzoom set 20
+    $bc.xzoom set [keylget gap5_defs TEMPLATE.XSCALE]
     pack $bc.xzoom -fill both -expand 1 -side left
 
 
@@ -130,8 +132,6 @@ proc 1.5Dplot {w io wid hei {cnum {}} {pos {}}} {
 		       -command "1.5plot_contig_event $w" \
 		       -flags [list QUERY_NAME CURSOR_NOTIFY DELETE COMPLEMENT LENGTH JOIN_TO QUIT]]
     wm protocol $w WM_DELETE_WINDOW "1.5plot_exit $w"
-
-    redraw_plot $w
 }
 
 proc 1.5plot_exit {w} {
@@ -1281,18 +1281,20 @@ proc track_settings {w} {
     set ${w}(FilterConsistent) 0
     set ${w}(FilterSpanning) 0
     set ${w}(ReadsOnly) 0
+    set ${w}(Libs) ""
 }
     
 
 
 proc template_item_init {w t} {
     global $w $t
+    global gap5_defs
 
-    set ${t}(YScale) 100
+    set ${t}(YScale)    [keylget gap5_defs TEMPLATE.YSCALE]
     set ${t}(OldYScale) [set ${t}(YScale)]
-    set ${t}(MinYSize) 1024
-    set ${t}(Spread) 0
-    set ${t}(YOffset) 50
+    set ${t}(MinYSize)  [keylget gap5_defs TEMPLATE.MINYSIZE]
+    set ${t}(Spread)    [keylget gap5_defs TEMPLATE.YSPREAD]
+    set ${t}(YOffset)   [keylget gap5_defs TEMPLATE.YOFFSET]
     set ${t}(m_start) -1
     set ${t}(m_stop)  -1
 
@@ -1365,6 +1367,7 @@ proc template_item {w t x1 x2 y1 y2} {
 	-min_qual    [set ${w}(MinQual)] \
  	-max_qual    [set ${w}(MaxQual)] \
 	-min_y_size  [set ${t}(MinYSize)] \
+	-libs        [set ${w}(Libs)] \
     	-wx0   	     $x1 \
 	-wx1         $x2 \
 	-wy0	     $y1 \
@@ -1398,12 +1401,13 @@ proc template_item {w t x1 x2 y1 y2} {
 
 proc depth_item_init {w t} {
     global $w $t
+    global gap5_defs
 
-    set ${t}(YScale) 100
+    set ${t}(YScale)    [keylget gap5_defs TEMPLATE.YSCALE]
     set ${t}(OldYScale) [set ${t}(YScale)]
-    set ${t}(MinYSize) 1024
-    set ${t}(Spread) 0
-    set ${t}(YOffset) 50
+    set ${t}(MinYSize)  [keylget gap5_defs TEMPLATE.MINYSIZE]
+    set ${t}(Spread)    [keylget gap5_defs TEMPLATE.YSPREAD]
+    set ${t}(YOffset)   [keylget gap5_defs TEMPLATE.YOFFSET]
     set ${t}(m_start) -1
     set ${t}(m_stop)  -1
 
@@ -1817,15 +1821,21 @@ proc invoke_editor {w t x} {
 proc seq_seqs_filter {w t} {
     global $w $t
 
-    set f [xtoplevel $w.filter_win -resizable 0]
+    set f [xtoplevel $w.filter_win -resizable 1]
 
     if {$f != ""} {
     	wm title $f "Filter"
+	wm geometry $f 460x350
     } else {
     	return
     }
 	 
     set f2 [frame $f.sub -bd 2 -relief groove]
+    grid columnconfigure $f2 0  -weight 0
+    grid columnconfigure $f2 1  -weight 0
+    grid columnconfigure $f2 2  -weight 0
+    grid columnconfigure $f2 3  -weight 1
+    grid rowconfigure    $f2 10 -weight 1
 
     # Initialise variable copies
     foreach v {FilterPair FilterConsistent FilterSpanning MinQual MaxQual} {
@@ -1925,6 +1935,33 @@ proc seq_seqs_filter {w t} {
 	-command "seq_seqs_filter_update $w $t $f max"
     grid $f2.max_label $f2.max_qual - - -sticky ew
 
+    # Library selector 
+    set t [frame $f2.libs -bd 0]
+    tablelist $t.list \
+	-columns {5 Index 10 "Name" 10 "Pair count" 5 "Type" 8 "Ins.size" 5 "s.d." 10 "Orient"} \
+        -labelcommand tablelist::sortByColumn \
+	-exportselection 0 \
+	-stretch 0 \
+        -yscrollcommand [list $t.yscroll set] \
+	-height 5 \
+	-selectmode extended
+
+    $t.list columnconfigure 0 -sortmode integer
+    $t.list columnconfigure 2 -sortmode integer
+    $t.list columnconfigure 4 -sortmode integer
+    $t.list columnconfigure 5 -sortmode real
+    scrollbar $t.yscroll -command "$t.list yview"
+
+    grid columnconfigure $t 0 -weight 1
+    grid columnconfigure $t 1 -weight 0
+    grid rowconfigure    $t 0 -weight 1
+
+    grid $t.list $t.yscroll -sticky nsew
+    grid $f2.libs - - - -sticky nsew -row 10
+    ListLibrariesPopulate [set ${w}(io)] $t.list
+    bind [$t.list bodypath] <<select-release>> \
+	"+seq_seqs_filter_libs $w $t.list; seq_seqs_filter_update $w $t $f" 
+
     # Standard controls
     okcancelhelp $f.ok \
 	-ok_command "seq_seqs_filter_ok $w $t $f" \
@@ -1935,6 +1972,20 @@ proc seq_seqs_filter {w t} {
 	-relief groove
 
     pack $f2 $f.ok -side top -fill both -expand 1
+}
+
+# Callback from library selection. Sets ${w}(_Libs) with "" being all.
+proc seq_seqs_filter_libs {w list} {
+    global $w
+
+    set recs ""
+    set db [[set ${w}(io)] get_database]
+    foreach row [$list curselection] {
+	set rec [$db get_library_rec [lindex [$list get $row] 0]]
+	lappend recs $rec
+    }
+
+    set ${w}(_Libs) $recs
 }
 
 
@@ -2490,8 +2541,13 @@ proc TemplateDisplay2 { io f id} {
 
 # THIS ONE
 proc CreateTemplateDisplay {io cnum {pos {}}} {
+    global gap5_defs
+
     set pwin .read_depth[counter]
-    1.5Dplot $pwin $io 900 600 $cnum $pos
+    set width  [keylget gap5_defs TEMPLATE.WIDTH]
+    set height [keylget gap5_defs TEMPLATE.HEIGHT]
+
+    1.5Dplot $pwin $io $width $height $cnum $pos
 #    add_plot $pwin seq_seqs    250  1 1 -bd 0 -relief raised
 #    add_separator $pwin 1
 #    add_plot $pwin depth_track 150  1 1 -bd 0 -relief raised
@@ -2501,6 +2557,9 @@ proc CreateTemplateDisplay {io cnum {pos {}}} {
     add_plot $pwin quality_item    0 0 1 0 -bd 0 -relief raised -bg black
     add_plot $pwin tag_item        0 0 0 0 -bd 0 -relief raised -bg black
     add_plot $pwin seq_ruler      50 0 0 1 -bd 1 -relief sunken
+
+    tkwait visibility $pwin
+    after 1 "redraw_plot $pwin"
 }
 
 

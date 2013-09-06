@@ -12,6 +12,8 @@
 #include <tcl.h>
 #include <X11/Xlib.h>
 
+#include "io_lib/hash_table.h"
+
 #include "template_draw.h"
 #include "gap_range.h"
 #include "template_display.h"
@@ -69,6 +71,11 @@ typedef struct TemplateDisplayItem {
     int ntl;
 
     int force_redraw;
+
+    // String form and array of libraries to show.
+    char *libs, *last_libs;
+    HashTable *lib_recs;
+    int lib_recs_counter;
 } TemplateDisplayItem;
 
 
@@ -131,6 +138,7 @@ static Tk_ConfigSpec config_specs[] = {
     {TK_CONFIG_DOUBLE, "-yz", "yZ", "YZ", "0", Tk_Offset(TemplateDisplayItem, yz), 0, 0},
     {TK_CONFIG_INT, "-min_qual", "minQual", "MinQual", "0", Tk_Offset(TemplateDisplayItem, min_qual), 0, 0},
     {TK_CONFIG_INT, "-max_qual", "maxQual", "MaxQual", "255", Tk_Offset(TemplateDisplayItem, max_qual), 0, 0},
+    {TK_CONFIG_STRING, "-libs", "libs", "Libs", "", Tk_Offset(TemplateDisplayItem, libs), TK_CONFIG_NULL_OK, 0},
     {TK_CONFIG_INT, "-min_y_size", "minYSize", "MinYSize", "512", Tk_Offset(TemplateDisplayItem, min_sz), 0, 0},
     {TK_CONFIG_DOUBLE, "-wx0", NULL, NULL, "0", Tk_Offset(TemplateDisplayItem, wx0), 0}, 
     {TK_CONFIG_DOUBLE, "-wx1", NULL, NULL, "0", Tk_Offset(TemplateDisplayItem, wx1), 0}, 
@@ -214,6 +222,9 @@ static int create_template(Tcl_Interp *interp,
     tdi->wy1 = tdi->y_end = Tk_Height(Tk_CanvasTkwin(canvas)); /* initial world height */
     tdi->width = -1;
     tdi->height = -1;
+    tdi->libs = tdi->last_libs = NULL;
+    tdi->lib_recs = NULL;
+    tdi->lib_recs_counter = 0;
    
     if(initialise_template_image(tdi,
 				 interp,
@@ -304,13 +315,55 @@ static int configure_template(Tcl_Interp *interp,
         
     tkwin   = Tk_CanvasTkwin(canvas);
     display = Tk_Display(tkwin);
-    
+
     if (Tk_ConfigureWidget(interp, tkwin, config_specs, argc, (char **) argv,
 	    (char *) tdi, flags|TK_CONFIG_OBJS) != TCL_OK) {
 
 	verror(ERR_WARN, "configure_template", "%s",
 	       Tcl_GetStringResult(interp));
 	return TCL_ERROR;
+    }
+
+    if (tdi->lib_recs)
+	HashTableDestroy(tdi->lib_recs, 0);
+
+    /* Update lib_recs_counter every time library list changes */
+    if (tdi->libs == NULL && tdi->last_libs)
+	tdi->lib_recs_counter++;
+    if (tdi->libs && !tdi->last_libs)
+	tdi->lib_recs_counter++;
+    if (tdi->libs && tdi->last_libs && strcmp(tdi->libs, tdi->last_libs) != 0)
+	tdi->lib_recs_counter++;
+
+    if (tdi->last_libs) {
+	free(tdi->last_libs);
+	tdi->last_libs = NULL;
+    }
+
+    if (tdi->libs) {
+	char *cp;
+	tg_rec r;
+	HashData hd;
+
+	tdi->lib_recs = HashTableCreate(100,
+					HASH_DYNAMIC_SIZE |
+					HASH_POOL_ITEMS |
+					HASH_INT_KEYS |
+					HASH_NONVOLATILE_KEYS);
+	for (cp = tdi->libs; *cp; ) {
+	    while (*cp && isspace(*cp))
+		cp++;
+	    if (!*cp)
+		break;
+
+	    r = strtol64(cp, &cp, 10);
+	    hd.i = 0;
+	    HashTableAdd(tdi->lib_recs, (char *)r, sizeof(r), hd, NULL);
+	}
+
+	tdi->last_libs = strdup(tdi->libs);
+    } else {
+	tdi->lib_recs = NULL;
     }
     
     width  = Tk_Width(tkwin);
@@ -809,7 +862,8 @@ static void redraw_template_image(TemplateDisplayItem *tdi, Display *display) {
     
     if (tdi->ymode == 1) mode |= CSIR_SORT_BY_Y;
     
-    set_filter(tdi->gr, tdi->filter, tdi->min_qual, tdi->max_qual, tdi->cmode, tdi->accuracy);
+    set_filter(tdi->gr, tdi->filter, tdi->min_qual, tdi->max_qual, tdi->cmode,
+	       tdi->accuracy, tdi->lib_recs_counter);
     
     if (gap_range_recalculate(tdi->gr, tdi->width, working_wx0, working_wx1, mode, force_change)) {
 	if (tdi->gr->r == NULL) {
@@ -833,8 +887,9 @@ static void redraw_template_image(TemplateDisplayItem *tdi, Display *display) {
     
     /* 1) Compute X */
     tdi->ntl = gap_range_x(tdi->gr, ax, bx, tdi->fwd_col, tdi->rev_col, 
-			   tdi->single_col, tdi->span_col, tdi->inconsistent_col,
-			   force_change, tdi->reads_only);
+			   tdi->single_col, tdi->span_col,
+			   tdi->inconsistent_col, force_change,
+			   tdi->reads_only, tdi->lib_recs);
 			    
     /* 2) Compute Y coordinates (part 1) */
     if (tdi->ymode == 1) {
