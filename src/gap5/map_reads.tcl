@@ -109,8 +109,8 @@ proc MapReads_bwa_aln {io} {
 
     frame $w.sep2 -bd 2 -relief groove -height 2
 
-    entrybox $w.aln_opt   -title "'bam aln' options"
-    entrybox $w.sampe_opt -title "'bam sampe' options"
+    entrybox $w.aln_opt   -title "'bwa aln' options"
+    entrybox $w.sampe_opt -title "'bwa sampe' options"
 
     xyn $w.index_names \
 	-label "Index sequence names" \
