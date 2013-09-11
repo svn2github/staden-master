@@ -825,8 +825,30 @@ static int break_contig_recurse(GapIO *io, HacheTable *h,
 		     * approach.
 		     */
 		    if (cend <= pos2 || cstart < pos3) {
+			// force keep
 			cstart = pos-1;
+
+			if (cend >= pos3) {
+			    // Overlaps new contig, so dup tag
+			    r2 = (range_t *)ArrayRef(bin_dup->rng,
+						     ArrayMax(bin_dup->rng));
+			    *r2 = *r;
+			    r2->rec = anno_ele_new(io,
+						   bin_dup->rec,
+						   a->obj_type,
+						   a->obj_rec, 
+						   0,
+						   a->tag_type,
+						   a->direction,
+						   a->comment);
+			    if (rmin > r->start) rmin = r->start;
+			    if (rmin > r->end)   rmin = r->end;
+			    if (rmax < r->start) rmax = r->start;
+			    if (rmax < r->end)   rmax = r->end;
+			    nar++;
+			}
 		    } else {
+			// force move
 			cstart = pos+1;
 		    }
 
