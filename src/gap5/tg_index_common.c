@@ -727,6 +727,9 @@ static void find_pair(GapIO *io, tg_pair_t *pair, tg_rec recno, char *tname,
 void create_new_contig(GapIO *io, contig_t **c, char *cname, int merge) {
 
     if (*c) {
+	/* Check for inconsistent tags, overlapping the contig end */
+	contig_visible_start(io, (*c)->rec, CITER_CSTART);
+	contig_visible_end  (io, (*c)->rec, CITER_CEND);
 	cache_decr(io, *c);
     }	    
 

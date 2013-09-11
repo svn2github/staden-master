@@ -2259,8 +2259,11 @@ int parse_sam_or_bam(GapIO *io, char *fn, tg_args *a, char *mode) {
 	    free(s);
 	}
 
-	if (bio->c)
+	if (bio->c) {
+	    contig_visible_start(io, bio->c->rec, CITER_CSTART);
+	    contig_visible_end  (io, bio->c->rec, CITER_CEND);
 	    cache_decr(io, bio->c);
+	}
 
 	free(bio);
     }
