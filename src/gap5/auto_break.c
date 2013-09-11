@@ -94,6 +94,14 @@ typedef struct contig_region {
     // Array of records covering gap
     rangec_t *r;
     int nr;
+
+    // scores, for adding to the tag
+    int score;
+    int num_good;
+    int num_bad;
+    int num_large;
+    int num_spanning;
+    int num_single;
 } contig_region_t;
 
 
@@ -1205,6 +1213,12 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	printf("GAP %d good, %d bad, %d small/large, %d spanning, %d single"
 	       " => score %d\n",
 	       (int)num_good, num_bad, num_large, num_spanning, num_single, score);
+	gap->score = score;
+	gap->num_good = num_good;
+	gap->num_bad = num_bad;
+	gap->num_large = num_large;
+	gap->num_spanning = num_spanning;
+	gap->num_single = num_single;
 
 	gap->valid = score >= min_score ? 1 : 0;
 
@@ -1264,9 +1278,16 @@ static void merge_gaps(Array gaps, int min_distance) {
 
 
 /*
- * Analyses gaps to work out where to break. We'll produce a left contig,
+ * This code doesn't actually make the break itself, rather it just finds
+ * where and how to break. It also produces the tags if required.
+ *
+ * Analyses gaps to work out where to break. We'll identify a left contig,
  * a right contig, and possibly multiple single-read contigs for readings
  * that are contained entirely within the gap section.
+ *
+ * Tag_params contains the parameters used for auto-break and are added to
+ * annotation covering the break site. (It should end up in both contigs.)
+ * It can be NULL, in which case no annotations are created.
  *
  * Fills out 'ds' with a list of breaks to make. Each item is in itself
  * another list with the first two items being a contig number and position
@@ -1275,9 +1296,9 @@ static void merge_gaps(Array gaps, int min_distance) {
  * reads that fall within the gap and should be taken out to form their
  * own contig).
  */
-static void break_gaps(GapIO *io, tg_rec contig, Array gaps,
+static void break_gaps(GapIO *io, tg_rec contig, Array gaps, char *tag_params,
 		       HashTable *clip_hash, dstring_t *ds) {
-    int i, j;
+    int i, j, new_start;
     tg_rec right_start = 0;
 
     for (i = 0; i < ArrayMax(gaps); i++) {
@@ -1303,6 +1324,7 @@ static void break_gaps(GapIO *io, tg_rec contig, Array gaps,
 	printf("  New starting point for right contig = %d\n", gap->start+1);
 	dstring_appendf(ds, "%"PRIrec" %d", contig, gap->start+1);
 
+	new_start = INT_MAX;
 	for (j = 0; j < gap->nr; j++) {
 	    int left, right;
 	    HashItem *hi;
@@ -1326,10 +1348,42 @@ static void break_gaps(GapIO *io, tg_rec contig, Array gaps,
 	    if (left >= gap->start && right <= gap->end) {
 		printf("  Read #%"PRIrec" to self-contig\n", gap->r[j].rec);
 		dstring_appendf(ds, " #%"PRIrec, gap->r[j].rec);
+	    } else if (gap->r[j].end > gap->start &&
+		       new_start > gap->r[j].start) {
+		seq_t *s = cache_search(io, GT_Seq, gap->r[j].rec);
+		seq_t *sorig = s;
+		if ((s->len < 0) ^ gap->r[j].comp) {
+		    s = dup_seq(s);
+		    complement_seq_t(s);
+		}
+		if (gap->r[j].start + s->left-1 > gap->start) {
+		    if (new_start > gap->r[j].start + s->left-1)
+			new_start = gap->r[j].start + s->left-1;
+		}
+
+		if (sorig != s)
+		    free(s);
 	    }
 	}
 
 	dstring_appendf(ds, "}");
+
+	if (tag_params && !io->read_only) {
+	    dstring_t *ds = dstring_create(NULL);
+	    if (new_start == INT_MAX)
+		new_start = gap->end;
+	    new_start = MAX(new_start, gap->end);
+	    dstring_appendf(ds, "Score:           %d\n", gap->score);
+	    dstring_appendf(ds, "#good pairs:     %d\n", gap->num_good);
+	    dstring_appendf(ds, "#bad pairs:      %d\n", gap->num_bad);
+	    dstring_appendf(ds, "#large pairs:    %d\n", gap->num_large);
+	    dstring_appendf(ds, "#spanning pairs: %d\n", gap->num_spanning);
+	    dstring_appendf(ds, "#singletons:     %d\n", gap->num_single);
+	    dstring_appendf(ds, "\nParams:\n%s", tag_params);
+	    anno_ele_add(io, GT_Contig, contig, 0, str2type("ABRK"),
+			 dstring_str(ds), gap->start, new_start, ANNO_DIR_NUL);
+	    dstring_destroy(ds);
+	}
 
 	free (gap->r);
     }
@@ -1343,6 +1397,15 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 			      dstring_t *ds) {
     Array gaps;
     HashTable *clip_hash;
+    dstring_t *p_ds = dstring_create(NULL);
+
+    dstring_appendf(p_ds, "Minimum mapping quality:  %d\n", min_mq);
+    dstring_appendf(p_ds, "Minimum break score:      %d\n", min_score);
+    dstring_appendf(p_ds, "Weight for good pair:     %d\n", good_score);
+    dstring_appendf(p_ds, "Weight for bad  pair:     %d\n", bad_score);
+    dstring_appendf(p_ds, "Weight for large pair:    %d\n", large_score);
+    dstring_appendf(p_ds, "Weight for spanning pair: %d\n", spanning_score);
+    dstring_appendf(p_ds, "Weight for singleton:     %d\n", singleton_score);
 
     printf("\n=== Checking contig %"PRIrec" ===\n", contig);
 
@@ -1361,11 +1424,12 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
     confirm_gaps(io, contig, gaps, good_score, bad_score, large_score,
 		 spanning_score, singleton_score, min_score);
 
-    printf("  = Finding break points\n");
-    break_gaps(io, contig, gaps, clip_hash, ds);
+    printf("  = Finding break points\n"); // Doesn't actually do the break
+    break_gaps(io, contig, gaps, dstring_str(p_ds), clip_hash, ds);
 
     HashTableDestroy(clip_hash, 1);
     ArrayDestroy(gaps);
+    dstring_destroy(p_ds);
     //xfree(clips);
 }
 
