@@ -71,6 +71,8 @@ tg_rec anno_ele_add(GapIO *io, int obj_type, tg_rec obj_rec, tg_rec anno_rec,
 	r.flags |= GRANGE_FLAG_TAG_SEQ;
 
     r.rec = anno_ele_new(io, 0, obj_type, obj_rec, 0, type, dir, comment);
+    if (r.rec <= 0)
+	return -1;
     e = (anno_ele_t *)cache_search(io, GT_AnnoEle, r.rec);
     e = cache_rw(io, e);
 
