@@ -4603,6 +4603,54 @@ proc ednames_select_drag {W x y pair} {
     editor_name_select $W [$W get_number @$x @$y]
 }
 
+#----------------------------------------------------------------------
+# For running external commands on the selected consensus. Eg in ~/.gap5rc:
+#
+# set_menu contig_editor_main_menu
+# add_separator {Commands.S99}
+# add_command {Commands.Dotter} 1 0 {run_cons_command $e dotter %s %s}
+
+proc run_cons_command {e args} {
+    set ed [curr_ed $e]
+    foreach {type rec start end} [$ed select get] break
+    if {$type != 17} {
+        bell
+        return
+    }
+
+    if {$start > $end} {
+	set x $start
+	set start $end
+	set end $x
+    }
+
+    # Consensus
+    set cons [calc_consensus \
+                  -io [$ed io] \
+                  -contigs [list [list =[$ed contig_rec] $start $end]]]
+    set fn [tmpnam]
+    set fd [open $fn w]
+    puts $fd [string map {* {}} $cons]
+    close $fd
+
+    set cmd [regsub -all {%s} $args $fn]
+    vfuncheader $cmd
+    set fd [open "|$cmd" r]
+    fconfigure $fd -blocking 0
+    fileevent $fd readable  [list run_cons_command_read $fd $fn]
+}
+
+proc run_cons_command_read {fd fn} {
+    if {[set data [read $fd]] != ""} {
+        vmessage $data
+    }
+    if {[eof $fd]} {
+        close $fd
+        file delete $fn
+    }
+}
+
+
 
 bind Editor <Key-Return> {editor_return %W}
 catch {bind Editor <Key-KP_Enter> {editor_return %W}}
