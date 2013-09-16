@@ -327,7 +327,8 @@ set ::cmd::auto_break::opts {
     {} {} {} {} {}
     
     contigs       1 {*} list {Compare only specific contigs against each other. 'list' is a space separated list of contig names}
-    n|dry_run     0 0   {}   {Find joins only, but do not make them}
+    n|dry_run     0 0   {}   {Find breaks only, but do not make or tag them}
+    b|no_break    0 0   {}   {Find and tag breaks, but do not make them}
     {} {} {} {} {}    	  
     min_mqual     1 0   int  {Minimum mapping quality. Used during problem finding. 0 => use all readings.}
     good          1 10  int  {Weight for all good read pairs; >0}
@@ -368,7 +369,7 @@ proc ::cmd::auto_break::run {dbname _options} {
 	       -min_score         $opt(min_score) \
 	       -min_mqual         $opt(min_mqual)]
 
-    if {$opt(dry_run)} {
+    if {$opt(dry_run) || $opt(no_break)} {
 	$io close
 	return
     }

@@ -63,10 +63,14 @@ repeat: \
 	id="ALUS" : \
 	bg=green
 
-# For marking joins made
+# For marking joins and breaks made
 "Auto-join": \
 	id="JOIN": \
 	bg=SpringGreen4: \
+
+"Auto-break": \
+	id="ABRK": \
+	bg=DeepPink: \
 
 #
 # The following are for marking cases when the cutoff is known
