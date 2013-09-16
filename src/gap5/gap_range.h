@@ -30,11 +30,14 @@ typedef struct {
     int c_mode;
     int accuracy;
     int libs_ctr;
+    double valid_sd;
 } gap_filter_t;
 
+// First width copies are aggregate sequence/template depth.
+// Subsequent N*width copies are per library, with 's' being insert size
 typedef struct {
-    double t;
-    double s;
+    double t; // template depth [0..N*Wid]
+    double s; // sequence depth [0..Wid]; summed insert sizes [Wid..N*Wid]
 } gap_depth_t;
     
 
@@ -51,7 +54,11 @@ typedef struct {
     int template_mode;       // the drawing mode (for template_display)
     gap_filter_t old_filter; // old filter settings for comparison
     gap_filter_t new_filter; // new filter settings
-    gap_depth_t  *depth;     // store depth
+    gap_depth_t  *depth;     // store depth. First [0..Width-1] elements are
+                             // summation across all libraries of seq and
+                             // template depth. Subsequence width copies of
+                             // depth[] are template and temp.size sums per
+                             // library index.
     tg_rec crec;
 } gap_range_t;
 
@@ -75,7 +82,7 @@ int  gap_range_test(gap_range_t *gr);
 int  gap_range_recalculate(gap_range_t *gr, int width, double new_wx0, double new_wx1, int new_mode, int force); 
 void gap_range_reset(gap_range_t *gr);
 void set_filter(gap_range_t *gr, int filter, int min, int max, int mode,
-		int accuracy, int libs_counter);
+		int accuracy, int libs_counter, double valid_sd);
 int  gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv, 
 		 int forward_col, int reverse_col, int single_col,
 		 int *span_col, int inconsistent_col,

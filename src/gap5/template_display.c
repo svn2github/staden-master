@@ -56,6 +56,8 @@ typedef struct TemplateDisplayItem {
     int min_qual;
     int max_qual;
     int min_sz;
+    int show_isize;
+    double valid_sd;
     double yzoom;
     double yz;
     
@@ -130,6 +132,8 @@ static Tk_ConfigSpec config_specs[] = {
     {TK_CONFIG_INT, "-ymode", "YMode", "YMode", "0", Tk_Offset(TemplateDisplayItem, ymode), 0, 0},
     {TK_CONFIG_INT, "-yoffset", "YOffset", "YOffset", "0", Tk_Offset(TemplateDisplayItem, yoffset), 0, 0},
     {TK_CONFIG_INT, "-accuracy", "accuracy", "Accuracy", "0", Tk_Offset(TemplateDisplayItem, accuracy), 0, 0},
+    {TK_CONFIG_INT, "-show_isize", "showISize", "ShowISize", "0", Tk_Offset(TemplateDisplayItem, show_isize), 0, 0},
+    {TK_CONFIG_DOUBLE, "-valid_sd", "validSD", "ValidSD", "0", Tk_Offset(TemplateDisplayItem, valid_sd), 0, 0},
     {TK_CONFIG_INT, "-spread", "spread", "Spread", "0", Tk_Offset(TemplateDisplayItem, spread), 0, 0},
     {TK_CONFIG_INT, "-reads_only", "readsOnly", "ReadsOnly", "0", Tk_Offset(TemplateDisplayItem, reads_only), 0, 0},
     {TK_CONFIG_INT, "-by_strand", "byStrand", "ByStrand", "1", Tk_Offset(TemplateDisplayItem, sep_by_strand), 0, 0},
@@ -324,8 +328,16 @@ static int configure_template(Tcl_Interp *interp,
 	return TCL_ERROR;
     }
 
-    if (tdi->lib_recs)
+    if (tdi->lib_recs) {
+	HashIter *iter = HashTableIterCreate();
+	HashItem *hi;
+
+	while ((hi = HashTableIterNext(tdi->lib_recs, iter)))
+	    if (hi->data.p)
+		cache_decr(tdi->gr->io, (library_t *)hi->data.p);
+
 	HashTableDestroy(tdi->lib_recs, 0);
+    }
 
     /* Update lib_recs_counter every time library list changes */
     if (tdi->libs == NULL && tdi->last_libs)
@@ -845,7 +857,7 @@ static void redraw_template_image(TemplateDisplayItem *tdi, Display *display) {
     int mode;
     double ax, bx, ay, by;
     int half_height;
-    int i;
+    int i, lib_idx;
     int ymin = INT_MAX;
     int ymax = INT_MIN;
     int tsize = MIN(template_max_size(tdi->gr->io), GR_WINDOW_RANGE);
@@ -863,7 +875,7 @@ static void redraw_template_image(TemplateDisplayItem *tdi, Display *display) {
     if (tdi->ymode == 1) mode |= CSIR_SORT_BY_Y;
     
     set_filter(tdi->gr, tdi->filter, tdi->min_qual, tdi->max_qual, tdi->cmode,
-	       tdi->accuracy, tdi->lib_recs_counter);
+	       tdi->accuracy, tdi->lib_recs_counter, tdi->valid_sd);
     
     if (gap_range_recalculate(tdi->gr, tdi->width, working_wx0, working_wx1, mode, force_change)) {
 	if (tdi->gr->r == NULL) {
@@ -954,8 +966,32 @@ static void redraw_template_image(TemplateDisplayItem *tdi, Display *display) {
 	}
     }
     
+    /* 4) Draw average insert size */
+    if (tdi->show_isize && tdi->ymode == 0) {
+	int size_col = add_colour(tdi->image, 0xdf, 0xff, 0x60);
+
+	for (lib_idx = 0; lib_idx < tdi->gr->io->db->Nlibraries; lib_idx++) {
+	    gap_depth_t *d = tdi->gr->depth + (lib_idx+1)*tdi->gr->width;
+	    for (i = 0; i < tdi->width; i++) {
+		int y = d[i].t ? d[i].t / d[i].s : 0;
+
+		if (tdi->logy) {
+		    if (y < 0) y = 0;
+			
+		    y = 50 * log(y + 1);
+		}
+
+		y = (y + 50 - tdi->yoffset) * tdi->yz;
+		y  = (y - by) * ay;
+
+		draw_line(tdi->image, i, i, y, size_col);
+	    }
+	}
+    }
+
     create_image_from_buffer(tdi->image);
     XPutImage(display, (Drawable)tdi->pm, tdi->gc, tdi->image->img, 0, 0, 0, 0, tdi->width, tdi->height);
+
     
     /* some last bits of size calculation for scrolling */
     tdi->y_start = ymin - 10;

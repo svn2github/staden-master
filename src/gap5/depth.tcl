@@ -1269,6 +1269,8 @@ proc track_settings {w} {
     global $w
     
     set ${w}(Accurate) 0
+    set ${w}(ShowISize) 1
+    set ${w}(ValidSD) 10
     set ${w}(YLog) 1
     set ${w}(Simple) 0
     set ${w}(Y) "Template Size"
@@ -1312,8 +1314,9 @@ proc template_item_init {w t} {
     top_controls    $w $t
     bottom_controls $w $t
 
-    bind $d <2> "set lastx %x; set lasty %y"
+    bind $d <2> "set lastx %x; set lasty %y; set firstx %x"
     bind $d <B2-Motion> "addLine $d %x %y"
+    bind $d <B2-ButtonRelease> "puts \$firstx-%x,\[c2x $w \$firstx\]-\[c2x $w %x\]"
     bind $d <3> "$d delete withttag tline"
 
     bind $d <B1-Motion> "drag_x $w $t %x %y"
@@ -1355,6 +1358,8 @@ proc template_item {w t x1 x2 y1 y2} {
 
     $d itemconfigure $td \
 	-accuracy    [set ${w}(Accurate)] \
+	-show_isize  [set ${w}(ShowISize)] \
+	-valid_sd    [set ${w}(ValidSD)] \
 	-logy        [set ${w}(YLog)] \
 	-yoffset     [set ${t}(YOffset)] \
 	-spread      [set ${t}(Spread)] \
@@ -1838,7 +1843,8 @@ proc seq_seqs_filter {w t} {
     grid rowconfigure    $f2 10 -weight 1
 
     # Initialise variable copies
-    foreach v {FilterPair FilterConsistent FilterSpanning MinQual MaxQual} {
+    foreach v {FilterPair FilterConsistent FilterSpanning MinQual MaxQual \
+	       ValidSD} {
 	set ${w}(_$v) [set ${w}($v)]
 	set ${w}($v~) [set ${w}($v)]
     }
@@ -1934,6 +1940,15 @@ proc seq_seqs_filter {w t} {
 	-variable ${w}(_MaxQual) \
 	-command "seq_seqs_filter_update $w $t $f max"
     grid $f2.max_label $f2.max_qual - - -sticky ew
+    label $f2.valid_sd_label -text "Valid size s.d."
+    scale $f2.valid_sd \
+	-from 1.0 \
+	-to 100 \
+	-resolution 0.1 \
+	-orient horiz \
+	-variable ${w}(_ValidSD) \
+	-command "seq_seqs_filter_update $w $t $f valid_sd"
+    grid $f2.valid_sd_label $f2.valid_sd - - -sticky ew
 
     # Library selector 
     set t [frame $f2.libs -bd 0]
@@ -2097,18 +2112,33 @@ proc template_dialog {w t} {
     # view controls
     set col 0
     foreach {blabel var} {
-    	{>>Acc} Accurate \
+    	{Accurate size} Accurate \
+	{Avg. insert size} ShowISize
+    } {
+    	set ${w}(_$var) [set ${w}($var)]
+	
+	grid [checkbutton $cf.r2c$col \
+	    	-text $blabel \
+		-variable ${w}(_$var) \
+		-command "seq_seqs_filter_update $w $t $c" \
+		] -row 2 -column $col -columnspan 2 -stick w -pady {5 0}
+		
+	incr col 2
+    }
+
+    set col 0
+    foreach {blabel var} {
 	Reads ReadsOnly \
 	{Y-log scale} YLog \
 	{Separate strands} SeparateStrands
     } {
     	set ${w}(_$var) [set ${w}($var)]
 	
-	grid [checkbutton $cf.c$col \
+	grid [checkbutton $cf.r3c$col \
 	    	-text $blabel \
 		-variable ${w}(_$var) \
 		-command "seq_seqs_filter_update $w $t $c" \
-		] -row 2 -column $col -stick w -pady {5 0}
+		] -row 3 -column $col -stick w -pady {5 0}
 		
 	incr col
     }

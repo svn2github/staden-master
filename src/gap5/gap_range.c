@@ -102,7 +102,7 @@ static int tcl_range(ClientData clientData, Tcl_Interp *interp,
     gr->template_mode = -1;
     gr->width         = -1;
     gr->ntl           = -1;
-    set_filter(gr, -1, -1, -1, -1, -1, 0);
+    set_filter(gr, -1, -1, -1, -1, -1, 0, 5);
     update_filter(gr);
     
     sprintf(name, "grange=%p", gr);
@@ -162,7 +162,8 @@ static int is_filter_change(gap_range_t *gr) {
     	gr->old_filter.min_qual != gr->new_filter.min_qual ||
 	gr->old_filter.max_qual != gr->new_filter.max_qual ||
 	gr->old_filter.c_mode   != gr->new_filter.c_mode ||
-	gr->old_filter.libs_ctr != gr->new_filter.libs_ctr) {
+	gr->old_filter.libs_ctr != gr->new_filter.libs_ctr ||
+	gr->old_filter.valid_sd != gr->new_filter.valid_sd) {
 	    
     	changed = 1;
     }
@@ -171,7 +172,7 @@ static int is_filter_change(gap_range_t *gr) {
 }
 
 void set_filter(gap_range_t *gr, int filter, int min, int max, int mode,
-		int accuracy, int libs_ctr) {
+		int accuracy, int libs_ctr, double valid_sd) {
 
     gr->new_filter.filter   = filter;
     gr->new_filter.min_qual = min;
@@ -179,6 +180,7 @@ void set_filter(gap_range_t *gr, int filter, int min, int max, int mode,
     gr->new_filter.c_mode   = mode;
     gr->new_filter.accuracy = accuracy;
     gr->new_filter.libs_ctr = libs_ctr;
+    gr->new_filter.valid_sd = valid_sd;
 }
 
 
@@ -190,6 +192,7 @@ static void update_filter(gap_range_t *gr) {
     gr->old_filter.c_mode   = gr->new_filter.c_mode;
     gr->old_filter.accuracy = gr->new_filter.accuracy;
     gr->old_filter.libs_ctr = gr->new_filter.libs_ctr;
+    gr->old_filter.valid_sd = gr->new_filter.valid_sd;
 }
     
 
@@ -234,7 +237,9 @@ int gap_range_recalculate(gap_range_t *gr, int width, double new_wx0,
 	    gr->tl = tmp_line;
 	    
 	    if (gr->width != width) {
+		int nlibs = gr->io->db->Nlibraries;
 		size_t w = width > 0 ? width : 1;
+		w *= nlibs + 1;
 		new_depth = realloc(gr->depth, w * sizeof(gap_depth_t));
 		if (NULL == new_depth) goto fail;
 	    	gr->width = width;
@@ -259,9 +264,11 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 		HashTable *lib_recs) {
     int i, j;
     double max_height = 0;
-    int lib_type;
-    HacheTable *h;
+    int lib_type, lib_idx;
+    HashTable *h, *rec_h;
     contig_t *c;
+    int valid_pair, nlibs;
+    double valid_sd;
 
     if (!is_filter_change(gr) && !force)
 	return gr->ntl;
@@ -272,9 +279,21 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 
     update_filter(gr);
     gr->ntl = 0;
-    memset(gr->depth, 0, gr->width * sizeof(gap_depth_t));
+    nlibs = gr->io->db->Nlibraries;
+    memset(gr->depth, 0, gr->width * sizeof(gap_depth_t) * (nlibs+1));
+    valid_sd = gr->new_filter.valid_sd;
 
-    h = HacheTableCreate(256, HASH_POOL_ITEMS | HASH_DYNAMIC_SIZE);
+    h = HashTableCreate(256, HASH_POOL_ITEMS | HASH_DYNAMIC_SIZE);
+    rec_h = HashTableCreate(256, HASH_POOL_ITEMS | HASH_DYNAMIC_SIZE);
+
+    /* Build a mapping from library records to 1..N index */
+    for (i = 0; i < gr->io->db->Nlibraries; i++) {
+	HashData hd;
+	hd.i = i+1;
+	HashTableAdd(rec_h, (char *)arrp(tg_rec, gr->io->library, i),
+		     sizeof(tg_rec), hd, NULL);
+    }
+    
 
     for (i = 0; i < gr->nr; i++) {
 	int sta, end;
@@ -285,6 +304,7 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 	double mq;
 	rangec_t *r  = &gr->r[i];
 	tline    *tl = &gr->tl[gr->ntl];
+	library_t *lib;
 
 	if (lib_recs) {
 	    if (!HashTableSearch(lib_recs, (char *)r->library_rec,
@@ -388,24 +408,33 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 	if (span && span_col) 	col = span_col[(r->pair_contig * 15551) % 10];
 
 	if (r->library_rec) {
-	    HacheItem *hi;
+	    HashItem *hi;
 
-	    if ((hi = HacheTableSearch(h, (char *)&r->library_rec,
+	    if ((hi = HashTableSearch(h, (char *)&r->library_rec,
 				       sizeof(tg_rec)))) {
-		lib_type = hi->data.i;
+		lib = (library_t *)hi->data.p;
 	    } else {
-		HacheData hd;
-		library_t *lib;
+		HashData hd;
 
 		lib = cache_search(gr->io, GT_Library, r->library_rec);
 		update_library_stats(gr->io, lib->rec, 100, NULL, NULL, NULL);
-		lib_type = hd.i = lib->lib_type;
+		hd.p = lib;
+		cache_incr(gr->io, lib);
 
-		HacheTableAdd(h, (char *)&r->library_rec, sizeof(tg_rec),
-			      hd, NULL);
+		HashTableAdd(h, (char *)&r->library_rec, sizeof(tg_rec),
+			     hd, NULL);
+	    }
+	    lib_type = lib->lib_type;
+	    if ((hi = HashTableSearch(rec_h, (char *)&r->library_rec,
+				      sizeof(tg_rec)))) {
+		lib_idx = hi->data.i;
+	    } else {
+		lib_idx = 0;
 	    }
 	} else {
+	    lib = NULL;
 	    lib_type = LIB_T_INWARD;
+	    lib_idx = 0;
 	}
 	    
 	/* Check consistency */
@@ -446,6 +475,17 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 	    fprintf(stderr, "Unexpected lib_type %d\n", lib_type);
 	}
 
+	valid_pair = (!single && !span && col != inconsistent_col) ? 1 : 0;
+	if (valid_pair) {
+	    int isize_min = lib
+		? lib->insert_size[lib_type] - valid_sd*lib->sd[lib_type]
+		: INT_MAX;
+	    int isize_max = lib
+		? lib->insert_size[lib_type] + valid_sd*lib->sd[lib_type]
+		: INT_MIN;
+	    if (end - sta > isize_max || end-sta < isize_min)
+		valid_pair = 0;
+	}
 	    
 	if (gr->new_filter.filter & FILTER_CONSISTENT && col == inconsistent_col) continue;
 	    
@@ -455,8 +495,8 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 	if (tl->mq < gr->new_filter.min_qual || tl->mq > gr->new_filter.max_qual) continue;
 
 	/* depth plot template pairs */
-	if (!single && !span && col != inconsistent_col) {
-	    double inc;
+	if (valid_pair) {
+	    double inc, inc2;
 
 	    r_sta = (sta - bx_conv) * ax_conv; // world to raster conversion
 	    r_end = (end - bx_conv) * ax_conv;
@@ -465,15 +505,26 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 
 	    if (r_sta < 0) r_sta = 0;
 	    if (r_end >= gr->width) r_end = gr->width - 1;
-	
-	    for (j = r_sta; j <= r_end; j++) {
-		//gr->depth[j].t++;
-		gr->depth[j].t += inc;
-		if (max_height < gr->depth[j].t)
-		    max_height = gr->depth[j].t;
+
+	    if (lib_idx) {
+		inc2 = inc * (end-sta+1);
+		int J = lib_idx*gr->width;
+		for (j = r_sta, J += r_sta; j <= r_end; j++, J++) {
+		    gr->depth[j].t += inc; // aggregate
+		    gr->depth[J].s += inc; // per library
+		    gr->depth[J].t += inc2;
+		    if (max_height < gr->depth[j].t)
+			max_height = gr->depth[j].t;
+		}
+	    } else {
+		for (j = r_sta; j <= r_end; j++) {
+		    gr->depth[j].t += inc;
+		    if (max_height < gr->depth[j].t)
+			max_height = gr->depth[j].t;
+		}
 	    }
 	}
-	    
+    
 	/* Generate line data */
 	tl->col[0] = tl->col[1] = tl->col[2] = col;
 	tl->x[0]   = sta;
@@ -530,8 +581,8 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 			   "error, start/end do not match template pos (pair)");
 		    verror(ERR_WARN, "gap_range_x",
 			   "start %d/%d end %d/%d",
-			   r->pair_start, tl->x[0], r->pair_end, tl->x[3]);
-		}
+			   r->pair_start, tl->x[0], r->pair_end, tl->x[3]);	
+	}
 	    }
 		
 	}
@@ -542,7 +593,9 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
     cache_decr(gr->io, c);
 
     if (h)
-	HacheTableDestroy(h, 0);
+	HashTableDestroy(h, 0);
+    if (rec_h)
+	HashTableDestroy(rec_h, 0);
 
     gr->max_height = ceil(max_height);
     gr->max_height++;
@@ -561,7 +614,7 @@ void gap_range_reset(gap_range_t *gr) {
     if (gr->r) {
     	free(gr->r);
     }
-    
+
     gr->r             = NULL;
     gr->wx0           = -1;
     gr->wx1           = -1;

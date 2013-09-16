@@ -612,7 +612,7 @@ static void redraw_depth_image(DepthTrackItem *dti, Display *display) {
 	sp[i].y = dti->height - 5 - dti->gr->depth[i].s * dti->yz;
 	tp[i].x = i;
 	tp[i].y = dti->height - 5 - dti->gr->depth[i].t * dti->yz;
-	
+
 	if (ymin > sp[i].y) ymin = sp[i].y;
 	if (ymin > tp[i].y) ymin = tp[i].y;
 	
