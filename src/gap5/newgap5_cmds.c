@@ -1959,7 +1959,7 @@ tcl_import_reads(ClientData clientData,
     /* Initialise io */
     args.io->iface->setopt(args.io->dbh, OPT_COMP_MODE, args.a.comp_mode);
     if (!args.a.no_tree) {
-	args.a.tmp = bttmp_file_open();
+	args.a.tmp = bttmp_sort_initialise();
 	if (!args.a.tmp) {
 	    fprintf(stderr, "Failed to open temporary file\n");
 	    return TCL_ERROR;
@@ -2032,7 +2032,6 @@ tcl_import_reads(ClientData clientData,
 	tg_rec rec;
 
 	vmessage("Sorting sequence name index\n");
-	bttmp_file_sort(args.a.tmp);
 
 	vmessage("Adding to name index\n");
 	if (!args.io->db->seq_name_index) {
@@ -2041,11 +2040,9 @@ tcl_import_reads(ClientData clientData,
 						  ci_ptr(args.io->db),
 						  DB_INDEX_NAME);
 	}
-	while (NULL != (name = bttmp_file_get(args.a.tmp, &rec))) {
-	    sequence_index_update(args.io, name, strlen(name), rec);
-	}
-	
-	bttmp_file_close(args.a.tmp);
+
+	bttmp_build_index(args.io, args.a.tmp);
+	bttmp_sort_delete(args.a.tmp);
     }
 
     cache_flush(args.io);
