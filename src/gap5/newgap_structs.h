@@ -570,13 +570,17 @@ typedef struct {
 typedef struct {
     GapIO *io;
     char *inlist;
-    //float score;
-    //int by_consensus;
+    float repeat_score;
+    int filter_consensus;
     int min_mqual;
     int min_score;
+    int unique_mqual;
     int good_weight;
+    int good_unique_weight;
     int bad_weight;
+    int bad_unique_weight;
     int large_weight;
+    int large_unique_weight;
     int spanning_weight;
     int singleton_weight;
 } abreak_arg;

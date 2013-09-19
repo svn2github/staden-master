@@ -330,10 +330,16 @@ set ::cmd::auto_break::opts {
     n|dry_run     0 0   {}   {Find breaks only, but do not make or tag them}
     b|no_break    0 0   {}   {Find and tag breaks, but do not make them}
     {} {} {} {} {}    	  
-    min_mqual     1 0   int  {Minimum mapping quality. Used during problem finding. 0 => use all readings.}
-    good          1 10  int  {Weight for all good read pairs; >0}
-    bad           1 -20 int  {Weight for all bad read pairs; <0}
-    large         1 -2  int  {Weight for slightly poor sized read pairs}
+    min_mqual     1 0   int  {Minimum mapping quality to consider in assembly. Used during problem finding. 0 => use all readings.}
+    filter_consensus 1 1 int {Analyses the consensus sequence to find repeated sequence words. When disabled only single and dinucleotide repeats are filtered.}
+    repeat_score  1 5   int  {Only used if filter_consensus is enabled. Words more than N times more frequently than expected as filtered out.}
+    unique_mqual  1 20  int  {Minimum mapping quality used to define a pair as being "uniquely mapped"}
+    good_unique   1 10  int  {Weight for all uniquely mapping good read pairs; >0}
+    good          1 3   int  {Weight for all other good read pairs; >0}
+    bad_unique    1 -20 int  {Weight for all uniquely mapping bad read pairs; <0}
+    bad           1 -5  int  {Weight for all other bad read pairs; <0}
+    large_unique  1 -10 int  {Weight for slightly poor uniquely mapping sized read pairs}
+    large         1 -1  int  {Weight for slightly poor other sized read pairs}
     spanning      1 -5  int  {Weight for contig-spanning read pairs; <= 0}
     singleton     1 -1  int  {Weight for singletons that should be pairs; <=0}
     min_score     1 0   int  {Minimum combined score after applying the weights above; may be negative.}
@@ -359,15 +365,21 @@ proc ::cmd::auto_break::run {dbname _options} {
     puts "\n>>>\n>>> Stage 1: finding regions to break apart\n>>>"
 
     set r [auto_break \
-	       -io                $io \
-	       -contigs           $opt(contigs) \
-	       -good_weight       $opt(good) \
-	       -bad_weight        $opt(bad) \
-	       -large_weight      $opt(large) \
-	       -spanning_weight   $opt(spanning) \
-	       -singleton_weight  $opt(singleton) \
-	       -min_score         $opt(min_score) \
-	       -min_mqual         $opt(min_mqual)]
+	       -io                   $io \
+	       -contigs              $opt(contigs) \
+	       -filter_consensus     $opt(filter_consensus) \
+	       -repeat_score	     $opt(repeat_score) \
+	       -unique_mqual	     $opt(unique_mqual) \
+	       -good_weight          $opt(good) \
+	       -good_unique_weight   $opt(good_unique) \
+	       -bad_unique_weight    $opt(bad_unique) \
+	       -bad_weight           $opt(bad) \
+	       -large_unique_weight  $opt(large_unique) \
+	       -large_weight         $opt(large) \
+	       -spanning_weight      $opt(spanning) \
+	       -singleton_weight     $opt(singleton) \
+	       -min_score            $opt(min_score) \
+	       -min_mqual            $opt(min_mqual)]
 
     if {$opt(dry_run) || $opt(no_break)} {
 	$io close

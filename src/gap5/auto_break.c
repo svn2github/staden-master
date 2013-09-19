@@ -68,6 +68,7 @@
 
 #define MIN_OVERLAP 10
 /* #define NORMALISE_FOR_GC 1 */
+#define NORMALISE_STR_SCORES
 
 #define CONTIG_END_IGNORE 200
 
@@ -97,8 +98,11 @@ typedef struct contig_region {
 
     // scores, for adding to the tag
     int score;
+    int num_unique_good;
     int num_good;
+    int num_unique_bad;
     int num_bad;
+    int num_unique_large;
     int num_large;
     int num_spanning;
     int num_single;
@@ -170,8 +174,8 @@ static Array coverage2contig_regions(char *valid, int cstart, int clen) {
 		printf("INTERNAL gap %d..%d\n", i+cstart, j-1+cstart);
 	    }
 	    r = (contig_region_t *)ArrayRef(gaps, ngaps);
-	    r->start = i;
-	    r->end = j-1;
+	    r->start = i+cstart;
+	    r->end = j-1+cstart;
 	    r->deleted = 0;
 	    r->valid = 1;
 	    ngaps++;
@@ -269,6 +273,179 @@ double compute_prob(int word) {
     return prob;
 }
 
+
+/*
+ * Computes the maximum theoretical redundancy of this word. Ie if we have
+ * a GT repeat then word GTGTGTGTGTGT occurs 6 times more frequently within
+ * a run than we'd expect.
+ *
+ * It does this by sliding word w along looking at the overlap. Ie:
+ * ABCDEABC
+ *  ABCDEABC          no match in overlap as BCDEABC != ABCDEAB
+ *
+ * ABCDEABC
+ *      ABCDEABC      matches as ABC == ABC
+ *
+ * Note that on average even a random word will have 1/4 chance of the last
+ * base matching the first base so claim to have a redundancy of WS/(WS-1).
+ * Similarly 1/16 times it'll have redundancy of WS/(WS-2). We could
+ * compensate for this by factoring this expectation into the equation, maybe
+ * even utilising the GC content in there too, but for now I think it skews
+ * things sufficiently little to not be too concerned.
+ *
+ * Returns the total number of new counts.
+ */
+#ifdef NORMALISE_STR_SCORES
+int64_t normalise_str_scores(void) {
+    int w;
+    int64_t tc = 0;
+    
+    for (w = 0; w < 1<<(2*WS); w++) {
+	int i, m = (1 << (2*(WS-1))) - 1;
+
+	if (!counts[w])
+	    continue;
+
+	for (i = 1; i <= WS; i++, m >>= 2) {
+	    if ( (w >> (2*i)) == (w & m) )
+		break;
+	}
+	counts[w] /= (double)WS/i;
+	if (counts[w] == 0)
+	    counts[w] = 1; /* Min count of 1 */
+
+	tc += counts[w];
+    }
+
+    return tc;
+}
+#endif
+
+/*
+ * Fills out the counts[] array based on all words of length WS in the
+ * consensus sequences. 
+ *
+ * Returns the total number of words indexed.
+ */
+int64_t word_count_cons(GapIO *io, int argc, contig_list_t *argv) {
+    int j, cnum;
+    int64_t tw = 0, gc = 0, at = 0;
+    char *cons = NULL;
+
+    init_tables();
+
+    for (cnum = 0; cnum < argc; cnum++) {
+	contig_t *c;
+	int clen;
+	char *s;
+	unsigned int word, cword;
+
+	c = cache_search(io, GT_Contig, argv[cnum].contig);
+	clen = c->end - c->start + 1;
+	cons = xrealloc(cons, clen);
+
+	calc_consensus(c->rec, c->start, c->end, CON_SUM, cons,
+		       NULL, NULL, NULL,
+		       consensus_cutoff, quality_cutoff,
+		       database_info, (void *)io);
+
+	/* printf("CONS =%d/%d: %.*s\n", cnum, NumContigs(io), clen, cons); */
+
+	if (clen <= 2*CONTIG_END_IGNORE)
+	    continue;
+
+	s = cons + CONTIG_END_IGNORE;
+	cons[clen-1-CONTIG_END_IGNORE] = 0;
+
+	cword = word = 0;
+	for (j = 0; *s; s++) {
+	    if (*s == '*')
+		continue;
+
+	    switch (lookup[*s]) {
+	    case -1:
+		j = 0;
+		break;
+	    case 0:
+	    case 3:
+		at++;
+		j++;
+		word <<= 2;
+		word |= lookup[*s];
+		cword >>= 2;
+		cword |= clookup[*s];
+		break;
+	    case 1:
+	    case 2:
+		gc++;
+		j++;
+		word <<= 2;
+		word |= lookup[*s];
+		cword >>= 2;
+		cword |= clookup[*s];
+		break;
+	    }
+	    
+	    /*
+	    printf("%c %s ", j >= WS ? *s : '.', word2str(word));
+	    printf("%s %08x %08x\n", word2str(cword), cword, clookup[*s]);
+	    */
+
+	    if (j >= WS) {
+		/* Remove middle nucleotide from word before storing */
+		unsigned int w2, cw2;
+
+		w2  = WORD2GAPPED(word);
+		cw2 = WORD2GAPPED(cword);
+		
+		/* Count both original and complementary word */
+		if (counts[ w2 & ALLB(WS)] < MAX_COUNTS)
+		    counts[ w2 & ALLB(WS)]++;
+		if (counts[cw2 & ALLB(WS)] < MAX_COUNTS)
+		    counts[cw2 & ALLB(WS)]++;
+
+		/*
+		printf("%c %s (%d)",
+		       *s, word2str(w2), counts[w2 & ALLB(WS)]);
+		printf("\t%s (%d)\n",
+		       word2str(cw2), counts[cw2 & ALLB(WS)]);
+		*/
+		tw += 2;
+	    }
+	}
+    }
+
+    xfree(cons);
+
+    printf("Total words = %d, GC = %5.2f%%\n", tw, (100.0*gc)/(gc+at));
+
+#ifdef NORMALISE_FOR_GC
+    /* normalise counts by GC content */
+    init_gc_table((double)gc/(gc+at));
+
+    for (j = 0; j < (1<<(2*WS)); j++) {
+	int c = counts[j];
+	c /= (1<<(2*WS)) * compute_prob(j);
+	if (c > MAX_COUNTS)
+	    c = MAX_COUNTS;
+	counts[j] = c;
+    }
+#endif
+
+#ifdef NORMALISE_STR_SCORES
+    tw = normalise_str_scores();
+#endif
+
+    return tw;
+}
+
+void print_counts(double min) {
+    int i;
+    for (i = 0; i < 1<<(2*WS); i++) {
+	if (counts[i] >= min)
+	    printf("%s %d\n", word2str(i), counts[i]);
+    }
+}
 
 void print_bins(void) {
     int i, j;
@@ -416,9 +593,9 @@ void filter_consen_diffs(char *in, char *out, int len, char *cons, int N) {
  * Returns: an Array of type contig_region_t on success
  *          NULL on failure
  */
-static Array suspect_joins(GapIO *io, tg_rec contig,
-			   //double filter_score, double depth
-			   int min_mq, HashTable *clip_hash) {
+static Array suspect_joins(GapIO *io, tg_rec contig, int64_t tw,
+			   double filter_score, int filter_consensus,
+			   double depth, int min_mq, HashTable *clip_hash) {
     int i, clen, cstart, cend;
     char *valid, *cp;
     char legal_chars[256];
@@ -459,10 +636,10 @@ static Array suspect_joins(GapIO *io, tg_rec contig,
 	size_t len;
 	int unique, first, last, firstq, lastq;
 
-	if (skip_non_paired) {
-	    if (!r->library_rec || r->pair_rec == 0)
-		continue;
-	}
+	// if (skip_non_paired) {
+	//     if (!r->library_rec || r->pair_rec == 0)
+	// 	continue;
+	// }
 
 	/* Complement data on-the-fly */
 	if ((s->len < 0) ^ r->comp) {
@@ -479,8 +656,10 @@ static Array suspect_joins(GapIO *io, tg_rec contig,
 	}
 	memcpy(fseq, seq, len);
 
-	/* Filter over represented words */
-	//filter_common_words(seq, fseq, len, tw, depth, filter_score, '#', 0);
+	/* Filter over represented words in consensus */
+	if (filter_consensus)
+	    filter_common_words(seq, fseq, len, tw, depth, filter_score,
+				'~', 0);
 
 	/* Filter low mapping quality */
 	if (r->mqual < min_mq) {
@@ -491,7 +670,7 @@ static Array suspect_joins(GapIO *io, tg_rec contig,
 	    filter_consen_diffs(&seq[s->left-1], &fseq[s->left-1],
 				s->right - s->left +1,
 				&cons[r->start + s->left - cstart -1],
-				5);
+				WS2);
 
 	    /* Filter specific low-complexity regions */
 	    filter_words_local1(seq, fseq, len, "A",   12, 8, '#');
@@ -575,10 +754,13 @@ static Array suspect_joins(GapIO *io, tg_rec contig,
 	}
 
 	if (last >= first) {
+	    if (!skip_non_paired || (r->library_rec && r->pair_rec)) {
 #ifdef DEBUG_SEQ
-	    printf("Valid from %d to %d (cstart=%d)\n", first-1, last, cstart);
+		printf("Valid from %d to %d (cstart=%d)\n",
+		       first-1, last, cstart);
 #endif	    
-	    memset(&valid[first-1 -cstart], 1, last-first+1);
+		memset(&valid[first-1 -cstart], 1, last-first+1);
+	    }
 	}
 
 	if (sorig != s)
@@ -932,7 +1114,10 @@ static void dump_template_dist(GapIO *io, tg_rec contig) {
  * 3. Score... (also consider spanning as bad?)
  */
 static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
-			 int good_score, int bad_score, int large_score,
+			 int unique_mqual,
+			 int good_score, int good_unique_score,
+			 int bad_score, int bad_unique_score,
+			 int large_score, int large_unique_score,
 			 int spanning_score, int singleton_score,
 			 int min_score) {
     int i, severity;
@@ -960,8 +1145,11 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	int j, nr;
 	rangec_t *r;
 	HashTable *h;
-	double num_good = 0;
+	int num_unique_good = 0;
+	int num_good = 0;
+	int num_unique_bad = 0;
 	int num_bad = 0;
+	int num_unique_large = 0;
 	int num_large = 0;
 	int num_spanning = 0;
 	int num_single = 0;
@@ -1061,17 +1249,26 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 		    MAX(p->end, p->pair_end) >= gap->end+MIN_OVERLAP) {
 		    /* Spans the gap */
 		    if (consistent_pair(io, p, lt_h, &severity)) {
-			num_good += r->mqual >= 10
-			    ? 0.5
-			    : r->mqual/25.0+.1;
-			num_good += r->pair_mqual >= 10
-			    ? 0.5
-			    : r->pair_mqual/25.0+.1;
+			int unique = (p->mqual >= unique_mqual &&
+				      p->pair_mqual >= unique_mqual);
+			if (unique)
+			    num_unique_good++;
+			else
+			    num_good++;
 		    } else {
-			if (severity == 1)
-			    num_large++;
-			else 
-			    num_bad++;
+			int unique = (p->mqual >= unique_mqual &&
+				      p->pair_mqual >= unique_mqual);
+			if (severity == 1) {
+			    if (unique)
+				num_unique_large++;
+			    else
+				num_large++;
+			} else {
+			    if (unique)
+				num_unique_bad++;
+			    else
+				num_bad++;
+			}
 		    }
 		}
 		HashTableDel(h, hi, 0);
@@ -1134,17 +1331,26 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 
 		/* Shouldn't be here, unless our INS_SIZE param is wrong? */
 		if (consistent_pair(io, r, lt_h, &severity)) {
-		    num_good += r->mqual >= 10
-			? 0.5
-			: r->mqual/25.0+.1;
-		    num_good += r->pair_mqual >= 10
-			? 0.5
-			: r->pair_mqual/25.0+.1;
+		    int unique = (r->mqual >= unique_mqual &&
+				  r->pair_mqual >= unique_mqual);
+		    if (unique)
+			num_unique_good++;
+		    else
+			num_good++;
 		} else {
-		    if (severity == 1)
-			num_large++;
-		    else 
-			num_bad++;
+		    int unique = (r->mqual >= unique_mqual &&
+				  r->pair_mqual >= unique_mqual);
+		    if (severity == 1) {
+			if (unique)
+			    num_unique_large++;
+			else
+			    num_large++;
+		    } else  {
+			if (unique)
+			    num_unique_bad++;
+			else
+			    num_bad++;
+		    }
 		}
 		continue;
 	    }
@@ -1204,18 +1410,27 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	    }
 	}
 
-	score =  num_good * good_score
-	        + num_bad * bad_score
-	      + num_large * large_score
-	   + num_spanning * spanning_score
-	     + num_single * singleton_score;
-
-	printf("GAP %d good, %d bad, %d small/large, %d spanning, %d single"
-	       " => score %d\n",
-	       (int)num_good, num_bad, num_large, num_spanning, num_single, score);
+        score =        num_good * good_score
+              + num_unique_good * good_unique_score
+              +         num_bad * bad_score
+              +  num_unique_bad * bad_unique_score
+              +       num_large * large_score
+              +num_unique_large * large_unique_score
+              +    num_spanning * spanning_score
+              +      num_single * singleton_score;
+ 
+	printf("GAP %d/%d good, %d/%d bad, %d/%d small/large, %d spanning, "
+	       "%d single => score %d\n",
+	       num_unique_good, num_good,
+	       num_unique_bad, num_bad,
+	       num_unique_large, num_large,
+	       num_spanning, num_single, score);
 	gap->score = score;
+	gap->num_unique_good = num_unique_good;
 	gap->num_good = num_good;
+	gap->num_unique_bad = num_unique_bad;
 	gap->num_bad = num_bad;
+	gap->num_unique_large = num_unique_large;
 	gap->num_large = num_large;
 	gap->num_spanning = num_spanning;
 	gap->num_single = num_single;
@@ -1374,9 +1589,12 @@ static void break_gaps(GapIO *io, tg_rec contig, Array gaps, char *tag_params,
 		new_start = gap->end;
 	    new_start = MAX(new_start, gap->end);
 	    dstring_appendf(ds, "Score:           %d\n", gap->score);
-	    dstring_appendf(ds, "#good pairs:     %d\n", gap->num_good);
-	    dstring_appendf(ds, "#bad pairs:      %d\n", gap->num_bad);
-	    dstring_appendf(ds, "#large pairs:    %d\n", gap->num_large);
+	    dstring_appendf(ds, "#good pairs:     %d/%d\n",
+			    gap->num_unique_good, gap->num_good);
+	    dstring_appendf(ds, "#bad pairs:      %d/%d\n",
+			    gap->num_unique_bad, gap->num_bad);
+	    dstring_appendf(ds, "#large pairs:    %d/%d\n",
+			    gap->num_unique_large, gap->num_large);
 	    dstring_appendf(ds, "#spanning pairs: %d\n", gap->num_spanning);
 	    dstring_appendf(ds, "#singletons:     %d\n", gap->num_single);
 	    dstring_appendf(ds, "\nParams:\n%s", tag_params);
@@ -1390,9 +1608,12 @@ static void break_gaps(GapIO *io, tg_rec contig, Array gaps, char *tag_params,
 }
 
 void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
-			      //double filter_score, double depth,
-			      int min_mq, int min_score,
-			      int good_score, int bad_score, int large_score,
+			      int64_t tw, double filter_score,
+			      int filter_consensus, double depth,
+			      int min_mq, int min_score, int unique_mqual,
+			      int good_score, int good_unique_score,
+			      int bad_score, int bad_unique_score,
+			      int large_score, int large_unique_score,
 			      int spanning_score, int singleton_score,
 			      dstring_t *ds) {
     Array gaps;
@@ -1401,9 +1622,12 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 
     dstring_appendf(p_ds, "Minimum mapping quality:  %d\n", min_mq);
     dstring_appendf(p_ds, "Minimum break score:      %d\n", min_score);
-    dstring_appendf(p_ds, "Weight for good pair:     %d\n", good_score);
-    dstring_appendf(p_ds, "Weight for bad  pair:     %d\n", bad_score);
-    dstring_appendf(p_ds, "Weight for large pair:    %d\n", large_score);
+    dstring_appendf(p_ds, "Weight for good pair:     %d/%d\n",
+		    good_unique_score, good_score);
+    dstring_appendf(p_ds, "Weight for bad  pair:     %d/%d\n",
+		    bad_unique_score, bad_score);
+    dstring_appendf(p_ds, "Weight for large pair:    %d/%d\n",
+		    large_unique_score, large_score);
     dstring_appendf(p_ds, "Weight for spanning pair: %d\n", spanning_score);
     dstring_appendf(p_ds, "Weight for singleton:     %d\n", singleton_score);
 
@@ -1413,15 +1637,18 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 				HASH_POOL_ITEMS);
 
     printf("  = Identifying suspect joins\n");
-    gaps = suspect_joins(io, contig, //filter_score, depth,
-			 min_mq, clip_hash);
+    gaps = suspect_joins(io, contig, tw, filter_score, filter_consensus,
+			 depth, min_mq, clip_hash);
 
     printf("  = Merging gaps\n");
     merge_gaps(gaps, MIN_OVERLAP*2);
     //dump_gaps(gaps);
 
     printf("  = Confirming gaps\n");
-    confirm_gaps(io, contig, gaps, good_score, bad_score, large_score,
+    confirm_gaps(io, contig, gaps, unique_mqual,
+		 good_score, good_unique_score,
+		 bad_score, bad_unique_score,
+		 large_score, large_unique_score,
 		 spanning_score, singleton_score, min_score);
 
     printf("  = Finding break points\n"); // Doesn't actually do the break
@@ -1434,24 +1661,35 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 }
 
 dstring_t *auto_break_contigs(GapIO *io, int argc, contig_list_t *argv,
-			      //double filter_score, int by_consensus,
-			      int min_mq, int min_score,
-			      int good_score, int bad_score, int large_score,
+			      double filter_score, int filter_consensus,
+			      int min_mq, int min_score, int unique_mqual,
+			      int good_score, int good_unique_score,
+			      int bad_score, int bad_unique_score,
+			      int large_score, int large_unique_score,
 			      int spanning_score, int singleton_score) {
     int i;
+    int64_t tw;
     double gc;
-    int depth;
+    int depth = 1; // filter by consensus
 
     dstring_t *ds = dstring_create(NULL);
+
+    if (filter_consensus) {
+	tw = word_count_cons(io, argc, argv);
+	//print_counts(10);
+    }
     
     for (i = 0; i < argc; i++) {
 	//dump_template_dist(io, argv[i].contig);
 
 	auto_break_single_contig(io, argv[i].contig,
 				 argv[i].start, argv[i].end,
-				 //filter_score, depth,
-				 min_mq, min_score, good_score, bad_score,
-				 large_score, spanning_score, singleton_score,
+				 tw, filter_score, filter_consensus, depth,
+				 min_mq, min_score, unique_mqual,
+				 good_score, good_unique_score,
+				 bad_score, bad_unique_score,
+				 large_score, large_unique_score,
+				 spanning_score, singleton_score,
 				 ds);
     }
 
