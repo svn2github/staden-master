@@ -499,6 +499,8 @@ static int btree_delete_key(btree_t *t, btree_node_t *n, int ind, char *str) {
 	if (n->used >= BTREE_MIN || !par) {
 	    btree_node_put(t->cd, n);
 	    btree_dec_ref(t->cd, n);
+	    if (par)
+		btree_dec_ref(t->cd, par);
 	    return 0;
 	}
 
@@ -519,6 +521,8 @@ static int btree_delete_key(btree_t *t, btree_node_t *n, int ind, char *str) {
 	    ? btree_node_get(t->cd, par->chld[ind+1])
 	    : NULL;
 	if (right) btree_inc_ref(t->cd, right);
+
+	btree_dec_ref(t->cd, par);
 
 	/* Can we redistribute? */
 	if (left && left->used  > BTREE_MIN) {
@@ -1159,8 +1163,9 @@ void btree_node_del(void *cd, btree_node_t *n) {
     btree_del_node(n);
 }
 
-void btree_inc_ref(void *cd, btree_node_t *n) {}
-void btree_dec_ref(void *cd, btree_node_t *n) {}
+static int n_inc, n_dec;
+void btree_inc_ref(void *cd, btree_node_t *n) {n_inc++;}
+void btree_dec_ref(void *cd, btree_node_t *n) {n_dec++;}
 
 char *lines[1000000];
 int main(int argc, char **argv) {
@@ -1195,7 +1200,7 @@ int main(int argc, char **argv) {
     cnt = btree_count(tree, tree->root);
     printf("Entered %d lines, in tree = %d\n", nlines, cnt);
 
-    for (i = 0; i < 2000000000; i++) {
+    for (i = 0; i < 2000000; i++) {
 	int in_tree, in_list, j;
 
 	int n = random() % nlines;
@@ -1237,6 +1242,8 @@ int main(int argc, char **argv) {
     //fprintf(stderr, "btree size = %d\n", btree_size(tree->root));
 
     btree_del(tree);
+
+    printf("Total inc=%d\nTotal dec=%d\n", n_inc, n_dec);
 
     return 0;
 }
