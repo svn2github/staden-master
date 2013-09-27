@@ -79,6 +79,8 @@
 #define DEBUG_FP stdout
 //#define VALGRIND
 
+//#define TIME_HEAP_ALLOC
+
 /* An allocated block on the heap */
 typedef struct {
     uint64_t pos;
@@ -474,9 +476,18 @@ static int64_t wilderness_allocate(dheap_t *h, uint32_t length) {
  * Returns the file offset on success
  *        -1 on failure
  */
+#ifdef TIME_HEAP_ALLOC
+#  include <sys/time.h>
+#endif
 int64_t heap_allocate(dheap_t *h, uint32_t length, uint32_t *allocated) {
     int p, pred, porig;
     uint64_t rover, orig;
+    int ncheck = 0;
+#ifdef TIME_HEAP_ALLOC
+    struct timeval tv1, tv2;
+
+    gettimeofday(&tv1, NULL);
+#endif
 
     /* Round size to the next multiple of 8 after boundary tags */
     length = SIZE_ROUND(length+5);
@@ -522,6 +533,8 @@ int64_t heap_allocate(dheap_t *h, uint32_t length, uint32_t *allocated) {
 	    if (-1 == get_block(h, rover, &b))
 		return -1;
 
+	    ncheck++;
+
 	    if (b.len >= length) {
 		assert(p >= pred);
 
@@ -561,6 +574,16 @@ int64_t heap_allocate(dheap_t *h, uint32_t length, uint32_t *allocated) {
 #endif
 		h->next_free_time[porig] = h->timer;
 
+#ifdef TIME_HEAP_ALLOC
+		gettimeofday(&tv2, NULL);
+		if ((tv2.tv_sec - tv1.tv_sec)*1000000 +
+		    tv2.tv_usec - tv1.tv_usec > 100000 || ncheck>100)
+		    fprintf(stderr, "heap_allocate %d took %d us, %d checks\n",
+			    length,
+			    (int)((tv2.tv_sec - tv1.tv_sec)*1000000 +
+				  tv2.tv_usec - tv1.tv_usec),
+			    ncheck);
+#endif
 		return rover + 4;
 	    }
 
@@ -578,6 +601,17 @@ int64_t heap_allocate(dheap_t *h, uint32_t length, uint32_t *allocated) {
 	h->next_free_pool[porig] = NPOOLS;
 	h->next_free_time[porig] = h->timer;
     }
+
+#ifdef TIME_HEAP_ALLOC
+    gettimeofday(&tv2, NULL);
+    if ((tv2.tv_sec - tv1.tv_sec)*1000000 +
+	tv2.tv_usec - tv1.tv_usec > 100000 || ncheck>100)
+	fprintf(stderr, "Heap_allocate %d took %d us, %d checks\n",
+		length,
+		(int)((tv2.tv_sec - tv1.tv_sec)*1000000 +
+		      tv2.tv_usec - tv1.tv_usec),
+		ncheck);
+#endif
 
     /*
      * We've now searched all pools and none free. 
@@ -716,7 +750,7 @@ int heap_largest_check(dheap_t *h) {
 		    largest = (len & ~1);
 	    }
 
-	    assert(len < 10000000);
+	    assert(len < 100000000);
 	    assert((len & ~1) > 0);
 
 	    if (len & 1) {
@@ -909,7 +943,7 @@ void heap_check(dheap_t *h) {
 		       comp_mode[((unsigned char)c[1]) >> 6]);
 	    }
 
-	    assert(len < 10000000);
+	    assert(len < 100000000);
 	    assert((len & ~1) > 0);
 
 	    if (len & 1) {
