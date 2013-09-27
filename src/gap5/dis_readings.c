@@ -1548,6 +1548,9 @@ int disassemble_contigs(GapIO *io, tg_rec *cnums, int ncontigs) {
 	if (c && c->bin)
 	    bin_destroy_recurse(io, c->bin);
 	contig_destroy(io, cnums[i]);
+	
+	/* Reduce btree memory usage by flushing after each contig */
+	cache_flush(io);
     }
     vmessage("Flushing deletions\n");
     UpdateTextOutput();
