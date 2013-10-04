@@ -66,11 +66,15 @@
 
 #define ALLB(ws) ((1<<(2*(ws)))-1)
 
-#define MIN_OVERLAP 10
+#define MIN_OVERLAP 5
+#define MIN_CLIP 3
 /* #define NORMALISE_FOR_GC 1 */
 #define NORMALISE_STR_SCORES
 
 #define CONTIG_END_IGNORE 200
+
+/* Size to consider neighbouring problems over */
+#define MAX_NEIGHBOUR 10000
 
 /* #define GAPPED_WORDS */
 
@@ -133,7 +137,8 @@ static double probs[4];
  * Turns an array of coverage data (0 => no coverage) to an Array of
  * contig_region_t structs.
  */
-static Array coverage2contig_regions(char *valid, int cstart, int clen) {
+static Array coverage2contig_regions(char *valid, int *clips, int *depth,
+				     int cstart, int clen) {
     int i, j, ngaps = 0;
     Array gaps;
 
@@ -149,17 +154,28 @@ static Array coverage2contig_regions(char *valid, int cstart, int clen) {
 	contig_region_t *r;
 	printf("START gap %d..%d\n", cstart, i+cstart);
 	/* Skip start gap */
-	/*
 	r = (contig_region_t *)ArrayRef(gaps, ngaps);
 	r->start = 1;
 	r->end = i;
 	r->deleted = 0;
 	r->valid = 1;
 	ngaps++;
-	*/
     }
 
     for (; i < clen; i++) {
+	if (clips[i] >= 3 && 100*clips[i]/depth[i] > 33) {
+	    contig_region_t *r;
+
+	    printf("SOFT_CLIP %d\n", i+cstart);
+
+	    r = (contig_region_t *)ArrayRef(gaps, ngaps);
+	    r->start = i+cstart;
+	    r->end =   i+cstart;
+	    r->deleted = 0;
+	    r->valid = 0;
+	    ngaps++;
+	}
+
 	if (!valid[i]) {
 	    contig_region_t *r;
 	    for (j = i+1; j < clen; j++) {
@@ -169,16 +185,30 @@ static Array coverage2contig_regions(char *valid, int cstart, int clen) {
 	    if (j >= clen) {
 		/* Skip end gaps */
 		printf("END gap %d..%d\n", i+cstart, j-1+cstart);
-		break;
 	    } else {
 		printf("INTERNAL gap %d..%d\n", i+cstart, j-1+cstart);
 	    }
 	    r = (contig_region_t *)ArrayRef(gaps, ngaps);
 	    r->start = i+cstart;
-	    r->end = j-1+cstart;
+	    r->end = j >= clen ? clen : j-1+cstart;
 	    r->deleted = 0;
-	    r->valid = 1;
+	    r->valid = (j >= clen);
 	    ngaps++;
+
+	    /* Here simply to generate SOFT_CLIP messages */
+	    for (i++; i <= j-1 && i < clen; i++) {
+		if (clips[i] >= 3 && 100*clips[i]/depth[i] > 33) {
+		    printf("SOFT_CLIP %d\n", i+cstart);
+		    
+		    r = (contig_region_t *)ArrayRef(gaps, ngaps);
+		    r->start = i+cstart;
+		    r->end =   i+cstart;
+		    r->deleted = 0;
+		    r->valid = 0;
+		    ngaps++;
+		}
+	    }
+
 	    i = j-1;
 	}
     }
@@ -417,7 +447,7 @@ int64_t word_count_cons(GapIO *io, int argc, contig_list_t *argv) {
 
     xfree(cons);
 
-    printf("Total words = %d, GC = %5.2f%%\n", tw, (100.0*gc)/(gc+at));
+    printf("Total words = %"PRId64", GC = %5.2f%%\n", tw, (100.0*gc)/(gc+at));
 
 #ifdef NORMALISE_FOR_GC
     /* normalise counts by GC content */
@@ -595,12 +625,14 @@ void filter_consen_diffs(char *in, char *out, int len, char *cons, int N) {
  */
 static Array suspect_joins(GapIO *io, tg_rec contig, int64_t tw,
 			   double filter_score, int filter_consensus,
-			   double depth, int min_mq, HashTable *clip_hash) {
+			   double avg_depth, int min_mq,
+			   HashTable *clip_hash) {
     int i, clen, cstart, cend;
-    char *valid, *cp;
+    char *valid = NULL, *cp;
+    int *clip_depth = NULL, *total_depth;
     char legal_chars[256];
     Array gaps;
-    char *cons;
+    char *cons = NULL;
     contig_iterator *ci;
     rangec_t *r;
     int skip_non_paired = 1;
@@ -609,17 +641,20 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int64_t tw,
     clen = cend - cstart + 1;
 
     if (NULL == (valid = (char *)xcalloc(clen+1, 1)))
-	return NULL;
+	goto error;
+
+    if (NULL == (clip_depth = (int *)xcalloc(clen+1, sizeof(int))))
+	goto error;
+    if (NULL == (total_depth = (int *)xcalloc(clen+1, sizeof(int))))
+	goto error;
 
     memset(legal_chars, 0, 256);
     for (cp = "ACGTacgt"; *cp; cp++)
 	legal_chars[*cp] = 1;
 
     /* Compute consensus */
-    if (NULL == (cons = (char *)xmalloc(clen+1))) {
-	xfree(valid);
-	return NULL;
-    }
+    if (NULL == (cons = (char *)xmalloc(clen+1)))
+	goto error;
     calc_consensus(contig, cstart, cend, CON_SUM, cons, NULL, NULL, NULL,
 		   consensus_cutoff, quality_cutoff,
 		   database_info, (void *)io);
@@ -634,7 +669,8 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int64_t tw,
 	seq_t *s = cache_search(io, GT_Seq, r->rec), *sorig = s;
 	char *seq, *fseq;
 	size_t len;
-	int unique, first, last, firstq, lastq;
+	int unique, first, last, firstq, lastq, p;
+	int p_start, p_end;
 
 	// if (skip_non_paired) {
 	//     if (!r->library_rec || r->pair_rec == 0)
@@ -656,10 +692,31 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int64_t tw,
 	}
 	memcpy(fseq, seq, len);
 
+	/* Aggregate cutoff consensus */
+
+	//if (s->left > 1) printf("L #%"PRIrec" %.*s\n", r->rec, s->left-1, seq);
+	//if (s->right < len) printf("R #%"PRIrec" %.*s\n", r->rec, len - s->right, &seq[s->right]);
+
+	if (s->left > MIN_CLIP && (p = r->start + s->left - cstart - 2) >= 0)
+	    clip_depth[p]++;
+
+	if (len - s->right-2 >= MIN_CLIP-1 &&
+	    (p = r->start + s->right - cstart - 2) <= clen)
+	    clip_depth[p]++;
+
+	p_start = r->start + s->left - cstart - 2;
+	if (p_start < 0) p_start = 0;
+	p_end = r->start + s->right - cstart - 1;
+	if (p_end > clen) p_end = clen;
+
+	for (p = p_start; p < p_end; p++) {
+	    total_depth[p]++;
+	}
+
 	/* Filter over represented words in consensus */
 	if (filter_consensus)
-	    filter_common_words(seq, fseq, len, tw, depth, filter_score,
-				'~', 0);
+	    filter_common_words(seq, fseq, len, tw, avg_depth,
+				filter_score, '~', 0);
 
 	/* Filter low mapping quality */
 	if (r->mqual < min_mq) {
@@ -673,16 +730,16 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int64_t tw,
 				WS2);
 
 	    /* Filter specific low-complexity regions */
-	    filter_words_local1(seq, fseq, len, "A",   12, 8, '#');
-	    filter_words_local1(seq, fseq, len, "C",   12, 8, '#');
-	    filter_words_local1(seq, fseq, len, "G",   12, 8, '#');
-	    filter_words_local1(seq, fseq, len, "T",   12, 8, '#');
-	    filter_words_local2(seq, fseq, len, "AC",  12, 8, '#');
-	    filter_words_local2(seq, fseq, len, "AG",  12, 8, '#');
-	    filter_words_local2(seq, fseq, len, "AT",  12, 8, '#');
-	    filter_words_local2(seq, fseq, len, "CG",  12, 8, '#');
-	    filter_words_local2(seq, fseq, len, "CT",  12, 8, '#');
-	    filter_words_local2(seq, fseq, len, "GT",  12, 8, '#');
+	    filter_words_local1(seq, fseq, len, "A",   12, 10, '#');
+	    filter_words_local1(seq, fseq, len, "C",   12, 10, '#');
+	    filter_words_local1(seq, fseq, len, "G",   12, 10, '#');
+	    filter_words_local1(seq, fseq, len, "T",   12, 10, '#');
+	    filter_words_local2(seq, fseq, len, "AC",  12, 10, '#');
+	    filter_words_local2(seq, fseq, len, "AG",  12, 10, '#');
+	    filter_words_local2(seq, fseq, len, "AT",  12, 10, '#');
+	    filter_words_local2(seq, fseq, len, "CG",  12, 10, '#');
+	    filter_words_local2(seq, fseq, len, "CT",  12, 10, '#');
+	    filter_words_local2(seq, fseq, len, "GT",  12, 10, '#');
 	}
 
 #ifdef DEBUG_SEQ
@@ -771,11 +828,29 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int64_t tw,
 
     contig_iter_del(ci);
 
-    gaps = coverage2contig_regions(valid, cstart, clen);
+    gaps = coverage2contig_regions(valid, clip_depth, total_depth,
+				   cstart, clen);
     xfree(valid);
     xfree(cons);
+    xfree(clip_depth);
+    xfree(total_depth);
 
     return gaps;
+
+ error:
+    if (valid)
+	xfree(valid);
+
+    if (cons)
+	xfree(cons);
+
+    if (clip_depth)
+	xfree(clip_depth);
+
+    if (total_depth)
+	xfree(total_depth);
+
+    return NULL;
 }
 
 /* Cache the lib_type for this library rec so we can
@@ -885,7 +960,7 @@ static int consistent_pair(GapIO *io, rangec_t *r, HashTable *lt_h,
     isize = MAX(MAX(r->pair_start, r->pair_end), MAX(r->start, r->end))
 	  - MIN(MIN(r->pair_start, r->pair_end), MIN(r->start, r->end));
     isize = ABS(isize);
-    if (!(isize >= isize_min/2 && isize <= isize_max*2))
+    if (!(isize >= isize_min/3 && isize <= isize_max*2))
 	return severity?*severity=3,0:0; // Far too big/small
     if (!(isize >= isize_min && isize <= isize_max))
 	return severity?*severity=1,0:0; // Slightly too big/small
@@ -893,6 +968,33 @@ static int consistent_pair(GapIO *io, rangec_t *r, HashTable *lt_h,
     return severity?*severity=0,1:1;
 }
 
+/*
+ * Our range query brought back all data within any library insert size of
+ * the problem region start..end.
+ *
+ * However many libraries may have smaller expected insert sizes, so discount
+ * reads from these libraries if they are too far away from the problem
+ * region to be considered as valid confirmation / denial.
+ */
+static int pair_in_range(GapIO *io, rangec_t *r, HashTable *lt_h,
+			 int start, int end) {
+    int isize_min, isize_max, isize, lib_type;
+
+    lib_type = compute_lib_type(io, r->library_rec, lt_h,
+				&isize_min, &isize_max, NULL);
+
+    if (r->start      < start && start - r->start      < isize_max) return 1;
+    if (r->end        < start && start - r->end        < isize_max) return 1;
+    if (r->pair_start < start && start - r->pair_start < isize_max) return 1;
+    if (r->pair_end   < start && start - r->pair_end   < isize_max) return 1;
+
+    if (r->start      > end && r->start      - end < isize_max) return 1;
+    if (r->end        > end && r->end        - end < isize_max) return 1;
+    if (r->pair_start > end && r->pair_start - end < isize_max) return 1;
+    if (r->pair_end   > end && r->pair_end   - end < isize_max) return 1;
+    
+    return 0;
+}
 
 struct range_loc {
     RB_ENTRY(range_loc) link;
@@ -1105,6 +1207,46 @@ static void dump_template_dist(GapIO *io, tg_rec contig) {
     }
 }
 
+static double gc(GapIO *io, tg_rec contig, int start, int end) {
+    static char *cons = NULL;
+    static tg_rec ctg = 0;
+    static int cstart;
+    int clen;
+    contig_t *c;
+    int i, gc = 0, n = 0;
+
+    if (ctg != contig) {
+	ctg  = contig;
+
+	c = cache_search(io, GT_Contig, ctg);
+	clen = c->end - (cstart = c->start) + 1;
+	if (cons) free(cons);
+	cons = malloc(clen);
+
+	calc_consensus(ctg, c->start, c->end, CON_SUM, cons,
+		       NULL, NULL, NULL,
+		       consensus_cutoff, quality_cutoff,
+		       database_info, (void *)io);
+    }
+
+    for (i = start; i <= end; i++) {
+	switch(cons[i-cstart]) {
+	case 'A':
+	case 'T':
+	    n++;
+	    break;
+	    
+	case 'G':
+	case 'C':
+	    n++;
+	    gc++;
+	}
+    }
+
+    return n ? (double)gc/n : 0;
+}
+
+
 /*
  * Uses read-pair information to confirm whether a gap appears to be
  * valid (or invalid).
@@ -1125,6 +1267,8 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
     HashIter *iter;
     HashItem *hi;
     int cstart, cend;
+    int last_gap, next_gap;
+    int first_pass = 1;
     
     lt_h = HashTableCreate(256, HASH_POOL_ITEMS | HASH_DYNAMIC_SIZE);
     if (!lt_h)
@@ -1136,6 +1280,9 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 
     if (consensus_valid_range(io, contig, &cstart, &cend) == -1)
 	goto cleanup;
+
+ second_pass:
+    last_gap = INT_MIN;
 
     /* Now process gaps validating by read-pair */
     for (i = 0; i < ArrayMax(gaps); i++) {
@@ -1154,10 +1301,23 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	int num_spanning = 0;
 	int num_single = 0;
 
-	if (gap->deleted)
+	if (gap->deleted) {
+	    abort();
+	    continue;
+	}
+
+	if (gap->valid)
 	    continue;
 
-	printf("Gap %d..%d\n", gap->start, gap->end);
+	for (j = i+1; j < ArrayMax(gaps); j++) {
+	    if (!(arrp(contig_region_t, gaps, j))->valid)
+		break;
+	}
+	next_gap = j < ArrayMax(gaps) 
+	    ? (arrp(contig_region_t, gaps, j))->start
+	    : INT_MAX;
+
+	printf("Gap %d..%d ", gap->start, gap->end);
 
 	if (!(c = cache_search(io, GT_Contig, contig)))
 	    continue;
@@ -1165,11 +1325,16 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 //FIXME: use template_max_size(io) instead.
 #define INS_SIZE 10000
 
-	r = contig_seqs_in_range(io, &c,
-				 gap->start-INS_SIZE, gap->end+INS_SIZE,
-				 CSIR_PAIR, &nr);
-	if (!r)
-	    continue;
+	if (first_pass) {
+	    r = contig_seqs_in_range(io, &c,
+				     gap->start-INS_SIZE, gap->end+INS_SIZE,
+				     CSIR_PAIR, &nr);
+	    if (!r)
+		continue;
+	} else {
+	    r = gap->r;
+	    nr = gap->nr;
+	}
 
 	h = HashTableCreate(1024, HASH_DYNAMIC_SIZE |
 			          HASH_POOL_ITEMS |
@@ -1246,7 +1411,11 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 		sequence_get_range_pair_position(io, p, contig, 0);
 
 		if (MIN(p->start, p->pair_start) <= gap->start-MIN_OVERLAP &&
-		    MAX(p->end, p->pair_end) >= gap->end+MIN_OVERLAP) {
+		    MAX(p->end, p->pair_end) >= gap->end+MIN_OVERLAP &&
+		    /*(MIN(p->start, p->pair_start) >= last_gap ||
+		      MAX(p->end, p->pair_end) <= next_gap) && */
+		    pair_in_range(io, p, lt_h, gap->start, gap->end)) {
+		    
 		    /* Spans the gap */
 		    if (consistent_pair(io, p, lt_h, &severity)) {
 			int unique = (p->mqual >= unique_mqual &&
@@ -1329,7 +1498,15 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 		      MAX(r->end, r->pair_end) >= gap->end+MIN_OVERLAP))
 		    continue;
 
-		/* Shouldn't be here, unless our INS_SIZE param is wrong? */
+		/*
+		if (!(MIN(r->start, r->pair_start) >= last_gap ||
+		      MAX(r->end, r->pair_end) <= next_gap))
+		    continue;
+		*/
+
+		if (!pair_in_range(io, r, lt_h, gap->start, gap->end))
+		    continue;
+
 		if (consistent_pair(io, r, lt_h, &severity)) {
 		    int unique = (r->mqual >= unique_mqual &&
 				  r->pair_mqual >= unique_mqual);
@@ -1418,8 +1595,10 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
               +num_unique_large * large_unique_score
               +    num_spanning * spanning_score
               +      num_single * singleton_score;
+
+	//score -= (gap->end - gap->start) / 5;
  
-	printf("GAP %d/%d good, %d/%d bad, %d/%d small/large, %d spanning, "
+	printf("%d/%d good, %d/%d bad, %d/%d small/large, %d spanning, "
 	       "%d single => score %d\n",
 	       num_unique_good, num_good,
 	       num_unique_bad, num_bad,
@@ -1444,8 +1623,17 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	} else {
 	    gap->r  = r;
 	    gap->nr = nr;
+
+	    last_gap = gap->end;
 	}
+
+	fflush(stdout);
     }
+
+//    if (first_pass) {
+//	first_pass = 0;
+//	goto second_pass; /* Sorry! It's a "temporary" trial */
+//    }
 
  cleanup:
     /* Clean up cached library information */
@@ -1467,7 +1655,7 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
  * Merges gaps if they're close together, within min_distance apart.
  */
 static void merge_gaps(Array gaps, int min_distance) {
-    int i;
+    int i, j;
     contig_region_t *last_gap;
 
     if (ArrayMax(gaps) == 0)
@@ -1483,12 +1671,26 @@ static void merge_gaps(Array gaps, int min_distance) {
 		   last_gap->start, last_gap->end,
 		   gap->start, gap->end);
 
-	    last_gap->end = gap->end;
+	    last_gap->end = MAX(last_gap->end, gap->end);
+	    last_gap->valid |= gap->valid;
 	    gap->deleted = 1;
 	} else {
 	    last_gap = gap;
 	}
     }
+
+    for (i = j = 0; i < ArrayMax(gaps); i++) {
+	contig_region_t *gap = arrp(contig_region_t, gaps, i);
+	if (gap->deleted)
+	    continue;
+
+	if (i == j)
+	    continue;
+
+	arr(contig_region_t, gaps, j) = *gap;
+	j++;
+    }
+    ArrayMax(gaps) = j;
 }
 
 
@@ -1518,16 +1720,51 @@ static void break_gaps(GapIO *io, tg_rec contig, Array gaps, char *tag_params,
 
     for (i = 0; i < ArrayMax(gaps); i++) {
 	contig_region_t *gap = arrp(contig_region_t, gaps, i);
+	int worst_score, worst_idx;
 
 	if (gap->deleted)
 	    continue;
-
-	printf("Gap from %d to %d\n", gap->start, gap->end);
 
 	if (gap->valid) {
 	    printf("Skipping as marked as valid\n");
 	    continue;
 	}
+
+	/* Only break a problem if it is the worst problem within a
+	 * stretch of invalid regions.
+	 *
+	 * This avoids the issue where a single problem can cause all
+	 * scores within a region to reduce due to invalid large inserts
+	 * spanning multiple potential problem sites.
+	 */
+	worst_score = INT_MAX;
+	worst_idx = i;
+	for (j = i; j < ArrayMax(gaps); j++) {
+	    contig_region_t *gap2 = arrp(contig_region_t, gaps, j);
+	    if (gap2->valid || gap2->start - gap->start > MAX_NEIGHBOUR)
+		break;
+	    if (worst_score > gap2->score) {
+		worst_score = gap2->score;
+		worst_idx = j;
+	    }
+	}
+
+	/* For consistent reporting output only */
+	for (j = i; j < ArrayMax(gaps); j++) {
+	    contig_region_t *gap2 = arrp(contig_region_t, gaps, j);
+	    if (gap2->valid || gap2->start - gap->start > MAX_NEIGHBOUR)
+		break;
+	    if (gap2->score > worst_score) {
+		printf("Gap from %d to %d\n", gap2->start, gap2->end);
+		printf("Skipping as poorer neighbouring problem; %d vs %d\n",
+		       gap2->score, worst_score);
+	    }
+	}
+
+	i = --j;
+	gap = arrp(contig_region_t, gaps, worst_idx);
+
+	printf("Gap from %d to %d\n", gap->start, gap->end);
 
 	/* 
 	 * Identify readings that after clipping are entirely contained
@@ -1637,11 +1874,14 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 				HASH_POOL_ITEMS);
 
     printf("  = Identifying suspect joins\n");
+    fflush(stdout);
     gaps = suspect_joins(io, contig, tw, filter_score, filter_consensus,
 			 depth, min_mq, clip_hash);
+    fflush(stdout);
 
     printf("  = Merging gaps\n");
     merge_gaps(gaps, MIN_OVERLAP*2);
+    fflush(stdout);
     //dump_gaps(gaps);
 
     printf("  = Confirming gaps\n");
