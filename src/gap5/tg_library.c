@@ -297,7 +297,7 @@ int update_library_stats(GapIO *io, tg_rec rec, int min_count,
 		edited = 1;
 	}
 
-	if (edited) {
+	if (edited && !io->read_only) {
 	    library_t *elib;
 	    if ((elib = cache_rw(io, lib)) != NULL)
 		lib = elib;

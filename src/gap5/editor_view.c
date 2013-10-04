@@ -3277,6 +3277,7 @@ void edSelectFrom(edview *xx, int pos) {
 	int cpos, left, right, orient;
 	seq_t *s = get_seq(xx->io, xx->select_seq);
 
+	if (!s) return;
 	cache_incr(xx->io, s);
 	sequence_get_position(xx->io, xx->select_seq,
 			      &cnum, &cpos, NULL, &orient);
@@ -3334,6 +3335,7 @@ void edSelectTo(edview *xx, int pos) {
 	int cpos, left, right, orient;
 	seq_t *s = get_seq(xx->io, xx->select_seq);
 
+	if (!s) return;
 	cache_incr(xx->io, s);
 	sequence_get_position(xx->io, xx->select_seq,
 			      &cnum, &cpos, NULL, &orient);
