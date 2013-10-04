@@ -4,6 +4,7 @@
 #include "dstring.h"
 
 dstring_t *auto_break_contigs(GapIO *io, int argc, contig_list_t *argv,
+			      int end_skip_len,
 			      double filter_score, int filter_consensus,
 			      int min_mqual, int min_score, int unique_mqual,
 			      int good_score, int good_unique_score,

@@ -138,7 +138,7 @@ static double probs[4];
  * contig_region_t structs.
  */
 static Array coverage2contig_regions(char *valid, int *clips, int *depth,
-				     int cstart, int clen) {
+				     int cstart, int clen, int end_skip_len) {
     int i, j, ngaps = 0;
     Array gaps;
 
@@ -172,7 +172,8 @@ static Array coverage2contig_regions(char *valid, int *clips, int *depth,
 	    r->start = i+cstart;
 	    r->end =   i+cstart;
 	    r->deleted = 0;
-	    r->valid = 0;
+	    r->valid = i < end_skip_len || clen-i < end_skip_len
+		? 1 : 0;
 	    ngaps++;
 	}
 
@@ -192,7 +193,8 @@ static Array coverage2contig_regions(char *valid, int *clips, int *depth,
 	    r->start = i+cstart;
 	    r->end = j >= clen ? clen : j-1+cstart;
 	    r->deleted = 0;
-	    r->valid = (j >= clen);
+	    r->valid = i < end_skip_len || clen-i < end_skip_len
+		? 1 : (j >= clen);
 	    ngaps++;
 
 	    /* Here simply to generate SOFT_CLIP messages */
@@ -204,7 +206,8 @@ static Array coverage2contig_regions(char *valid, int *clips, int *depth,
 		    r->start = i+cstart;
 		    r->end =   i+cstart;
 		    r->deleted = 0;
-		    r->valid = 0;
+		    r->valid = i < end_skip_len || clen-i < end_skip_len
+			? 1 : 0;
 		    ngaps++;
 		}
 	    }
@@ -626,7 +629,7 @@ void filter_consen_diffs(char *in, char *out, int len, char *cons, int N) {
 static Array suspect_joins(GapIO *io, tg_rec contig, int64_t tw,
 			   double filter_score, int filter_consensus,
 			   double avg_depth, int min_mq,
-			   HashTable *clip_hash) {
+			   HashTable *clip_hash, int end_skip_len) {
     int i, clen, cstart, cend;
     char *valid = NULL, *cp;
     int *clip_depth = NULL, *total_depth;
@@ -829,7 +832,7 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int64_t tw,
     contig_iter_del(ci);
 
     gaps = coverage2contig_regions(valid, clip_depth, total_depth,
-				   cstart, clen);
+				   cstart, clen, end_skip_len);
     xfree(valid);
     xfree(cons);
     xfree(clip_depth);
@@ -1845,6 +1848,7 @@ static void break_gaps(GapIO *io, tg_rec contig, Array gaps, char *tag_params,
 }
 
 void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
+			      int end_skip_len,
 			      int64_t tw, double filter_score,
 			      int filter_consensus, double depth,
 			      int min_mq, int min_score, int unique_mqual,
@@ -1876,7 +1880,7 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
     printf("  = Identifying suspect joins\n");
     fflush(stdout);
     gaps = suspect_joins(io, contig, tw, filter_score, filter_consensus,
-			 depth, min_mq, clip_hash);
+			 depth, min_mq, clip_hash, end_skip_len);
     fflush(stdout);
 
     printf("  = Merging gaps\n");
@@ -1901,6 +1905,7 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 }
 
 dstring_t *auto_break_contigs(GapIO *io, int argc, contig_list_t *argv,
+			      int end_skip_len,
 			      double filter_score, int filter_consensus,
 			      int min_mq, int min_score, int unique_mqual,
 			      int good_score, int good_unique_score,
@@ -1923,7 +1928,7 @@ dstring_t *auto_break_contigs(GapIO *io, int argc, contig_list_t *argv,
 	//dump_template_dist(io, argv[i].contig);
 
 	auto_break_single_contig(io, argv[i].contig,
-				 argv[i].start, argv[i].end,
+				 argv[i].start, argv[i].end, end_skip_len, 
 				 tw, filter_score, filter_consensus, depth,
 				 min_mq, min_score, unique_mqual,
 				 good_score, good_unique_score,

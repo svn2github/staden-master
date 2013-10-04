@@ -2269,6 +2269,8 @@ int tcl_auto_break(ClientData clientData, Tcl_Interp *interp,
 	 	offsetof(abreak_arg, spanning_weight)},
 	{"-singleton_weight", 	  ARG_INT, 1, "-1",   
 	 	offsetof(abreak_arg, singleton_weight)},
+	{"-end_skip",             ARG_INT, 1, "1000",
+	 	offsetof(abreak_arg, end_skip)},	 
         {NULL,       0,       0, NULL, 0}
     };
     int rargc;
@@ -2281,7 +2283,7 @@ int tcl_auto_break(ClientData clientData, Tcl_Interp *interp,
     vfuncheader("Auto-break");
 
     active_list_contigs(args.io, args.inlist, &rargc, &rargv);
-    ds = auto_break_contigs(args.io, rargc, rargv,
+    ds = auto_break_contigs(args.io, rargc, rargv, args.end_skip,
 			    args.repeat_score, args.filter_consensus,
 			    args.min_mqual, args.min_score,
 			    args.unique_mqual,

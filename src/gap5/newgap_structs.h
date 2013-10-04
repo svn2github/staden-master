@@ -583,6 +583,7 @@ typedef struct {
     int large_unique_weight;
     int spanning_weight;
     int singleton_weight;
+    int end_skip;
 } abreak_arg;
 
 #endif /* _NEWGAP_STRUCTS_H */
