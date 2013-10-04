@@ -343,6 +343,7 @@ set ::cmd::auto_break::opts {
     spanning      1 -5  int  {Weight for contig-spanning read pairs; <= 0}
     singleton     1 -1  int  {Weight for singletons that should be pairs; <=0}
     min_score     1 0   int  {Minimum combined score after applying the weights above; may be negative.}
+    end_skip      1 1000 int {Skip problems within X bases of the contig ends}
 }
 
 proc lreverse l {set r "";foreach i $l {set r [linsert $r 0 $i]}; return $r}
@@ -379,7 +380,8 @@ proc ::cmd::auto_break::run {dbname _options} {
 	       -spanning_weight      $opt(spanning) \
 	       -singleton_weight     $opt(singleton) \
 	       -min_score            $opt(min_score) \
-	       -min_mqual            $opt(min_mqual)]
+	       -min_mqual            $opt(min_mqual) \
+	       -end_skip             $opt(end_skip)]
 
     if {$opt(dry_run) || $opt(no_break)} {
 	$io close
