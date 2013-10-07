@@ -332,17 +332,17 @@ set ::cmd::auto_break::opts {
     {} {} {} {} {}    	  
     min_mqual     1 0   int  {Minimum mapping quality to consider in assembly. Used during problem finding. 0 => use all readings.}
     filter_consensus 1 1 int {Analyses the consensus sequence to find repeated sequence words. When disabled only single and dinucleotide repeats are filtered.}
-    repeat_score  1 5   int  {Only used if filter_consensus is enabled. Words more than N times more frequently than expected as filtered out.}
+    repeat_score  1 10  int  {Only used if filter_consensus is enabled. Words more than N times more frequently than expected as filtered out.}
     unique_mqual  1 20  int  {Minimum mapping quality used to define a pair as being "uniquely mapped"}
-    good_unique   1 10  int  {Weight for all uniquely mapping good read pairs; >0}
-    good          1 3   int  {Weight for all other good read pairs; >0}
-    bad_unique    1 -20 int  {Weight for all uniquely mapping bad read pairs; <0}
+    good_unique   1 30  int  {Weight for all uniquely mapping good read pairs; >0}
+    good          1 10  int  {Weight for all other good read pairs; >0}
+    bad_unique    1 -25 int  {Weight for all uniquely mapping bad read pairs; <0}
     bad           1 -5  int  {Weight for all other bad read pairs; <0}
-    large_unique  1 -10 int  {Weight for slightly poor uniquely mapping sized read pairs}
-    large         1 -1  int  {Weight for slightly poor other sized read pairs}
-    spanning      1 -5  int  {Weight for contig-spanning read pairs; <= 0}
+    large_unique  1 -20 int  {Weight for slightly poor uniquely mapping sized read pairs}
+    large         1 -3  int  {Weight for slightly poor other sized read pairs}
+    spanning      1 -1  int  {Weight for contig-spanning read pairs; <= 0}
     singleton     1 -1  int  {Weight for singletons that should be pairs; <=0}
-    min_score     1 0   int  {Minimum combined score after applying the weights above; may be negative.}
+    min_score     1 -100 int  {Minimum combined score after applying the weights above; may be negative.}
     end_skip      1 1000 int {Skip problems within X bases of the contig ends}
 }
 
