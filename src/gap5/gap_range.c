@@ -350,7 +350,7 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 		continue;
 	    }
 		
-	    if (r->pair_ind != -1) {
+	    if (r->pair_ind >= 0 && r->pair_ind < gr->nr) {
 		gr->r[r->pair_ind].flags |= (1<<30);
 	    }
 		
