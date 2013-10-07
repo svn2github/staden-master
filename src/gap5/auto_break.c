@@ -704,8 +704,11 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int64_t tw,
 	    clip_depth[p]++;
 
 	if (len - s->right-2 >= MIN_CLIP-1 &&
-	    (p = r->start + s->right - cstart - 2) <= clen)
+	    (p = r->start + s->right - cstart - 2) <= clen) {
+	    if (p < 0)    p = 0;
+	    if (p > clen) p = clen;
 	    clip_depth[p]++;
+	}
 
 	p_start = r->start + s->left - cstart - 2;
 	if (p_start < 0) p_start = 0;
