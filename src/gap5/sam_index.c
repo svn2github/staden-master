@@ -58,6 +58,7 @@ typedef struct {
     int npads2;    /* Seq inserts due to old cons pads */
     int count;
     int total_count;
+    int bases;
     int skip;
     //bam_header_t *header;
     tg_args *a;
@@ -309,7 +310,8 @@ bio_seq_t *bio_new_seq(bam_io_t *bio, pileup_t *p, int pos) {
 	static int fake_recno = 1;
 	s->rec = fake_recno++;
     } else {
-	s->rec = sequence_new_from(bio->io, NULL);
+	//s->rec = sequence_new_from(bio->io, NULL);
+	s->rec = 0; // allocate record during bio_del_seq()
     }
 
     return s;
@@ -1487,6 +1489,7 @@ int bio_del_seq(bam_io_t *bio, pileup_t *p) {
     int fake;
 
     bio->count++;
+    bio->bases += bs->seq_len;
 
     b = p->b;
     fake = ((bam_flag(b) & BAM_FSECONDARY) &&
@@ -1942,7 +1945,9 @@ static int sam_check_unmapped(void *cd, scram_fd *fp, pileup_t *p) {
     bam_io_t *bio = (bam_io_t *)cd;
     
 
-    if ((++bio->total_count & 0xffff) == 0) {
+    if ((++bio->total_count & 0xffff) == 0 || bio->bases > 5000000) {
+	printf("\n%d", bio->bases);
+	bio->bases = 0;
 	putchar('.');
 	fflush(stdout);
 	cache_flush(bio->io);
@@ -2170,6 +2175,7 @@ int parse_sam_or_bam(GapIO *io, char *fn, tg_args *a, char *mode) {
     bio->a = a;
     bio->c = NULL;
     bio->count = 0;
+    bio->bases = 0;
     bio->total_count = 0;
     bio->fn = fn;
     bio->libs = HacheTableCreate(256, HASH_DYNAMIC_SIZE);

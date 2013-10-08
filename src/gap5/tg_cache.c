@@ -2086,7 +2086,7 @@ static tg_rec cache_item_create_seq(GapIO *io, void *from) {
     if (NULL == b) return -1;
 
     /* Start new blocks if they contain too much data too */
-    if (b->est_size > 250000) {
+    if (b->est_size > 1000000) {
 	//printf("New sub block after %d/%d seqs\n", sub_rec, SEQ_BLOCK_SZ);
 	sub_rec = 0;
 	brec = io->iface->seq_block.create(io->dbh, NULL);
