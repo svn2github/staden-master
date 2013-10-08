@@ -755,7 +755,8 @@ static void sam_export_seq(GapIO *io, scram_fd *bf,
 	tname_len = s->name_len;
 
     if (tname_len == s->name_len || tname_len == 0) {
-	if (NULL != (cp = strchr(s->name, '/')))
+	if (NULL != (cp = strchr(s->name, '/')) &&
+	    (cp[1] == '1' || cp[1] == '2') && cp[2] == '\0')
 	    tname_len = (int)(cp-s->name);
 	else
 	    tname_len = s->name_len;
