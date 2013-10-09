@@ -240,6 +240,7 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
     rp_pool = pool_create(sizeof(rangec_t));
     if (NULL == rp_pool) goto fail;
 
+    /* Hash all seqs in crec1 between s1l..s1r */
     /* Assumes only 2 reads per pair */
     while (NULL != (r1 = contig_iter_next(io, ci))) {
 	HashItem *hi;
@@ -264,10 +265,13 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
     ci = contig_iter_new_by_type(io, crec2, 0, CITER_FIRST,
 				 es2l, es2r, GRANGE_FLAG_ISSEQ);
     if (NULL == ci) goto fail;
+
+    /* Find all seqs in crec2 between s2l..s2r. See if already in hash. */
     while (good_pairs < target && NULL != (r2 = contig_iter_next(io, ci))) {
 	HashItem *hi;
 	if (NULL != (hi = HashTableSearch(pairs, (char *)&r2->pair_rec,
 					  sizeof(r2->pair_rec)))) {
+	    /* Paired with crec1, See if good/bad size */
 	    seq_t *s;
 	    int o1, o2, orient, dist, r1min, r1max, r2min, r2max;
 	    tg_rec lib_rec;
@@ -276,6 +280,8 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
 	    
 	    /* Found a possible link */
 	    r1 = hi->data.p;
+	    HashTableDel(pairs, hi, 0);
+
 	    lib_rec = r1->library_rec;
 	    /* Get read orientations */
 	    o1 = r1->comp;
@@ -343,8 +349,10 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
 		all_pairs++;
 	    }
 	} else if (cd->fij_args->rp_min_perc > 0) {
+	    /* Unpaired; add to pairs2 hash to remove crec2/crec2 matches */
 	    HashItem *hi;
 	    HashData hd;
+	    tg_rec lib_rec;
 
 	    /*
 	     * We have a minimum percentage, so we'll need to count all
@@ -352,6 +360,14 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
 	     * just the absolute number matching this pair of contigs.
 	     */
 	    if (!r2->pair_rec) continue;  /* Unpaired */
+
+	    lib_rec = r2->library_rec;
+	    if (cd->lib_hash
+		&& !HashTableSearch(cd->lib_hash,
+				    (char *) &lib_rec, sizeof(lib_rec))) {
+		continue;
+	    }
+
 	    if (NULL != (hi = HashTableSearch(pairs2, (char *)&r2->pair_rec,
 					      sizeof(r2->pair_rec)))) {
 		/* internal read pair */
@@ -378,10 +394,12 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
 	/*
 	 * Iterate through pairs and pairs2 hashes checking any remaining
 	 * read-pairs to see if they match elsewhere in their designated
-	 * contigs or off to a new contig
+	 * contigs or off to a new contig.
 	 */
 	if (!(iter = HashTableIterCreate()))
 	    goto fail;
+
+	printf("All_pairs=%d max_all=%d good_pairs=%d\n", all_pairs, max_all, good_pairs);
 	while (all_pairs < max_all && (hi = HashTableIterNext(pairs, iter))) {
 	    rangec_t *r = hi->data.p;
 
@@ -402,8 +420,13 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
 
 	    if (sequence_get_range_pair_position(io, r, crec1, crec2) < 0)
 		goto fail;
-	    if (r->pair_contig != crec1 && r->pair_contig != crec2)
+	    if (r->pair_contig == crec1) /* Self match */
+		continue;
+
+	    if (r->pair_contig != crec2 && r->end >= s1l && r->start <= s1r)
+		/* Check orientation? */
 		all_pairs++;
+	    /* Else crec1/crec2 pair, but wrong size. Count as half? */
 	}
 	HashTableIterDestroy(iter);
 
@@ -429,7 +452,10 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
 
 	    if (sequence_get_range_pair_position(io, r, crec1, crec2) < 0)
 		goto fail;
-	    if (r->pair_contig != crec1 && r->pair_contig != crec2)
+	    if (r->pair_contig == crec2) /* Self match */
+		continue;
+
+	    if (r->pair_contig != crec1 && r->end >= s2l && r->start <= s2r)
 		all_pairs++;
 	}
 	HashTableIterDestroy(iter);
