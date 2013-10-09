@@ -399,7 +399,6 @@ static int check_overlap_pairs(add_fij_t *cd, int reverse,
 	if (!(iter = HashTableIterCreate()))
 	    goto fail;
 
-	printf("All_pairs=%d max_all=%d good_pairs=%d\n", all_pairs, max_all, good_pairs);
 	while (all_pairs < max_all && (hi = HashTableIterNext(pairs, iter))) {
 	    rangec_t *r = hi->data.p;
 
