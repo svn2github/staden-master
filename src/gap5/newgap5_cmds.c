@@ -2265,10 +2265,14 @@ int tcl_auto_break(ClientData clientData, Tcl_Interp *interp,
 	 	offsetof(abreak_arg, large_weight)},
 	{"-large_unique_weight",  ARG_INT, 1, "-5",   
 	 	offsetof(abreak_arg, large_unique_weight)},
-	{"-spanning_weight",  	  ARG_INT, 1, "-5",   
+	{"-spanning_weight",  	  ARG_INT, 1, "-1",   
 	 	offsetof(abreak_arg, spanning_weight)},
-	{"-singleton_weight", 	  ARG_INT, 1, "-1",   
+	{"-spanning_unique_weight", ARG_INT, 1, "-5",   
+	 	offsetof(abreak_arg, spanning_unique_weight)},
+	{"-singleton_weight", 	  ARG_INT, 1, "0",   
 	 	offsetof(abreak_arg, singleton_weight)},
+	{"-singleton_unique_weight", ARG_INT, 1, "-3",   
+	 	offsetof(abreak_arg, singleton_unique_weight)},
 	{"-end_skip",             ARG_INT, 1, "1000",
 	 	offsetof(abreak_arg, end_skip)},	 
         {NULL,       0,       0, NULL, 0}
@@ -2290,7 +2294,9 @@ int tcl_auto_break(ClientData clientData, Tcl_Interp *interp,
 			    args.good_weight, args.good_unique_weight,
 			    args.bad_weight, args.bad_unique_weight,
 			    args.large_weight, args.large_unique_weight,
-			    args.spanning_weight, args.singleton_weight);
+			    args.spanning_weight, args.spanning_unique_weight,
+			    args.singleton_weight,
+			    args.singleton_unique_weight);
 
     xfree(rargv);
     if (NULL != ds) {

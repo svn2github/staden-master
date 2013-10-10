@@ -582,7 +582,9 @@ typedef struct {
     int large_weight;
     int large_unique_weight;
     int spanning_weight;
+    int spanning_unique_weight;
     int singleton_weight;
+    int singleton_unique_weight;
     int end_skip;
 } abreak_arg;
 

@@ -109,7 +109,9 @@ typedef struct contig_region {
     int num_unique_large;
     int num_large;
     int num_spanning;
+    int num_unique_spanning;
     int num_single;
+    int num_unique_single;
 } contig_region_t;
 
 
@@ -1266,7 +1268,8 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 			 int good_score, int good_unique_score,
 			 int bad_score, int bad_unique_score,
 			 int large_score, int large_unique_score,
-			 int spanning_score, int singleton_score,
+			 int spanning_score, int spanning_unique_score,
+			 int singleton_score, int singleton_unique_score,
 			 int min_score) {
     int i, severity;
     HashTable *lt_h;
@@ -1304,7 +1307,9 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	int num_bad = 0;
 	int num_unique_large = 0;
 	int num_large = 0;
+	int num_unique_spanning = 0;
 	int num_spanning = 0;
+	int num_unique_single = 0;
 	int num_single = 0;
 
 	if (gap->deleted) {
@@ -1383,11 +1388,17 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 		    if ((r[j].flags & GRANGE_FLAG_COMP1) == 0) {
 			if (gap->start > r[j].start && 
 			    gap->start - r[j].start < isize_mid)
-			    num_single++;
+			    if (r[j].mqual >= unique_mqual)
+				num_unique_single++;
+			    else
+				num_single++;
 		    } else {
 			if (r[j].end > gap->end &&
 			    r[j].end - gap->end < isize_mid)
-			    num_single++;
+			    if (r[j].mqual >= unique_mqual)
+				num_unique_single++;
+			    else
+				num_single++;
 		    }
 		    break;
 
@@ -1395,16 +1406,25 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 		    if ((r[j].flags & GRANGE_FLAG_COMP1) != 0) {
 			if (gap->start > r[j].start &&
 			    gap->start - r[j].start < isize_mid)
-			    num_single++;
+			    if (r[j].mqual >= unique_mqual)
+				num_unique_single++;
+			    else
+				num_single++;
 		    } else {
 			if (r[j].end > gap->end &&
 			    r[j].end - gap->end < isize_mid)
-			    num_single++;
+			    if (r[j].mqual >= unique_mqual)
+				num_unique_single++;
+			    else
+				num_single++;
 		    }
 		    break;
 
 		case LIB_T_SAME:
-		    num_single++;
+		    if (r[j].mqual >= unique_mqual)
+			num_unique_single++;
+		    else
+			num_single++;
 		    break;
 		}
 		continue;
@@ -1478,7 +1498,7 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	while (((hi = HashTableIterNext(h, iter)))) {
 	    rangec_t *r = hi->data.p;
 	    sequence_get_range_pair_position(io, r, contig, 0);
-	    int isize_min, isize_max, isize_mid, lib_type;
+	    int isize_min, isize_max, isize_mid, lib_type, unique;
 
 	    /*
 	     * Paired end libraries with singletons should be
@@ -1494,7 +1514,10 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 		int x, valid;
 		compute_lib_type(io, r->library_rec, lt_h, &x, &x, &valid);
 		if (valid)
-		    num_single++;
+		    if (r->mqual >= unique_mqual)
+			num_unique_single++;
+		    else
+			num_single++;
 		continue;
 	    }
 	    /* Check consistency */
@@ -1543,6 +1566,9 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 					&isize_min, &isize_max, NULL);
 	    isize_mid = (2*isize_min + isize_max) / 3;
 
+	    unique = (r->mqual >= unique_mqual &&
+		      r->pair_mqual >= unique_mqual);
+
 	    switch (lib_type) {
 	    case LIB_T_INWARD:
 		if ((r->flags & GRANGE_FLAG_COMP1) == 0) {
@@ -1553,13 +1579,19 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 		    if (gap->start > r->start &&
 			gap->start - r->start < isize_mid)
 			// just left of gap
-			num_spanning++;
+			if (unique)
+			    num_unique_spanning++;
+			else
+			    num_spanning++;
 		} else {
 		    if (r->end - cstart < isize_max)
 			break;
 
 		    if (r->end > gap->end && r->end - gap->end < isize_mid)
-			num_spanning++;
+			if (unique)
+			    num_unique_spanning++;
+			else
+			    num_spanning++;
 		}
 		break;
 
@@ -1570,46 +1602,65 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 
 		    if (gap->start > r->start &&
 			gap->start - r->start < isize_mid)
-			num_spanning++;
+			if (unique)
+			    num_unique_spanning++;
+			else
+			    num_spanning++;
 		} else {
 		    if (r->end - cstart < isize_max)
 			break;
 
 		    if (r->end > gap->end && r->end - gap->end < isize_mid)
-			num_spanning++;
+			if (unique)
+			    num_unique_spanning++;
+			else
+			    num_spanning++;
 		}
 		break;
 
 	    case LIB_T_SAME:
 		/* We can't tell which is 1st and 2nd read easily? */
 		if (gap->start > r->start && gap->start - r->start < isize_mid)
-		    num_spanning++;
+		    if (unique)
+			num_unique_spanning++;
+		    else
+			num_spanning++;
 		else if (r->end > gap->end && r->end - gap->end < isize_mid)
-		    num_spanning++;
+		    if (unique)
+			num_unique_spanning++;
+		    else
+			num_spanning++;
 		break;
 
 	    default:
-		num_bad++;
+		if (unique)
+		    num_unique_bad++;
+		else
+		    num_bad++;
 	    }
 	}
 
-        score =        num_good * good_score
-              + num_unique_good * good_unique_score
-              +         num_bad * bad_score
-              +  num_unique_bad * bad_unique_score
-              +       num_large * large_score
-              +num_unique_large * large_unique_score
-              +    num_spanning * spanning_score
-              +      num_single * singleton_score;
+        score =           num_good * good_score
+              +    num_unique_good * good_unique_score
+              +            num_bad * bad_score
+              +     num_unique_bad * bad_unique_score
+              +          num_large * large_score
+              +   num_unique_large * large_unique_score
+              +       num_spanning * spanning_score
+              +num_unique_spanning * spanning_unique_score
+              +      num_single    * singleton_score
+              +num_unique_single   * singleton_unique_score;
 
 	//score -= (gap->end - gap->start) / 5;
  
-	printf("%d/%d good, %d/%d bad, %d/%d small/large, %d spanning, "
-	       "%d single => score %d\n",
-	       num_unique_good, num_good,
-	       num_unique_bad, num_bad,
-	       num_unique_large, num_large,
-	       num_spanning, num_single, score);
+	printf("%d/%d good, %d/%d bad, %d/%d small/large, %d/%d spanning, "
+	       "%d/%d single => score %d\n",
+	       num_unique_good,     num_good,
+	       num_unique_bad,      num_bad,
+	       num_unique_large,    num_large,
+	       num_unique_spanning, num_spanning,
+	       num_unique_single,   num_single,
+	       score);
 	gap->score = score;
 	gap->num_unique_good = num_unique_good;
 	gap->num_good = num_good;
@@ -1617,7 +1668,9 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 	gap->num_bad = num_bad;
 	gap->num_unique_large = num_unique_large;
 	gap->num_large = num_large;
+	gap->num_unique_spanning = num_unique_spanning;
 	gap->num_spanning = num_spanning;
+	gap->num_unique_single = num_unique_single;
 	gap->num_single = num_single;
 
 	gap->valid = score >= min_score ? 1 : 0;
@@ -1858,7 +1911,8 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 			      int good_score, int good_unique_score,
 			      int bad_score, int bad_unique_score,
 			      int large_score, int large_unique_score,
-			      int spanning_score, int singleton_score,
+			      int spanning_score, int spanning_unique_score,
+			      int singleton_score, int singleton_unique_score,
 			      dstring_t *ds) {
     Array gaps;
     HashTable *clip_hash;
@@ -1872,8 +1926,10 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 		    bad_unique_score, bad_score);
     dstring_appendf(p_ds, "Weight for large pair:    %d/%d\n",
 		    large_unique_score, large_score);
-    dstring_appendf(p_ds, "Weight for spanning pair: %d\n", spanning_score);
-    dstring_appendf(p_ds, "Weight for singleton:     %d\n", singleton_score);
+    dstring_appendf(p_ds, "Weight for spanning pair: %d/%d\n",
+		    spanning_unique_score, spanning_score);
+    dstring_appendf(p_ds, "Weight for singleton:     %d/%d\n",
+		    singleton_unique_score, singleton_score);
 
     printf("\n=== Checking contig %"PRIrec" ===\n", contig);
 
@@ -1896,7 +1952,9 @@ void auto_break_single_contig(GapIO *io, tg_rec contig, int start, int end,
 		 good_score, good_unique_score,
 		 bad_score, bad_unique_score,
 		 large_score, large_unique_score,
-		 spanning_score, singleton_score, min_score);
+		 spanning_score, spanning_unique_score,
+		 singleton_score, singleton_unique_score,
+		 min_score);
 
     printf("  = Finding break points\n"); // Doesn't actually do the break
     break_gaps(io, contig, gaps, dstring_str(p_ds), clip_hash, ds);
@@ -1914,7 +1972,9 @@ dstring_t *auto_break_contigs(GapIO *io, int argc, contig_list_t *argv,
 			      int good_score, int good_unique_score,
 			      int bad_score, int bad_unique_score,
 			      int large_score, int large_unique_score,
-			      int spanning_score, int singleton_score) {
+			      int spanning_score, int spanning_unique_score,
+			      int singleton_score, int singleton_unique_score)
+{
     int i;
     int64_t tw;
     double gc;
@@ -1937,7 +1997,8 @@ dstring_t *auto_break_contigs(GapIO *io, int argc, contig_list_t *argv,
 				 good_score, good_unique_score,
 				 bad_score, bad_unique_score,
 				 large_score, large_unique_score,
-				 spanning_score, singleton_score,
+				 spanning_score, spanning_unique_score,
+				 singleton_score, singleton_unique_score,
 				 ds);
     }
 

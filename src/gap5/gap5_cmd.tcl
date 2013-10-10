@@ -339,9 +339,11 @@ set ::cmd::auto_break::opts {
     bad_unique    1 -25 int  {Weight for all uniquely mapping bad read pairs; <0}
     bad           1 -5  int  {Weight for all other bad read pairs; <0}
     large_unique  1 -20 int  {Weight for slightly poor uniquely mapping sized read pairs}
-    large         1 -3  int  {Weight for slightly poor other sized read pairs}
-    spanning      1 -1  int  {Weight for contig-spanning read pairs; <= 0}
-    singleton     1 -1  int  {Weight for singletons that should be pairs; <=0}
+    large         1 -3  int   {Weight for slightly poor other sized read pairs}
+    spanning_unique 1 -5 int  {Weight for contig-spanning unique read pairs; <= 0}
+    spanning      1 0   int   {Weight for contig-spanning non-unique read pairs; <= 0}
+    singleton_unique 1 -1 int {Weight for unique singletons that should be pairs; <=0}
+    singleton     1 0    int  {Weight for non-unique singletons that should be pairs; <=0}
     min_score     1 -100 int  {Minimum combined score after applying the weights above; may be negative.}
     end_skip      1 1000 int {Skip problems within X bases of the contig ends}
 }
@@ -366,22 +368,24 @@ proc ::cmd::auto_break::run {dbname _options} {
     puts "\n>>>\n>>> Stage 1: finding regions to break apart\n>>>"
 
     set r [auto_break \
-	       -io                   $io \
-	       -contigs              $opt(contigs) \
-	       -filter_consensus     $opt(filter_consensus) \
-	       -repeat_score	     $opt(repeat_score) \
-	       -unique_mqual	     $opt(unique_mqual) \
-	       -good_weight          $opt(good) \
-	       -good_unique_weight   $opt(good_unique) \
-	       -bad_unique_weight    $opt(bad_unique) \
-	       -bad_weight           $opt(bad) \
-	       -large_unique_weight  $opt(large_unique) \
-	       -large_weight         $opt(large) \
-	       -spanning_weight      $opt(spanning) \
-	       -singleton_weight     $opt(singleton) \
-	       -min_score            $opt(min_score) \
-	       -min_mqual            $opt(min_mqual) \
-	       -end_skip             $opt(end_skip)]
+	       -io                      $io \
+	       -contigs                 $opt(contigs) \
+	       -filter_consensus        $opt(filter_consensus) \
+	       -repeat_score	        $opt(repeat_score) \
+	       -unique_mqual	        $opt(unique_mqual) \
+	       -good_weight             $opt(good) \
+	       -good_unique_weight      $opt(good_unique) \
+	       -bad_unique_weight       $opt(bad_unique) \
+	       -bad_weight              $opt(bad) \
+	       -large_unique_weight     $opt(large_unique) \
+	       -large_weight            $opt(large) \
+	       -spanning_unique_weight  $opt(spanning_unique) \
+	       -spanning_weight         $opt(spanning) \
+	       -singleton_unique_weight $opt(singleton_unique) \
+	       -singleton_weight        $opt(singleton) \
+	       -min_score               $opt(min_score) \
+	       -min_mqual               $opt(min_mqual) \
+	       -end_skip                $opt(end_skip)]
 
     if {$opt(dry_run) || $opt(no_break)} {
 	$io close
