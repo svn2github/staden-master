@@ -100,6 +100,23 @@ extern void messout(char *fmt, ...) __PRINTF_FORMAT__(1,2);
 #define SGN(A) ( (A) ? ( ( (A) < 0 ) ? -1 : 1 ) : 0 )
 #define ABS(A) ( (A) < 0 ? -(A) : (A) )
 
+#define MAX4(ip)         \
+((ip)[0] > (ip)[1]       \
+ ? ((ip)[0] > (ip)[2]    \
+    ? ((ip)[0] > (ip)[3] \
+       ? (ip)[0]         \
+       : (ip)[3])        \
+    : ((ip)[2] > (ip)[3] \
+       ? (ip)[2]         \
+       : (ip)[3]))       \
+ : ((ip)[1] > (ip)[2]    \
+    ? ((ip)[1] > (ip)[3] \
+       ? (ip)[1]         \
+       : (ip)[3])        \
+    : ((ip)[2] > (ip)[3] \
+       ? (ip)[2]         \
+       : (ip)[3])))
+
 /* Number of elements in array */
 #define Number(A) ( sizeof(A) / sizeof((A)[0]) )
 

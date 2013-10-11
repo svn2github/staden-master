@@ -1111,10 +1111,10 @@ int calculate_consensus_bit_het(GapIO *io, tg_rec contig,
     static double q2p[101];
     double min_e_exp = DBL_MIN_EXP * log(2) + 1;
 
-    double (*scores)[15];
+    double (*scores)[15] = NULL;
     double (*sumsC)[6] = NULL, *sumsE = NULL;
-    char *perfect; /* quality=100 bases */
-    int *depth, vst, ven;
+    char *perfect = NULL; /* quality=100 bases */
+    int *depth = NULL, vst, ven;
 
     /* Map the 15 possible combinations to 1-base or 2-base encodings */
     static int map_sing[15] = {0, 5, 5, 5, 5,
@@ -1514,13 +1514,342 @@ int calculate_consensus_bit_het(GapIO *io, tg_rec contig,
 	}
     }
 
-    free(scores);
-    free(depth);
-    free(perfect);
+    if (scores)
+	free(scores);
+    if (depth)
+	free(depth);
+    if (perfect)
+	free(perfect);
     if (sumsE)
 	free(sumsE);
     if (sumsC)
 	free(sumsC);
+
+    return 0;
+}
+
+
+/*
+ * As per calculate_consensus_bit_het but for a single pileup column.
+ */
+int calculate_consensus_pileup(int flags, pileup_base_t *p, consensus_t *cons){
+    int i, j;
+    static int loop = 0;
+    static int init_done =0;
+    static double q2p[101];
+    double min_e_exp = DBL_MIN_EXP * log(2) + 1;
+
+    double S[15] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+    double sumsC[6] = {0,0,0,0,0,0}, sumsE = 0;
+    char perfect = 0; /* quality=100 bases */
+    int depth = 0, vst, ven;
+
+    /* Map the 15 possible combinations to 1-base or 2-base encodings */
+    static int map_sing[15] = {0, 5, 5, 5, 5,
+			          1, 5, 5, 5,
+			             2, 5, 5,
+			                3, 5,
+			                   4};
+    static int map_het[15] = {0,  1,  2,  3,  4,
+			          6,  7,  8,  9,
+			             12, 13, 14,
+			                 18, 19,
+			                     24};
+
+    if (!init_done) {
+	init_done = 1;
+	consensus_init(P_HET);
+
+	for (i = 0; i <= 100; i++) {
+	    q2p[i] = pow(10, -i/10.0);
+	}
+    }
+
+    /* Currently always needed for the N vs non-N evaluation */
+    flags |= CONS_COUNTS;
+
+    /* Initialise */
+    if (flags & CONS_COUNTS) {
+	cons->counts[0] = 0;
+	cons->counts[1] = 0;
+	cons->counts[2] = 0;
+	cons->counts[3] = 0;
+	cons->counts[4] = 0;
+	cons->counts[5] = 0;
+    }
+
+    /* Accumulate */
+    for (; p; p = p->next) {
+	seq_t *s = p->s;
+	char base;
+	uint8_t base_l;
+	int qual;
+	double MM, __, _M, qe;
+
+	if (p->base_index < s->left-1)
+	    continue;
+	if (p->base_index >= s->right)
+	    continue;
+
+	if (s->format != SEQ_FORMAT_CNF4) {
+	    /* Inline version for speed */
+	    base = s->seq[p->base_index];
+	    qual = s->conf[p->base_index];
+	} else {
+	    base = s->seq[p->base_index];
+	    qual = MAX4(&s->conf[p->base_index*4]);
+	}
+
+	base_l = lookup[(uint8_t) base];
+	if (base_l < 5 && qual == 100)
+	    perfect |= (1<<base_l);
+	    
+	/* Quality 0 should never be permitted as it breaks the math */
+	if (qual < 1)
+	    qual = 1;
+	if (qual > 100)
+	    qual = 100;
+
+	__ = p__[qual];
+	MM = pMM[qual];
+	_M = p_M[qual];
+
+	if (flags & CONS_DISCREP) {
+	    qe = q2p[qual];
+	    sumsE += qe;
+	    sumsC[base_l] += 1 - qe;
+	}
+
+	if (flags & CONS_COUNTS)
+	    cons->counts[base_l]++;
+
+	switch (base_l) {
+	case 0:
+	    S[0] += MM; S[1 ]+= _M; S[2 ]+= _M; S[3 ]+= _M; S[4 ]+= _M;
+	    S[5 ]+= __; S[6 ]+= __; S[7 ]+= __; S[8 ]+= __;
+	    S[9 ]+= __; S[10]+= __; S[11]+= __; 
+	    S[12]+= __; S[13]+= __; 
+	    S[14]+= __;
+	    break;
+
+	case 1:
+	    S[0] += __; S[1 ]+= _M; S[2 ]+= __; S[3 ]+= __; S[4 ]+= __;
+	    S[5 ]+= MM; S[6 ]+= _M; S[7 ]+= _M; S[8 ]+= _M;
+	    S[9 ]+= __; S[10]+= __; S[11]+= __; 
+	    S[12]+= __; S[13]+= __; 
+	    S[14]+= __;
+	    break;
+
+	case 2:
+	    S[0] += __; S[1 ]+= __; S[2 ]+= _M; S[3 ]+= __; S[4 ]+= __;
+	    S[5 ]+= __; S[6 ]+= _M; S[7 ]+= __; S[8 ]+= __;
+	    S[9 ]+= MM; S[10]+= _M; S[11]+= _M; 
+	    S[12]+= __; S[13]+= __; 
+	    S[14]+= __;
+	    break;
+
+	case 3:
+	    S[0] += __; S[1 ]+= __; S[2 ]+= __; S[3 ]+= _M; S[4 ]+= __;
+	    S[5 ]+= __; S[6 ]+= __; S[7 ]+= _M; S[8 ]+= __;
+	    S[9 ]+= __; S[10]+= _M; S[11]+= __; 
+	    S[12]+= MM; S[13]+= _M; 
+	    S[14]+= __;
+	    break;
+
+	case 4:
+	    S[0] += __; S[1 ]+= __; S[2 ]+= __; S[3 ]+= __; S[4 ]+= _M;
+	    S[5 ]+= __; S[6 ]+= __; S[7 ]+= __; S[8 ]+= _M;
+	    S[9 ]+= __; S[10]+= __; S[11]+= _M; 
+	    S[12]+= __; S[13]+= _M; 
+	    S[14]+= MM;
+	    break;
+
+	case 5: /* N => equal weight to all A,C,G,T but not a pad */
+	    S[0] += MM; S[1 ]+= MM; S[2 ]+= MM; S[3 ]+= MM; S[4 ]+= _M;
+	    S[5 ]+= MM; S[6 ]+= MM; S[7 ]+= MM; S[8 ]+= _M;
+	    S[9 ]+= MM; S[10]+= MM; S[11]+= _M; 
+	    S[12]+= MM; S[13]+= _M; 
+	    S[14]+= __;
+	    break;
+	}
+
+	depth++;
+    }
+
+
+    /* and speculate */
+    {
+	double shift, max, max_het, norm[15];
+	int call = 0, het_call = 0, ph;
+	double tot1, tot2;
+
+	/* Perfect => manual edit at 100% */
+	if (perfect) {
+	    cons->scores[0] = -127;
+	    cons->scores[1] = -127;
+	    cons->scores[2] = -127;
+	    cons->scores[3] = -127;
+	    cons->scores[4] = -127;
+	    cons->scores[5] = 0; /* N */
+
+	    cons->phred = 255;
+
+	    switch (perfect) {
+	    case 1<<0:
+		cons->call = 0;
+		break;
+	    case 1<<1:
+		cons->call = 1;
+		break;
+	    case 1<<2:
+		cons->call = 2;
+		break;
+	    case 1<<3:
+		cons->call = 3;
+		break;
+	    case 1<<4:
+		cons->call = 4;
+		break;
+
+	    default:
+		/* Multiple bases marked with max quality */
+		cons->call  = 5;
+		cons->phred = 0;
+		break;
+	    }
+
+	    cons->scores[cons->call] = cons->phred;
+	    cons->depth = depth;
+	}
+
+	/*
+	 * Scale numbers so the maximum score is 0. This shift is essentially 
+	 * a multiplication in non-log scale to both numerator and denominator,
+	 * so it cancels out. We do this to avoid calling exp(-large_num) and
+	 * ending up with norm == 0 and hence a 0/0 error.
+	 *
+	 * Can also generate the base-call here too.
+	 */
+	shift = -DBL_MAX;
+	max = -DBL_MAX;
+	max_het = -DBL_MAX;
+	for (j = 0; j < 15; j++) {
+	    S[j] += lprior15[j];
+	    if (shift < S[j]) {
+		shift = S[j];
+		//het_call = j;
+	    }
+
+	    /* Only call pure AA, CC, GG, TT, ** for now */
+	    if (j != 0 && j != 5 && j != 9 && j != 12 && j != 14) {
+		if (max_het < S[j]) {
+		    max_het = S[j];
+		    het_call = j;
+		}
+		continue;
+	    }
+
+	    if (max < S[j]) {
+		max = S[j];
+		call = j;
+	    }
+	}
+
+	/*
+	 * Shift and normalise.
+	 * If call is, say, b we want p = b/(a+b+c+...+n), but then we do
+	 * p/(1-p) later on and this has exceptions when p is very close
+	 * to 1.
+	 *
+	 * Hence we compute b/(a+b+c+...+n - b) and
+	 * rearrange (p/norm) / (1 - (p/norm)) to be p/norm2.
+	 */
+	for (j = 0; j < 15; j++) {
+	    S[j] -= shift;
+	    if (S[j] > min_e_exp) {
+		//S[j] = exp(S[j]);
+		S[j] = fast_exp(S[j]);
+	    } else {
+		S[j] = DBL_MIN;
+	    }
+	    norm[j] = 0;
+	}
+
+	tot1 = tot2 = 0;
+	for (j = 0; j < 15; j++) {
+	    norm[j]    += tot1;
+	    norm[14-j] += tot2;
+	    tot1 += S[j];
+	    tot2 += S[14-j];
+	}
+
+	/* And store result */
+	if (depth && depth != cons->counts[5] /* all N */) {
+	    double m;
+
+	    cons->depth = depth;
+
+	    cons->call     = map_sing[call];
+	    if (norm[call] == 0) norm[call] = DBL_MIN;
+	    ph = -TENOVERLOG10 * fast_log(norm[call]) + .5;
+	    cons->phred = ph > 255 ? 255 : (ph < 0 ? 0 : ph);
+
+	    cons->het_call = map_het[het_call];
+	    if (norm[het_call] == 0) norm[het_call] = DBL_MIN;
+	    ph = TENOVERLOG10 * (fast_log(S[het_call]) - fast_log(norm[het_call])) + .5;
+	    cons->scores[6] = ph;
+
+	    if (flags & CONS_SCORES) {
+		/* AA */
+		if (norm[0] == 0) norm[0] = DBL_MIN;
+		ph = TENOVERLOG10 * (fast_log(S[0]) - fast_log(norm[0])) + .5;
+		cons->scores[0] = ph;
+
+		/* CC */
+		if (norm[5] == 0) norm[5] = DBL_MIN;
+		ph = TENOVERLOG10 * (fast_log(S[5]) - fast_log(norm[5])) + .5;
+		cons->scores[1] = ph;
+
+		/* GG */
+		if (norm[9] == 0) norm[9] = DBL_MIN;
+		ph = TENOVERLOG10 * (fast_log(S[9]) - fast_log(norm[9])) + .5;
+		cons->scores[2] = ph;
+
+		/* TT */
+		if (norm[12] == 0) norm[12] = DBL_MIN;
+		ph = TENOVERLOG10 * (fast_log(S[12]) - fast_log(norm[12])) + .5;
+		cons->scores[3] = ph;
+
+		/* ** */
+		if (norm[14] == 0) norm[14] = DBL_MIN;
+		ph = TENOVERLOG10 * (fast_log(S[14]) - fast_log(norm[14])) + .5;
+		cons->scores[4] = ph;
+
+		/* N */
+		cons->scores[5] = 0; /* N */
+	    }
+
+	    /* Compute discrepancy score */
+	    if (flags & CONS_DISCREP) {
+		m = sumsC[0]+sumsC[1]+sumsC[2]+sumsC[3]+sumsC[4]
+		    - sumsC[cons->call];
+		cons->discrep = (m-sumsE)/sqrt(m+sumsE);
+	    }
+	} else {
+	    cons->call = 5; /* N */
+	    cons->het_call = 0;
+	    cons->scores[0] = 0;
+	    cons->scores[1] = 0;
+	    cons->scores[2] = 0;
+	    cons->scores[3] = 0;
+	    cons->scores[4] = 0;
+	    cons->scores[5] = 0;
+	    cons->scores[6] = 0;
+	    cons->phred = 0;
+	    cons->depth = 0;
+	    cons->discrep = 0;
+	}
+    }
 
     return 0;
 }
@@ -2102,3 +2431,154 @@ int update_uniqueness_hash(GapIO *io) {
 #endif
 
 #endif /* #if 0; uniqueness code unused for now */
+
+
+/*
+ * Calls func(io, pos cons, r, nr, data) for every base in a contig between
+ * start and end inclusively. Cons will hold the consensus_t call and r/nr
+ * hold the pileup of reads at that point. Data is client specific data and
+ * is passed through verbatim.
+ *
+ * If func() returns a non zero exit status then this is considered a failure.
+ *
+ * NB: Although this is similar to computing the consensus, and only slighty
+ * slower, it cannot cache data so it always computes rather than returning
+ * precalculated results.
+ *
+ * Returns 0 on success
+ *        -1 on failure (or any non-zero return from func())
+ */
+int consensus_pileup(GapIO *io, tg_rec contig, int start, int end,
+		     int cons_flags,
+		     int (*func)(GapIO *io, tg_rec contig, int pos,
+				 consensus_t *cons,
+				 pileup_base_t *p, int depth,
+				 void *data),
+		     void *data) {
+    int ret = -1, pos, depth = 0;
+    consensus_t cons;
+    rangec_t *r;
+    pileup_base_t *head = NULL, *p, *next, *prev;
+    pool_alloc_t *pool;
+    contig_iterator *ci = contig_iter_new(io, contig, 0,
+					  CITER_FIRST | CITER_ISTART |
+					  CITER_SMALL_BS,
+					  start, end);
+
+    pool = pool_create(sizeof(pileup_base_t));
+    if (!pool)
+	goto fail;
+
+    if (!ci)
+	goto fail;
+
+    pos = start;
+    while ((r = contig_iter_next(io, ci))) {
+	int i, j;
+
+	if (pos == CITER_CSTART)
+	    pos = r->start;
+
+	/* Call func() for all pos between start and r->start */
+	for (; pos < r->start; pos++) {
+	    if (cons_flags)
+		calculate_consensus_pileup(cons_flags, head, &cons);
+
+	    if ((ret = func(io, contig, pos, &cons, head, depth, data)))
+		goto fail;
+
+	    /* Cull old entries as required */
+	    prev = NULL;
+	    for (p = head; p; p = next) {
+		p->base_index++;
+
+		next = p->next;
+		if (p->r.end <= pos) {
+		    depth--;
+
+		    if (p->comp)
+			free(p->s);
+		    else
+			cache_decr(io, p->s);
+
+		    if (prev)
+			prev->next = next;
+		    else
+			head = next;
+
+		    pool_free(pool, p);
+		} else {
+		    prev = p;
+		}
+	    }
+	}
+
+	/* Add new r */
+	depth++;
+	if (!(p = pool_alloc(pool)))
+	    goto fail;
+	p->next = head;
+	head = p;
+
+	p->r = *r;
+	p->s = (seq_t *)cache_search(io, GT_Seq, r->rec);
+	if (!p->s)
+	    goto fail;
+	if ((p->s->len < 0) ^ r->comp) {
+	    p->s = dup_seq(p->s);
+	    complement_seq_t(p->s);
+	    p->comp = 1;
+	} else {
+	    cache_incr(io, p->s);
+	    p->comp = 0;
+	}
+	p->base_index = 0;
+    }
+
+    /* Terminating case, draining queue only */
+    for (; head; pos++) {
+	int i, j;
+
+	if (cons_flags)
+	    calculate_consensus_pileup(cons_flags, head, &cons);
+
+	if ((ret = func(io, contig, pos, &cons, head, depth, data)))
+	    goto fail;
+
+	
+	/* Cull old entries as required */
+	prev = NULL;
+	for (p = head; p; p = next) {
+	    p->base_index++;
+
+	    next = p->next;
+	    if (p->r.end <= pos) {
+		depth--;
+
+		if (p->comp)
+		    free(p->s);
+		else
+		    cache_decr(io, p->s);
+
+		if (prev)
+		    prev->next = next;
+		else
+		    head = next;
+
+		pool_free(pool, p);
+	    } else {
+		prev = p;
+	    }
+	}
+    }
+
+    ret = 0;
+ fail:
+    if (ci)
+	contig_iter_del(ci);
+
+    if (pool)
+	pool_destroy(pool);
+
+    return ret;
+}

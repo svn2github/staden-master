@@ -121,4 +121,32 @@ int consensus_unpadded_pos(GapIO *io, tg_rec contig, int pos, int *upos);
  */
 int consensus_padded_pos(GapIO *io, tg_rec contig, int upos, int *pos);
 
+/*
+ * Calls func(io, pos cons, r, nr, data) for every base in a contig between
+ * start and end inclusively. Cons will hold the consensus_t call and r/nr
+ * hold the pileup of reads at that point. Data is client specific data and
+ * is passed through verbatim.
+ *
+ * If func() returns a non zero exit status then this is considered a failure.
+ *
+ * Returns 0 on success
+ *        -1 on failure (or any non-zero return from func())
+ */
+typedef struct pileup_base {
+    struct pileup_base *next;
+
+    rangec_t r;
+    seq_t *s;
+    int comp;       // whether s has been duplicated and complemented
+    int base_index; // offset into s->seq
+} pileup_base_t;
+
+int consensus_pileup(GapIO *io, tg_rec contig, int start, int end,
+		     int cons_flags,
+		     int (*func)(GapIO *io, tg_rec contig, int pos,
+				 consensus_t *cons,
+				 pileup_base_t *p, int depth,
+				 void *data),
+		     void *data);
+
 #endif /* _CONSENSUS_H_ */

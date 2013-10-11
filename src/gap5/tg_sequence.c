@@ -1040,23 +1040,6 @@ int sequence_orient_pos(GapIO *io, seq_t **s, int pos, int *comp) {
     return pos;
 }
 
-#define MAX4(ip)         \
-((ip)[0] > (ip)[1]       \
- ? ((ip)[0] > (ip)[2]    \
-    ? ((ip)[0] > (ip)[3] \
-       ? (ip)[0]         \
-       : (ip)[3])        \
-    : ((ip)[2] > (ip)[3] \
-       ? (ip)[2]         \
-       : (ip)[3]))       \
- : ((ip)[1] > (ip)[2]    \
-    ? ((ip)[1] > (ip)[3] \
-       ? (ip)[1]         \
-       : (ip)[3])        \
-    : ((ip)[2] > (ip)[3] \
-       ? (ip)[2]         \
-       : (ip)[3])))
-
 
 /*
  * Operates on position 'pos' in the displayed orientation rather than the
