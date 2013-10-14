@@ -397,12 +397,11 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 	}
 	    
 	/* now for some colour settings */
-	mq *= 3;
 	if (mq < 0) mq = 0;
-	if (mq > 255) mq = 255;
+	if (mq > 255/3) mq = 255/3;
 	    
 	tl->mq = mq;
-	col = (int)(mq / 8);
+	col = (int)(mq*3 / 8);
 	    
 	if (single) col = single_col;
 	if (span && span_col) 	col = span_col[(r->pair_contig * 15551) % 10];

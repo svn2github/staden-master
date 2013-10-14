@@ -1274,7 +1274,8 @@ proc track_settings {w} {
     set ${w}(YLog) 1
     set ${w}(Simple) 0
     set ${w}(Y) "Template Size"
-    set ${w}(Colour) "Combined mapping quality"
+    #set ${w}(Colour) "Combined mapping quality"
+    set ${w}(Colour) "Minimum mapping quality"
     set ${w}(PlotDepth) 0
     set ${w}(SeparateStrands) 0
     set ${w}(MinQual) 0
@@ -1927,7 +1928,7 @@ proc seq_seqs_filter {w t} {
     label $f2.min_label -text "Min. Qual"
     scale $f2.min_qual \
 	-from 0 \
-	-to 255 \
+	-to 80 \
 	-orient horiz \
 	-variable ${w}(_MinQual) \
 	-command "seq_seqs_filter_update $w $t $f min"
@@ -1935,7 +1936,7 @@ proc seq_seqs_filter {w t} {
     label $f2.max_label -text "Max. Qual"
     scale $f2.max_qual \
 	-from 0 \
-	-to 255 \
+	-to 80 \
 	-orient horiz \
 	-variable ${w}(_MaxQual) \
 	-command "seq_seqs_filter_update $w $t $f max"
