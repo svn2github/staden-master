@@ -2464,9 +2464,16 @@ tcl_align_seqs(ClientData clientData, Tcl_Interp *interp,
 typedef struct {
     GapIO *io;
     char *inlist;
+
+    /* Contig Extend */
+    int extend;
     int min_depth;
     int match_score;
     int mismatch_score;
+
+    /* Contig Trim */
+    int trim;
+    int trim_depth;
 } ce_args;
 int
 tcl_contig_extend(ClientData clientData,
@@ -2484,9 +2491,16 @@ tcl_contig_extend(ClientData clientData,
     cli_args a[] = {
 	{"-io",	           ARG_IO,  1,NULL, offsetof(ce_args, io)},
 	{"-contigs",       ARG_STR, 1,NULL, offsetof(ce_args, inlist)},
+
+	/* Extend */
+	{"-extend",        ARG_INT, 1, "1", offsetof(ce_args, extend)},
 	{"-min_depth",     ARG_INT, 1,"10", offsetof(ce_args, min_depth)},
 	{"-match_score",   ARG_INT, 1,"1",  offsetof(ce_args, match_score)},
 	{"-mismatch_score",ARG_INT, 1,"-3", offsetof(ce_args, mismatch_score)},
+
+	/* Trim */
+	{"-trim",          ARG_INT, 1, "1", offsetof(ce_args, trim)},
+	{"-trim_depth",    ARG_INT, 1,"3",  offsetof(ce_args, trim_depth)},
 	{NULL,	           0,	    0,NULL, 0}
     };
 
@@ -2521,8 +2535,10 @@ tcl_contig_extend(ClientData clientData,
     ncontigs = j;
 
     /* Do it */
-    err = contig_extend(args.io, contigs, ncontigs, args.min_depth,
-			args.match_score, args.mismatch_score);
+    err = contig_trim_and_extend(args.io, contigs, ncontigs,
+				 args.trim, args.extend,
+				 args.trim_depth, args.min_depth,
+				 args.match_score, args.mismatch_score);
 
     xfree(contigs);
 

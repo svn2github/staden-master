@@ -23,6 +23,13 @@
  * Also we'd extend reads 1,2,3,5,6,7 but not read4 due to an indel.
  * Note read3 has a different clip point than the others, but that is fine
  * as it aligns still.
+ *
+ * Conversely, sometimes due to a false join by an assembler followed by
+ * mapping a lot of sequences get clipped in the middle of contigs. We
+ * can detect and break these, and extend the clipped data. However we also
+ * need an automatic trimmer first to cut off any outlier reads which extend
+ * beyond the new contig ends, so that the auto-extended can then extend the
+ * true sequence instead.
  */
 
 #include <string.h>
@@ -198,7 +205,7 @@ static int contig_extend_single(GapIO *io, tg_rec crec, int dir, int min_depth,
 	       score);
 	*/
     }
-    /* printf("Best score is %f at %d\n", best_score, best_pos); */
+    //printf("Best score is %f at %d\n", best_score, best_pos);
 
     /* Extend */
     nseq = 0;
@@ -230,7 +237,7 @@ static int contig_extend_single(GapIO *io, tg_rec crec, int dir, int min_depth,
 
 		//printf(">%s\t", s->name);
 
-		r_pos = 0;
+		r_pos = s->right;
 		score = 0;
 		//for (k = s->right, j = 0; j < best_pos && k < len; j++, k++) {
 		for (k = end - r[i].start + 1, j = 0; j < best_pos && k < len; j++, k++) {
@@ -259,7 +266,7 @@ static int contig_extend_single(GapIO *io, tg_rec crec, int dir, int min_depth,
 
 		//printf("<%s\t", s->name);
 
-		r_pos = 0;
+		r_pos = s->left-2;
 		score = 0;
 		//for (k = s->left-2, j = 0; j < best_pos && k >= 0; j++, k--) {
 		for (k = r[i].end - end - 1, j = 0; j < best_pos && k >= 0; j++, k--) {
@@ -328,3 +335,152 @@ int contig_extend(GapIO *io, tg_rec *contig, int ncontigs, int min_depth,
     return err ? -1 : 0;
 }
 
+/*-----------------------------------------------------------------------------
+ * Contig trimmer.
+ *
+ * This is the opposite to Contig Extend, but works in harmony with it.
+ *
+ * If we have faked scaffold consensus assembled into a project then breaking
+ * a contig in two can leave a long overhanging fake read that makes FIJ and
+ * auto_join fail.  Similarly if an incorrect join was made by an assembler
+ * off the back of a single chimeric read.
+ *
+ * In both cases the junction of the incorrect join, given it was produced
+ * by an assembler consensus and then remapped back to, will probably
+ * have a lot of clipped sequences for the same reason that existing
+ * contig ends do. Hence: break, trim, extend.
+ */
+
+
+/* Callback from consensus_pileup */
+static int trim_func(GapIO *io, tg_rec contig, int pos,
+		     consensus_t *cons,
+		     pileup_base_t *p, int depth, void *data) {
+    int used_depth = 0;
+    int *depth_pos = (int *)data;
+    pileup_base_t *porig;
+
+    /* Compute depth */
+    for (porig = p; p; p = p->next) {
+	if (p->base_index >= p->s->right)
+	    break;
+	else if (p->base_index >= p->s->left-1)
+	    used_depth++;
+
+	if (p->base_index == ABS(p->s->len)-1)
+	    break;
+    }
+
+    depth_pos[1] = pos;
+
+    /* Trim if sufficient depth or end of sequence */
+    if (p || used_depth >= depth_pos[0]) {
+	for (p = porig; p; p = p->next) {
+	    if (p->comp) {
+		seq_t *s = cache_search(io, GT_Seq, p->r.rec);
+		cache_rw(io, s);
+		if (ABS(s->len) - s->right < p->base_index) {
+		    s->right = ABS(s->len) - p->base_index;
+		    if (s->right < s->left)
+			s->right = s->left;
+		}
+		sequence_range_length(io, &s);
+	    } else {
+		cache_rw(io, p->s);
+		if (p->s->left < p->base_index+1) {
+		    p->s->left = p->base_index+1;
+		    if (p->s->left > p->s->right)
+			p->s->left = p->s->right;
+		}
+		sequence_range_length(io, &p->s);
+	    }
+	}
+	
+	/* Aborts pileup calling function */
+	return 1;
+    }
+
+    return 0;
+}
+
+static int contig_trim_single(GapIO *io, tg_rec crec, int dir, int min_depth) {
+    contig_t *c;
+    int depth_pos[2] = {min_depth, 0};
+
+    if (!(c = cache_search(io, GT_Contig, crec)))
+	return -1;
+    if (c->nseqs < min_depth)
+	return 0;
+
+    consensus_pileup(io, crec, CITER_CSTART, CITER_CEND,
+		     0/*CONS_ALL*/, trim_func, (void *)depth_pos);
+    vmessage("  Trimmed %s end to pos %d (from end)\n",
+	     dir ? "right" : "left", depth_pos[1]);
+    
+    return 0;
+}
+
+/*
+ * The main contig_trim interface.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int contig_trim(GapIO *io, tg_rec *contig, int ncontigs, int min_depth) {
+    int i, err = 0, skip_clip = 0;
+
+    // Hack to avoid clipping consensus annotations now (we'll do later)
+    if (ncontigs < 0) {
+	ncontigs *= -1;
+	skip_clip = 1;
+    }
+
+    for (i = 0; i < ncontigs; i++) {
+	/* Left end */
+	vmessage("Contig =%"PRIrec" (%d/%d)\n", contig[i], i+1, ncontigs);
+	err |= contig_trim_single(io, contig[i], 0, min_depth);
+	UpdateTextOutput();
+	complement_contig(io, contig[i]);
+
+	/* Right end */
+	err |= contig_trim_single(io, contig[i], 1, min_depth);
+	UpdateTextOutput();
+	complement_contig(io, contig[i]);
+
+	if (!skip_clip) {
+	    contig_visible_start(io, contig[i], CITER_CSTART);
+	    contig_visible_end(io, contig[i], CITER_CEND);
+	}
+    }
+
+    return err ? -1 : 0;
+}
+
+/*-----------------------------------------------------------------------------
+ * Joint trim + extend interface
+ */
+int contig_trim_and_extend(GapIO *io, tg_rec *contig, int ncontigs,
+			   int do_trim, int do_extend,
+			   int trim_depth, int ext_depth,
+			   int ext_match_score, int ext_mismatch_score) {
+    int i, err = 0;
+
+    for (i = 0; i < ncontigs; i++) {
+	vmessage("\n");
+
+	if (do_trim)
+	    err |= contig_trim(io, &contig[i], -1, trim_depth);
+
+	if (do_extend)
+	    err |= contig_extend(io, &contig[i], 1, ext_depth,
+				 ext_match_score, ext_mismatch_score);
+
+	if (do_trim) {
+	    contig_visible_start(io, contig[i], CITER_CSTART);
+	    contig_visible_end(io, contig[i], CITER_CEND);
+	}
+	vmessage("\n");
+    }
+
+    return err ? -1 : 0;
+}
