@@ -62,7 +62,7 @@ static int contig_extend_single(GapIO *io, tg_rec crec, int dir, int min_depth,
     int nr, i;
     contig_t *c;
     char cons[CSZ], new_cons[ESZ];
-    int freqs[ESZ][4], depth[ESZ];
+    int freqs[ESZ][5], depth[ESZ];
     double score, best_score;
     int best_pos, nseq;
 
@@ -70,7 +70,7 @@ static int contig_extend_single(GapIO *io, tg_rec crec, int dir, int min_depth,
 	     crec, dir ? "left" : "right");
 
     for (i = 0; i < ESZ; i++) {
-	freqs[i][0] = freqs[i][1] = freqs[i][2] = freqs[i][3] = 0;
+	freqs[i][0] = freqs[i][1] = freqs[i][2] = freqs[i][3] =freqs[i][4] = 0;
 	depth[i] = 0;
     }
 
@@ -160,37 +160,41 @@ static int contig_extend_single(GapIO *io, tg_rec crec, int dir, int min_depth,
     best_pos = 0;
     
     for (i = 0; i < ESZ; i++) {
-	int call, best = 0, j;
+	int call = 4, best = 0, j;
 	double dd;
 
 	if (depth[i] < min_depth)
 	    break;
 
-	for (j = 0; j < 4; j++) {
+	for (j = 0; j < 5; j++) {
 	    if (best < freqs[i][j]) {
 		best = freqs[i][j];
 		call = j;
 	    }
 	}
-	new_cons[i] = "ACGT"[call];
+	new_cons[i] = "ACGT*"[call];
 
 	dd = (double)depth[i];
 	switch (call) {
 	case 0:
 	    score +=  freqs[i][0] / dd;
-	    score -= (freqs[i][1] + freqs[i][2] + freqs[i][3]) / dd;
+	    score -= (freqs[i][1]+freqs[i][2]+freqs[i][3]+freqs[i][4]) / dd;
 	    break;
 	case 1:
 	    score +=  freqs[i][1] / dd;
-	    score -= (freqs[i][0] + freqs[i][2] + freqs[i][3]) / dd;
+	    score -= (freqs[i][0]+freqs[i][2]+freqs[i][3]+freqs[i][4]) / dd;
 	    break;
 	case 2:
 	    score +=  freqs[i][2] / dd;
-	    score -= (freqs[i][0] + freqs[i][1] + freqs[i][3]) / dd;
+	    score -= (freqs[i][0]+freqs[i][1]+freqs[i][3]+freqs[i][4]) / dd;
 	    break;
 	case 3:
 	    score +=  freqs[i][3] / dd;
-	    score -= (freqs[i][0] + freqs[i][1] + freqs[i][2]) / dd;
+	    score -= (freqs[i][0]+freqs[i][1]+freqs[i][2]+freqs[i][4]) / dd;
+	    break;
+	case 4:
+	    score +=  freqs[i][4] / dd;
+	    score -= (freqs[i][0]+freqs[i][1]+freqs[i][2]+freqs[i][3]) / dd;
 	    break;
 	}
 
