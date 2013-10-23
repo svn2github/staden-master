@@ -9,21 +9,37 @@ typedef struct {
     FILE *fp;
 } bttmp_t;
 
+
+typedef struct {
+    string_alloc_t *data_pool;
+    char **data;
+    long index;
+} bttmp_data_t;
+
 typedef struct {
     bttmp_t *file;
     string_alloc_t *data_pool;
     char **data;
-    int index;
-    int size;
+    long index;
+    long size;
 } bttmp_queue_t;
 
 typedef struct {
     bttmp_queue_t *que;
-    int que_size;
-    int working_size;
-    int write_size;
-    int count;
+    long que_size;
+    long working_size;
+    long index;
 } bttmp_sort_t;
+
+
+typedef struct {
+    bttmp_t **files;
+    long file_no;
+    long file_grow;
+    long write_size;
+    bttmp_data_t data;
+} bttmp_store_t;
+
 
 typedef struct {
     int append;
@@ -34,7 +50,7 @@ typedef struct {
     int pair_reads;
     int min_bin_size;
     int fast_mode;
-    bttmp_sort_t *tmp;
+    bttmp_store_t *tmp;
     int data_type;
     int comp_mode;
     int repad;

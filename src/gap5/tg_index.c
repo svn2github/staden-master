@@ -325,7 +325,7 @@ int main(int argc, char **argv) {
 	int fmt = a.fmt;
 
 	/* Open a temporary file for B+Tree indexing if needed */
-	a.tmp = a.no_tree ? NULL : bttmp_sort_initialise();
+	a.tmp = a.no_tree ? NULL : bttmp_store_initialise(50000);
 
 	/* Auto detect file type if appropriate */
 	if (fmt == 'a')
@@ -402,8 +402,8 @@ int main(int argc, char **argv) {
 	/* Add to our sequence name B+Tree */
 	if (a.tmp) {
 	    // save the last queue
-	    bttmp_build_index(io, a.tmp);
-	    bttmp_sort_delete(a.tmp);
+	    bttmp_build_index(io, a.tmp, 1000, 10);
+	    bttmp_store_delete(a.tmp);
 	}
     }
 

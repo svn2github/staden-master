@@ -146,6 +146,18 @@ void bttmp_file_close(bttmp_t *tmp) {
     }
 }
 
+static void bttmp_initialise_data(bttmp_data_t *d, long sz) {
+    d->data_pool = string_pool_create(1024 * 1024);
+    d->data  = malloc(sz * sizeof(char *));
+    d->index = 0;
+}
+
+
+static void bttmp_delete_data(bttmp_data_t *d) {
+    string_pool_destroy(d->data_pool);
+    free(d->data);
+}    
+
 
 /* Sort the temporary file, and rewind to start */
 void bttmp_file_sort(bttmp_t *tmp) {
@@ -194,61 +206,50 @@ char *bttmp_file_get(bttmp_t *tmp, tg_rec *rec) {
 }
 
 
-bttmp_queue_t *bttmp_add_queue(bttmp_sort_t *bs) {
-    bttmp_queue_t *tmp;
-    int cur = bs->que_size;
+bttmp_queue_t *bttmp_add_queue(bttmp_sort_t *bs, bttmp_t *f) {
+    bs->que[bs->index].file = f;
+    bs->que[bs->index].data_pool = NULL;
+    bs->que[bs->index].data  = malloc(bs->working_size * sizeof(char *));
+    bs->que[bs->index].index = 0;
+    bs->que[bs->index].size  = bs->working_size;
+    
+    bs->que[bs->index].file->fp = fopen(bs->que[bs->index].file->name, "r");
 
-    bs->que_size++;
-    
-    tmp = realloc(bs->que, sizeof(bttmp_queue_t) * bs->que_size);
-    
-    if (tmp) {
-    	bs->que = tmp;
-    } else {
-    	return NULL;
-    }
-    
-    bs->que[cur].file = NULL;
-    bs->que[cur].data_pool = string_pool_create(1024 * 1024);
-    bs->que[cur].data  = malloc(bs->write_size * sizeof(char *));
-    bs->que[cur].index = 0;
-    bs->que[cur].size  = 0;
-    
-    if (!bs->que[cur].data_pool || !bs->que[cur].data) {
-    	fprintf(stderr, "Error: Unable to allocate memory for bttmp_queue_t.\n");
-	
-	if (bs->que[cur].data_pool) {
-	    string_pool_destroy(bs->que[cur].data_pool);
-	    bs->que[cur].data_pool = NULL;
-	} else if (bs->que[cur].data) {
-	    free(bs->que[cur].data);
-	    bs->que[cur].data = NULL;
-	}
-	
-	return NULL;
-    }
-    
-    return &bs->que[cur];
+    return &bs->que[bs->index++];
 }
+
 
 static int cmpstringp(const void *p1, const void *p2) {
     return strcmp(* (char * const *) p1, * (char * const *) p2);
 }
 
 
-void bttmp_save_queue(bttmp_queue_t *que) {
+static void bttmp_save_file(bttmp_store_t *s) {
     int i;
     
-    qsort(que->data, que->size, sizeof(que->data[0]), cmpstringp);
+    qsort(s->data.data, s->data.index, sizeof(s->data.data[0]), cmpstringp);
     
-    que->file = bttmp_file_open();
+    s->files[s->file_no] = bttmp_file_open();
     
-    for (i = 0; i < que->size; i++) {
-    	fprintf(que->file->fp, "%s\n", que->data[i]);
+    for (i = 0; i < s->data.index; i++) {
+    	fprintf(s->files[s->file_no]->fp, "%s\n", s->data.data[i]);
     }
     
-    string_pool_destroy(que->data_pool);
-    free(que->data);
+    string_pool_destroy(s->data.data_pool);
+    free(s->data.data);
+    fclose(s->files[s->file_no]->fp);
+}
+
+
+static void bttmp_add_file(bttmp_store_t *s) {
+    s->file_no++;
+    
+    if (s->file_no == s->file_grow) {
+    	s->file_grow += s->file_grow;
+	s->files = realloc(s->files, s->file_grow * sizeof(bttmp_t *));
+    }
+    
+    bttmp_initialise_data(&s->data, s->write_size);
 }
 
 
@@ -256,40 +257,54 @@ void bttmp_save_queue(bttmp_queue_t *que) {
  * Stores a name and record in a temporary file suitable for sorting and
  * adding to the name index at a later stage.
  */
-static void bttmp_file_store(bttmp_sort_t *tmp,  size_t name_len, char *name, tg_rec rec) {
+static void bttmp_file_store(bttmp_store_t *tmp,  size_t name_len, char *name, tg_rec rec) {
     char entry[1024];
-    int cur = tmp->que_size - 1;
     
     sprintf(entry, "%.*s %"PRIrec"", (int)name_len, name, rec);
     
-    tmp->que[cur].data[tmp->que[cur].size] = string_dup(tmp->que[cur].data_pool, entry);
-    tmp->que[cur].size++;
+    tmp->data.data[tmp->data.index++] = string_dup(tmp->data.data_pool, entry);
     
-    if (tmp->que[cur].size == tmp->write_size) {
-    	bttmp_save_queue(&tmp->que[cur]);
-	bttmp_add_queue(tmp);
+    if (tmp->data.index == tmp->write_size) {
+    	bttmp_save_file(tmp);
+	bttmp_add_file(tmp);
     }
 }
-    
+
 
 // must find a better name for it than this
-bttmp_sort_t *bttmp_sort_initialise(void) {
-    bttmp_sort_t *tmp = malloc(sizeof(bttmp_sort_t));
+bttmp_store_t *bttmp_store_initialise(long write_sz) {
+    bttmp_store_t *tmp = malloc(sizeof(bttmp_store_t));
     
     if (tmp == NULL) {
-    	fprintf(stderr, "Error: unable to malloc bttmp_sort_t\n");
+    	fprintf(stderr, "Error: unable to malloc bttmp_store_t\n");
 	return NULL;
     }
     
-    tmp->que = NULL;
-    tmp->que_size = 0;
-    tmp->working_size = 1000;
-    tmp->write_size = 50000;
-    tmp->count = 0;
-    
-    bttmp_add_queue(tmp);
-    
+    tmp->write_size = write_sz;
+    tmp->file_no = 0;
+    tmp->file_grow = 1000;
+
+    bttmp_initialise_data(&tmp->data, write_sz);
+    tmp->files = malloc(tmp->file_grow * sizeof(bttmp_t *));
+     
     return tmp;
+}
+
+
+void bttmp_store_delete(bttmp_store_t *s) {
+    free(s->files);
+    free(s);
+}   
+
+
+bttmp_sort_t *bttmp_sort_initialise(long group_size, long work_size) {
+    bttmp_sort_t *sort = malloc(sizeof(bttmp_sort_t));
+    sort->que          = calloc(group_size, sizeof(bttmp_queue_t));
+    sort->que_size     = group_size;
+    sort->working_size = work_size;
+    sort->index        = 0;
+    
+    return sort;
 }
 
 
@@ -315,34 +330,9 @@ static int bttmp_load_data(bttmp_queue_t *bq) {
     bq->size = i;
     bq->index = 0;
     
-    if (line_in) free(line_in);
+    free(line_in);
     
     return bq->size;
-}
-
-
-static int bttmp_queues_initialise(bttmp_sort_t *bs) {
-    int i;
-    
-    for (i = 0; i < bs->que_size; i++) {
-    	rewind(bs->que[i].file->fp);
-	
-	if (NULL == (bs->que[i].data = malloc(sizeof(char *) * bs->working_size))) {
-	    fprintf(stderr, "Error: out of memory while allocating data in bttmp queue.\n");
-	    return -1;
-	}
-	
-	bs->que[i].data_pool = NULL;
-	bs->que[i].index = 0;
-	bs->que[i].size = bs->working_size;
-	
-	if (0 == bttmp_load_data(&bs->que[i])) {
-	    fprintf(stderr, "Error: initial data load failed on bttmp queue.\n");
-	    return -1;
-	}
-    }
-    
-    return 0;
 }
 
 
@@ -355,23 +345,22 @@ static void bttmp_get_next_entry(bttmp_queue_t *que) {
 }
 
 
-int bttmp_build_index(GapIO *io, bttmp_sort_t *bs) {
-    int num_found = 0;
+static bttmp_t *bttmp_merge_sort(bttmp_sort_t *sort) {
+    int i;
     int still_looking = 1;
+    bttmp_t *output = bttmp_file_open();
     
-    puts("Sorting sequence name index");
-    bttmp_save_queue(&bs->que[bs->que_size - 1]);
-    bttmp_queues_initialise(bs);
+    for (i = 0; i < sort->index; i++) {
+    	bttmp_load_data(&sort->que[i]);
+    }
     
-    puts("Building index: one dot per 10k reads");
     while (still_looking) {
-    	int i;
-	char *compare = NULL;
-	int file = 0;
+    	char *compare = NULL;
+	int file;
 	int done = 0;
 	
-	for (i = 0; i < bs->que_size; i++) {
-	    bttmp_queue_t *que = &bs->que[i];
+	for (i = 0; i < sort->index; i++) {
+	    bttmp_queue_t *que = &sort->que[i];
 	    
 	    if (que->size) {
 	    	done++;
@@ -380,9 +369,7 @@ int bttmp_build_index(GapIO *io, bttmp_sort_t *bs) {
 		    compare = que->data[que->index];
 		    file = i;
 		} else {
-		    int cmp = strcmp(compare, que->data[que->index]);
-		    
-		    if (cmp > 0) {
+		    if (strcmp(compare, que->data[que->index]) > 0) {
 		    	compare = que->data[que->index];
 			file = i;
 		    }
@@ -391,40 +378,72 @@ int bttmp_build_index(GapIO *io, bttmp_sort_t *bs) {
 	}
 	
 	if (done) {
-	    char name[1024];
-	    tg_rec rec;
-	    int64_t recno;
-	    
-	    sscanf(compare, "%s %"PRId64"\n", name, &recno);
-    	    rec = recno;
-	    
-	    sequence_index_update(io, name, strlen(name), rec);
-	    bttmp_get_next_entry(&bs->que[file]);
-	    
-	    num_found++;
-	    
-	    if (!(num_found % 10000)) {
-	    	putchar('.'); fflush(stdout);
-		cache_flush(io);
-	    }
+	    fprintf(output->fp, "%s", compare);
+	    bttmp_get_next_entry(&sort->que[file]);
 	} else {
 	    still_looking = 0;
-	    putchar('\n');
 	}
     }
     
-    return num_found;
+    rewind(output->fp);
+    
+    return output;
+}
+  
+  
+static void bttmp_reset_sort(bttmp_sort_t *s) {
+    int i;
+    
+    for (i = 0; i < s->index; i++) {
+	bttmp_file_close(s->que[i].file);
+	s->que[i].index = 0;
+	s->que[i].size  = s->working_size;
+	free(s->que[i].data);
+	s->que[i].data = NULL;
+    }
+    
+    s->index = 0;
 }
 
+static long bttmp_write_index(GapIO *io, FILE *fp) {
+    char *line_in  = NULL;
+    long line_size = 0;
+    long num_found = 0;
+    
+    puts("Building index: one dot per 10k reads");
 
-void bttmp_sort_delete(bttmp_sort_t *bs) {
+    while (0 < tg_get_line(&line_in, &line_size, fp)) {
+	char name[1024];
+	tg_rec rec;
+	int64_t recno;
+
+	sscanf(line_in, "%s %"PRId64"\n", name, &recno);
+	rec = recno;
+
+	sequence_index_update(io, name, strlen(name), rec);
+
+	num_found++;
+
+	if (!(num_found % 10000)) {
+	    putchar('.'); fflush(stdout);
+	    cache_flush(io);
+	}
+    }
+
+    cache_flush(io);
+    free(line_in);
+    
+    printf("\nIndexed %ld reads\n", num_found);
+    
+    return num_found;
+}
+    
+
+static void bttmp_sort_delete(bttmp_sort_t *bs) {
     int i;
     
     for (i = 0; i < bs->que_size; i++) {
-    	if (bs->que[i].file) bttmp_file_close(bs->que[i].file);
-	
 	if (bs->que[i].data_pool) string_pool_destroy(bs->que[i].data_pool);
-
 	if (bs->que[i].data) free(bs->que[i].data);
     }
     
@@ -432,7 +451,55 @@ void bttmp_sort_delete(bttmp_sort_t *bs) {
     
     free(bs);
 }
-  
+   
+
+int bttmp_build_index(GapIO *io, bttmp_store_t *bs, long work_size, long group_size) {
+    int round = 0;
+    bttmp_sort_t *sort = bttmp_sort_initialise(group_size, work_size);
+    
+    bttmp_save_file(bs); // save the last unfinished file
+    bs->file_no++;
+    
+    printf("Sorting read names...\n");
+    
+    while (bs->file_no > 1) {
+    	int i;
+	long new_file_ind = 0;
+	long group = 0;
+	bttmp_t **new_files = malloc(((bs->file_no / group_size) + 1) * sizeof(bttmp_t *));
+	
+	for (i = 0; i < bs->file_no; i++) {
+	    bttmp_add_queue(sort, bs->files[i]);
+	    group++;
+	    
+	    if (group == group_size) {
+	    	new_files[new_file_ind++] = bttmp_merge_sort(sort);
+		bttmp_reset_sort(sort);
+		group = 0;
+	    }
+	}
+	
+	if (group) { // incomplete group to sort
+	    new_files[new_file_ind++] = bttmp_merge_sort(sort);
+    	    bttmp_reset_sort(sort);
+    	}
+	
+	free(bs->files);
+	bs->files = new_files;
+	bs->file_no = new_file_ind;
+	
+	round++;
+	printf("...sort round %d done\n", round);
+    }
+    
+    printf("Sorting done.\n");
+        
+    // should be left with one file
+    bttmp_write_index(io, bs->files[0]->fp);
+    bttmp_file_close(bs->files[0]);
+    bttmp_sort_delete(sort);
+}
+    
 
 #if 0
 /* debugging functions */

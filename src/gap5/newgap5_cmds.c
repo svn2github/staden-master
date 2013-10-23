@@ -1959,7 +1959,7 @@ tcl_import_reads(ClientData clientData,
     /* Initialise io */
     args.io->iface->setopt(args.io->dbh, OPT_COMP_MODE, args.a.comp_mode);
     if (!args.a.no_tree) {
-	args.a.tmp = bttmp_sort_initialise();
+	args.a.tmp = bttmp_store_initialise(50000);
 	if (!args.a.tmp) {
 	    fprintf(stderr, "Failed to open temporary file\n");
 	    return TCL_ERROR;
@@ -2041,8 +2041,8 @@ tcl_import_reads(ClientData clientData,
 						  DB_INDEX_NAME);
 	}
 
-	bttmp_build_index(args.io, args.a.tmp);
-	bttmp_sort_delete(args.a.tmp);
+	bttmp_build_index(args.io, args.a.tmp, 1000, 10);
+	bttmp_store_delete(args.a.tmp);
     }
 
     cache_flush(args.io);

@@ -1946,7 +1946,6 @@ static int sam_check_unmapped(void *cd, scram_fd *fp, pileup_t *p) {
     
 
     if ((++bio->total_count & 0xffff) == 0 || bio->bases > 5000000) {
-	printf("\n%d", bio->bases);
 	bio->bases = 0;
 	putchar('.');
 	fflush(stdout);

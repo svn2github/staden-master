@@ -40,25 +40,9 @@ typedef struct {
 } tg_pair_t;
     
 
-bttmp_t *bttmp_file_open(void);
-
-void bttmp_file_close(bttmp_t *tmp);
-
-// void bttmp_file_store(bttmp_t *tmp,  size_t name_len, char *name, tg_rec rec);
-
-void bttmp_file_sort(bttmp_t *tmp);
-
-char *bttmp_file_get(bttmp_t *tmp, tg_rec *rec);
-
-int bttmp_build_index(GapIO *io, bttmp_sort_t *bs);
-
-bttmp_sort_t *bttmp_sort_initialise(void);
-
-int bttmp_build_index(GapIO *io, bttmp_sort_t *bs);
-
-void bttmp_sort_delete(bttmp_sort_t *bs);
-
-void bttmp_save_queue(bttmp_queue_t *que);
+int bttmp_build_index(GapIO *io, bttmp_store_t *bs, long work_size, long group_size);
+bttmp_store_t *bttmp_store_initialise(long write_sz);
+void bttmp_store_delete(bttmp_store_t *bs);
 
 tg_rec save_sequence(GapIO *io, seq_t *seq, bin_index_t *bin, range_t *r_out);
 
