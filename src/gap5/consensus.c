@@ -1899,6 +1899,12 @@ int consensus_valid_range(GapIO *io, tg_rec contig, int *start, int *end) {
 		continue;
 	    }
 
+	    if (s->right < s->left) {
+		verror(ERR_WARN, "consensus_valid_range",
+		       "Seq #%"PRIrec" has no unclipped bases", r->rec);
+		continue;
+	    }
+
 	    if ((s->len < 0) ^ r->comp) {
 		left = r->start + ABS(s->len) - (s->right-1) - 1;
 	    } else {
@@ -1939,6 +1945,12 @@ int consensus_valid_range(GapIO *io, tg_rec contig, int *start, int *end) {
 	    if (!s) {
 		verror(ERR_WARN, "consensus_valid_range",
 		       "Failed to load seq #%"PRIrec, r->rec);
+		continue;
+	    }
+
+	    if (s->right < s->left) {
+		verror(ERR_WARN, "consensus_valid_range",
+		       "Seq #%"PRIrec" has no unclipped bases", r->rec);
 		continue;
 	    }
 

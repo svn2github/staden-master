@@ -315,6 +315,7 @@ typedef struct seq_block {
 #define SEQ_END_MASK     (1<<2)
 #define SEQ_END_FWD      (0<<2)
 #define SEQ_END_REV      (1<<2)
+#define SEQ_UNMAPPED     (1<<3) /* Sequence is not in a contig */
 
 #define SEQ_FORMAT_MAQ   0      /* 2-bit base, 6-bit conf */
 #define SEQ_FORMAT_CNF1  1      /* 8-bit base, 1 confidence values */

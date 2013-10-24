@@ -989,14 +989,52 @@ static int contig_cmd(ClientData clientData, Tcl_Interp *interp,
 
 	/* Get old range and pair data */
 	s = cache_search(tc->io, GT_Seq, rec);
+	if (NULL != s) s = cache_rw(tc->io, s);
+	if (NULL == s) return TCL_ERROR;
 	b = cache_search(tc->io, GT_Bin, s->bin);
+	if (NULL == b) return TCL_ERROR;
 	r = arrp(range_t, b->rng, s->bin_index);
 	assert(r->rec == s->rec);
 	assert(ABS(r->end - r->start) + 1 == ABS(s->len));
+	if (r->pair_rec) {
+	    b = cache_rw(tc->io, b);
+	    if (NULL == b) return TCL_ERROR;
+	}
 
 	vTcl_SetResult(interp, "%"PRIrec" %d", r->pair_rec, r->flags);
 
+	/* Break link with pair */
+	if (r->pair_rec) {
+	    seq_t *sp;
+	    bin_index_t *bp;
+	    range_t *rp;
+	    sp = cache_search(tc->io, GT_Seq, r->pair_rec);
+	    if (NULL == sp) return TCL_ERROR;
+	    cache_incr(tc->io, sp);
+	    bp = cache_search(tc->io, GT_Bin, sp->bin);
+	    if (NULL != bp) bp = cache_rw(tc->io, bp);
+	    if (NULL == bp) {
+		cache_decr(tc->io, sp);
+		return TCL_ERROR;
+	    }
+	    rp = arrp(range_t, bp->rng, sp->bin_index);
+	    assert(rp->rec == sp->rec);
+	    assert(rp->pair_rec == r->rec);
+	    rp->pair_rec = 0;
+	    rp->pair_timestamp = 0;
+	    r->pair_rec = 0;
+	    b->flags |= BIN_RANGE_UPDATED | BIN_BIN_UPDATED;
+	    bp->flags |= BIN_RANGE_UPDATED | BIN_BIN_UPDATED;
+	    cache_decr(tc->io, sp);
+	}
+
 	bin_remove_item(tc->io, &tc->contig, GT_Seq, rec);
+	if (bin_get_orient(tc->io, s->bin)) {
+	    s->len *= -1;
+	    s->flags ^= SEQ_COMPLEMENTED;
+	}
+	s->flags |= SEQ_UNMAPPED;
+	s->bin = -1;
 	break;
     }
 
@@ -1037,7 +1075,6 @@ static int contig_cmd(ClientData clientData, Tcl_Interp *interp,
 		r.pair_rec = 0;
 	}
 
-	
 	/* What about other flags? Can't guess */
 	if (objc >= 6) {
 	    Tcl_GetIntFromObj(interp, objv[5], &flags);
@@ -1053,8 +1090,9 @@ static int contig_cmd(ClientData clientData, Tcl_Interp *interp,
 	}
 
 	bin = bin_add_range(tc->io, &tc->contig, &r, &r_out, NULL, 0);
-	if (s->bin != bin->rec) {
-	    int old_comp = bin_get_orient(tc->io, s->bin);
+	if ((s->flags & SEQ_UNMAPPED) || s->bin != bin->rec) {
+	    int old_comp = ((s->flags & SEQ_UNMAPPED)
+			    ? bin_get_orient(tc->io, s->bin) : 0);
 	    int new_comp = bin_get_orient(tc->io, bin->rec);
 
 	    //printf("New seq bin (%d)%d->(%d)%d\n",
@@ -1073,7 +1111,29 @@ static int contig_cmd(ClientData clientData, Tcl_Interp *interp,
 		//s->left  = ABS(s->len) - (s->right-1);
 		//s->right = ABS(s->len) - (tmp-1);
 	    }
+	    s->flags &= ~SEQ_UNMAPPED;
 	}
+
+	/* Fix pair's pair_rec */
+	if (r.pair_rec) {
+	    seq_t *sp;
+	    bin_index_t *bp;
+	    range_t *rp;
+	    sp = cache_search(tc->io, GT_Seq, r.pair_rec);
+	    if (NULL == sp) return TCL_ERROR;
+	    cache_incr(tc->io, sp);
+	    bp = cache_search(tc->io, GT_Bin, sp->bin);
+	    if (NULL != bp) bp = cache_rw(tc->io, bp);
+	    if (NULL == bp) { cache_decr(tc->io, sp); return TCL_ERROR; }
+	    rp = arrp(range_t, bp->rng, sp->bin_index);
+	    assert(rp->rec == sp->rec);
+	    assert(rp->pair_rec == 0);
+	    rp->pair_rec = rec;
+	    rp->pair_timestamp = 0;
+	    bp->flags |= BIN_RANGE_UPDATED | BIN_BIN_UPDATED;
+	    cache_decr(tc->io, sp);
+	}
+
 	break;
     }
 
@@ -2378,7 +2438,12 @@ static int anno_ele_cmd(ClientData clientData, Tcl_Interp *interp,
 	    Tcl_GetIntFromObj(interp, objv[5], &end);
 	} else {
 	    otype = te->anno->obj_type;
-	    orec  = te->anno->obj_rec;
+	    if (otype == GT_Contig) {
+		if (NULL == (anno_get_range(te->io, te->anno->rec, &orec, 0)))
+		    return TCL_ERROR;
+	    } else {
+		orec  = te->anno->obj_rec;
+	    }
 	    Tcl_GetIntFromObj(interp, objv[2], &start);
 	    Tcl_GetIntFromObj(interp, objv[3], &end);
 	}

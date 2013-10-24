@@ -653,12 +653,17 @@ bin_index_t *bin_add_to_range(GapIO *io, contig_t **c, tg_rec brec, range_t *r,
 	    && contig_get_start(c) == 0) {
 	    contig_set_start(io, c, r->start);
 	    contig_set_end(io, c, r->end);
+	    (*c)->clipped_timestamp = 0;
 	}
-	if (contig_get_start(c) > r->start)
+	if (contig_get_start(c) > r->start) {
 	    contig_set_start(io, c, r->start);
+	    (*c)->clipped_timestamp = 0;
+	}
 
-	if (contig_get_end(c) < r->end)
+	if (contig_get_end(c) < r->end) {
 	    contig_set_end(io, c, r->end);
+	    (*c)->clipped_timestamp = 0;
+	}
     }
 
     if (brec) {
@@ -840,6 +845,8 @@ int bin_get_item_position(GapIO *io, int type, tg_rec rec,
     
     if (brec)
 	*brec = bnum;
+
+    if (!bnum) goto fail;
 
     /* Find the position of this anno within the bin */
     bin = (bin_index_t *)cache_search(io, GT_Bin, bnum);
@@ -1086,6 +1093,13 @@ int bin_remove_item_from_bin(GapIO *io, contig_t **c, bin_index_t **binp,
 			 
 		r2->pair_timestamp = 0;
 	    }
+
+	    /* 
+	     * Invalidate clipped start/end - FIXME: should check if this is
+	     * really necessary.
+	     */
+	    (*c)->clipped_timestamp = 0;
+	    
 	}
 
 	if ((r->flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISREFPOS) {

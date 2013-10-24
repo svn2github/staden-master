@@ -599,7 +599,7 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
     
     consensus_valid_range(io, (*c)->rec, &cstart, &cend);
 
-    if (pos-1 < cstart || pos > cend) {
+    if (pos < cstart || pos > cend) {
 	return 0;
     }
     
@@ -627,6 +627,32 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
 			      pos == n->start,
 			      contig_offset(io, c), contig_offset(io, c),
 			      nbases, 0, hash);
+
+    /*
+     * Inserting a base *may* grow the contig, but only if the
+     * right-most sequence has been inserted into (the right-most base
+     * may be a sequence that has cutoff data as 'pos').
+     *
+     * Similarly inserting a base *may* shrink the contig if the
+     * left-most read is in left-cutoff data at pos.
+     *
+     * For safety, we simply have to recompute start/end.
+     */
+
+    /* Best guess */
+    contig_set_end(io, c, contig_get_end(c)+nbases);
+
+    /* Verify */
+    consensus_unclipped_range(io, (*c)->rec, &cstart, &cend);
+    if (contig_get_start(c) != cstart)
+	contig_set_start(io, c, cstart);
+    if (contig_get_end(c) != cend)
+	contig_set_end(io, c, cend);
+
+    (*c)->timestamp = io_timestamp_incr(io);
+
+    /* Force update of clipped start/end */
+    (*c)->clipped_timestamp = 0;
 
     contig_visible_start(io, (*c)->rec, CITER_CSTART);
     contig_visible_end(io, (*c)->rec, CITER_CEND);
@@ -722,29 +748,6 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
 	    bin_add_range(io, c, &r, NULL, NULL, 0);
 	}
     }
-
-    /*
-     * Inserting a base *may* grow the contig, but only if the
-     * right-most sequence has been inserted into (the right-most base
-     * may be a sequence that has cutoff data as 'pos').
-     *
-     * Similarly inserting a base *may* shrink the contig if the
-     * left-most read is in left-cutoff data at pos.
-     *
-     * For safety, we simply have to recompute start/end.
-     */
-
-    /* Best guess */
-    contig_set_end(io, c, contig_get_end(c)+nbases);
-
-    /* Verify */
-    consensus_unclipped_range(io, (*c)->rec, &cstart, &cend);
-    if (contig_get_start(c) != cstart)
-	contig_set_start(io, c, cstart);
-    if (contig_get_end(c) != cend)
-	contig_set_end(io, c, cend);
-
-    (*c)->timestamp = io_timestamp_incr(io);
 
     if (hash)
 	HacheTableDestroy(hash, 0);
@@ -1283,7 +1286,7 @@ int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
 
     consensus_valid_range(io, (*c)->rec, &cstart, &cend);
 
-    if (pos-1 < cstart || pos > cend) {
+    if (pos < cstart || pos > cend) {
 	puts("Do nothing");
 	return 0;
     }

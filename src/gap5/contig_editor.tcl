@@ -168,7 +168,13 @@ proc io_undo_exec {w crec cmdu} {
 		    foreach {rec pos base val cut start} $seq break;
 		    set seq [$io get_sequence $rec]
 
-		    if {$pos >= abs([$seq get_length])} {
+		    # Find right clip point in contig orientation
+		    foreach {l r} [$seq get_clips] break;
+		    if {[$seq get_orient]} {
+			set r [expr { abs([$seq get_length]) - $l + 1 }]
+		    }
+		    # puts "pos = $pos; r = $r"
+		    if {$pos >= $r} {
 			# Add to end as "$contig insert_base" hasn't
 			$seq insert_base $pos $base $val
 
@@ -176,10 +182,12 @@ proc io_undo_exec {w crec cmdu} {
 			# orientation, so we may also need to fix this
 			set s_pos [$seq get_position]
 			if {$s_pos != $start} {
+			    # puts stderr "rec = $rec; s_pos = $s_pos; start = $start"
 			    $contig move_seq $rec [expr {$start-$s_pos}]
 			}
 		    } else {
 			set s_pos [$seq get_position]
+			# puts stderr "rec = $rec; start = $start; s_pos = $s_pos"
 			if {$start != $s_pos} {
 			    # $contig insert_base moved the sequence instead
 			    # of inserting to it, probably because we're
@@ -218,6 +226,7 @@ proc io_undo_exec {w crec cmdu} {
 			    incr r -1
 			}
 
+			# puts stderr "rec = $rec c = $c cut = $cut l = $l r = $r"
 			$seq set_clips $l $r
 		    }
 		    $seq delete
@@ -357,6 +366,12 @@ proc io_undo_exec {w crec cmdu} {
 		$tag delete
 	    }
 	    
+	    S_ADD {
+		set c [$io get_contig $op1]
+		$c add_sequence $op2 $op3 $op4 $op5
+		$c delete
+	    }
+
 	    default {
 		puts stderr "Unknown undo command: $cmd"
 	    }
@@ -1968,11 +1983,16 @@ proc editor_undo_info {top {clear 0}} {
 	    }
 
 	    C_INS {
+		set b {}
 		foreach seq $op3 {
 		    foreach {rec pos base val cut} $seq break;
 		    append b $base
 		}
-		lappend msg "Insert column into contig at position $op2, bases $b"
+		if { $b ne "" } {
+		    lappend msg "Insert column into contig at position $op2, bases $b"
+		} else {
+		    lappend msg "Insert empty column into contig at position $op2"
+		}
 	    }
 	    
 	    C_DEL {
@@ -2032,6 +2052,10 @@ proc editor_undo_info {top {clear 0}} {
 		    set obj "<consensus>"
 		}
 		lappend msg "Modify annotation \#$op1: type=$d(type), text=\"$d(anno)\", object=$obj, position=$d(start)..$d(end)"
+	    }
+
+	    S_ADD {
+		lappend msg "Add read #$op2"
 	    }
 	    
 	    default {
@@ -2294,6 +2318,336 @@ proc editor_handle_tag_insertion {io srec pos} {
     return $undo
 }
 
+proc tidy_contig_annos { io crec contig pos nvs nve undo_out } {
+    upvar $undo_out undo
+    foreach anno [$contig anno_in_range $pos $pos] {
+	if { [lindex $anno 8] != $crec } continue
+	foreach {astart aend arec} $anno break
+	
+	set a [$io get_anno_ele $arec]
+	set d(type)   [$a get_type]
+	foreach {d(start) d(end)} [$a get_position] break;
+	set d(otype)  [$a get_obj_type]
+	set d(orec)   [$a get_obj_rec]
+	set d(anno)   [$a get_comment]
+	set d(strand) [lsearch -exact {+ - . ?} [$a get_direction]]
+	set d(rec)    $arec
+
+	#puts stderr "astart = $astart; aend = $aend; nvs = $nvs; nve = $nve"
+
+	if { $astart >= $nvs && $aend <= $nve } continue
+	if { $astart < $nvs } { set astart $nvs; }
+	if { $aend   > $nve } { set aend   $nve; }
+	if { $aend < $astart } {
+	    $a remove
+	    lprepend undo [list T_NEW [array get d]]
+	} else {
+	    $a move $astart $aend
+	    $a delete
+	    lprepend undo [list T_MOD $arec [array get d]]
+	}
+    }
+}
+
+# Delete bases from a sequence.  Called from editor_delete_base
+# Returns 1 if the sequence was removed
+#         0 if the sequence was not removed, but a base was deleted
+#        -1 if nothing was deleted
+proc editor_delete_seq_base { w io type rec pos end dir powerup } {
+    set seq [$io get_sequence $rec]
+    set crec [$seq get_contig]
+    set slen [$seq get_length]
+    set cutoffs [lindex [$w configure -display_cutoffs] 4]
+    foreach {l0 r0} [$seq get_clips] break;
+    #puts stderr "seq = $seq; pos = $pos; slen = $slen ; l0 = $l0 ; r0 = $r0; cutoffs = $cutoffs"
+    if {
+	$pos < 0 || $pos >= abs($slen)
+	|| ( $cutoffs == 0 && ( $pos + 1 < $l0 || $pos >= $r0 ) )
+    } then {
+	$seq delete
+	return -1
+    }
+    
+    foreach {old_base old_conf} [$seq get_base $pos] break;
+    set cmp [expr {([$seq get_length] < 0) ^ [$seq get_orient]}] 
+    
+    #puts stderr "Seq length = [$seq get_length]"
+    
+    if {$old_base != "*" && !$powerup} {
+	$seq delete
+	return -1
+    }
+    
+    set undo ""
+
+    # See if we are deleting at the start or end of the contig.  If so,
+    # we may have to eat some consensus tags
+    set contig [$io get_contig $crec]
+    set vs [$contig get_visible_start]
+    set ve [$contig get_visible_end]
+    set endseq 0
+    if { [$seq get_position] <= $vs \
+	     || [$seq get_position] + [$seq get_length] >= $ve  } {
+	set endseq 1
+    }
+    $contig delete
+
+    if { $l0 == $r0 && $pos + 1 == $l0 } {
+	if { 1 } {
+	    # Last base, so we remove the sequence from the contig
+	    # The sequence itself will hang around in some sort of limbo,
+	    # but I can live with that.  At least it means undo is more likely
+	    # to work.
+	    $w cursor_up
+	    set cpos [$seq get_position]
+	    set contig [$io get_contig $crec]
+	    $seq delete
+	    if { [$contig nseqs] < 2 } {
+		# Don't allow removal of the last sequence
+		$contig delete
+		return -1
+	    }
+	    foreach { pair_rec flags } [$contig remove_sequence $rec] break;
+	    $contig invalidate_consensus $cpos $cpos
+	    lprepend undo [list S_ADD $crec $rec $cpos $pair_rec $flags]
+	    if { $endseq == 1 } {
+		set nvs [$contig get_visible_start]
+		set nve [$contig get_visible_end]
+		if {$nvs != $vs} {
+		    tidy_contig_annos $io $crec $contig $vs $nvs $nve undo
+		}
+		if {$nve != $ve} {
+		    tidy_contig_annos $io $crec $contig $ve $nvs $nve undo
+		}
+	    }
+	    store_undo $w $undo {}
+	    $contig delete
+	    return 1
+	} else {
+	    # Cowardly refuse to delete the last visible base
+	    $seq delete
+	    return -1
+	}
+    }
+
+    if {$cmp} {
+	$seq move_annos 1
+	lappend undo [list T_MOVE $rec -1]
+    }
+    
+    $seq delete_base $pos
+    
+    
+    # Identify if we're in a situation where we need to undo the clip
+    # points too. This occurs when, for example, we delete the last base
+    # of the left-cutoff data. Undoing this would be an insertion to the
+    # start of the used portion, making that base now visible instead.
+    # We use a belt and braces method by temporarily adding a base back
+    # to check our clip points are consistent
+    $seq insert_base $pos A 0
+    foreach {l1 r1} [$seq get_clips] break;
+    $seq delete_base $pos
+    
+    
+    lprepend undo [list C_SET $type $rec [expr {$pos+1}]] \
+	[list B_INS $rec $pos $old_base $old_conf]
+    
+    eval lprepend undo [editor_handle_tag_deletion $io $rec $pos ]
+
+    $seq delete
+    
+    if {$end == 0} {
+	# Move annos
+	set seq [$io get_sequence $rec]
+	$seq move_annos 2
+	$seq delete
+	lprepend undo [list T_MOVE $rec -2]
+	
+	# Also shift sequence right one base.
+	set rpos [editor_shift_seq $io $rec 1]
+	
+	if {$l0 != $l1 || $r0 != $r1} {
+	    lprepend undo \
+		[list B_CUT $rec $l0 $r0] \
+		[list T_MOVE $rec 1] \
+		[list B_MOVE $rec $rpos]
+	} else {
+	    lprepend undo \
+		[list T_MOVE $rec 1] \
+		[list B_MOVE $rec $rpos]
+	}
+    } else {
+	if {$l0 != $l1 || $r0 != $r1} {
+	    lprepend undo [list B_CUT $rec $l0 $r0]
+	}
+    }
+    
+    # FIXME: to do...
+    #
+    # Also check if the deletion causes the contig extents to change.
+    # If so, we need to check consensus annotation locations and amend.
+    if { $endseq == 1 } {
+	set contig [$io get_contig $crec]
+	set nvs [$contig get_visible_start]
+	set nve [$contig get_visible_end]
+	if {$nvs != $vs} {
+	    tidy_contig_annos $io $crec $contig $vs $nvs $nve undo
+	}
+	if {$nve != $ve} {
+	    tidy_contig_annos $io $crec $contig $ve $nvs $nve undo
+	}
+	$contig delete
+    }
+    
+    store_undo $w $undo {}
+    return 0
+}
+
+# Delete bases from the consensus (and everything below it).  Called from
+# editor_delete_base.
+# Returns 1 if sequences were removed
+#         0 if no sequences were removed, but a base was deleted
+#        -1 if nothing was deleted
+proc editor_delete_cons_base { w io type rec pos powerup } {
+    set contig [$io get_contig $rec]
+
+    # Check for off end of contig, or last remaining base
+    set vs [$contig get_visible_start]
+    set ve [$contig get_visible_end]
+    # puts stderr "vs = $vs pos = $pos ve = $ve"
+    if { $pos < $vs || $pos > $ve || ($pos == $vs && $pos == $ve)} {
+	$contig delete
+	return -1
+    }
+    
+    set cons [calc_consensus -io $io -contigs "{=$rec $pos $pos}"]
+    if {$cons != "*" && !$powerup} {
+	$contig delete
+	return -1
+    }
+    
+    # get pileup at consensus position so we can restore it
+    set pileup [$contig get_pileup $pos]
+    
+    set undo {}
+    set removed 0
+    set need_shift 0
+    array set to_del {}
+
+    set l_anno_pos $pos
+    set r_anno_pos $pos
+
+    # Check for reads that need to be removed, and cutoffs
+    for { set i [expr { [llength $pileup] - 1 }] } { $i >= 0 } { incr i -1 } {
+	set p [lindex $pileup $i]
+	foreach { srec spos } $p break;
+	set seq [$io get_sequence $srec]
+	foreach {l0 r0} [$seq get_clips] break;
+	set cpos [$seq get_position]
+	set slen [$seq get_length]
+	if { [$seq get_orient] } {
+	    set spos [expr { abs($slen) - $spos - 1 } ]
+	}
+	$seq delete
+	# puts stderr "srec = $srec; spos = $spos; l0 = $l0; r0 = $r0"
+	if { $l0 == $r0 && $l0 == $spos + 1 } {
+	    set to_del($srec) $cpos
+	    set l_anno_pos [expr {$cpos < $l_anno_pos ? $cpos : $l_anno_pos}]
+	    set r_anno_pos [expr {$r_anno_pos > $cpos + abs($slen) - 1 ? \
+				      $r_anno_pos : $cpos + abs($slen) - 1 }]
+	    set pileup [lreplace $pileup $i $i]
+	} elseif { [lindex $p 4] != 0 } {
+	    # Cutoff base.  Skip as delete_base no longer removes them.
+	    set pileup [lreplace $pileup $i $i]
+	}
+    }
+
+    array set sq [list $rec 1]
+    foreach p $pileup {
+	set sq([lindex $p 0]) 1
+    }
+
+    # Look for annotations that need to be removed or will change length
+
+    # puts stderr "l_anno_pos = $l_anno_pos r_anno_pos = $r_anno_pos"
+    set annos [$contig anno_in_range $l_anno_pos $r_anno_pos]
+    foreach anno $annos {
+	set srec [lindex $anno 8]
+	set is_del [info exists to_del($srec)]
+	# puts stderr "srec = $srec; is_del = $is_del"
+	if { ![info exists sq($srec)] && !$is_del} continue
+	foreach {astart aend arec} $anno break
+	if { $is_del || ($astart <= $pos && $aend >= $pos) } {
+	    set a [$io get_anno_ele $arec]
+	    foreach { start end } [$a get_position] break
+	    set ainfo [list rec $arec type [$a get_type] \
+			   start $start end $end \
+			   otype [$a get_obj_type] \
+			   orec [$a get_obj_rec] \
+			   anno [$a get_comment] \
+			   strand [lsearch -exact {+ - . ?} [$a get_direction]]]
+	    if { $is_del || ($astart == $pos && $aend == $pos) } {
+		# Do the removals here.
+		lprepend undo [list T_NEW $ainfo]
+		$a remove
+	    } else {
+		if { $srec == $rec && ($pos == $vs || $pos == $ve)} {
+		    # Consensus annotation edge cases.
+		    $a move 17 $rec \
+			[expr { $pos != $vs ? $astart : $astart + 1}] \
+			[expr { $pos != $vs ? $aend - 1 : $aend }]
+		    lprepend undo [list T_MOD $arec $ainfo]
+		    $a delete
+		} else {
+		    # Anything else that changes length can be left to
+		    # $contig delete_base, so just store the undo.
+		    lprepend undo [list T_MOD $arec $ainfo]
+		    $a delete
+		}
+	    }
+	}
+    }
+
+    # Now we can remove the sequences
+    foreach { srec cpos } [array get to_del] {
+	# puts stderr "Removing sequence $srec"
+	foreach { pair_rec flags } [$contig remove_sequence $srec] break;
+	set removed 1
+	lprepend undo [list S_ADD $rec $srec $cpos $pair_rec $flags]
+    }
+    if { $removed } {
+	# Check if removing a read has caused the contig start position
+	# to change.
+	if { [$contig get_visible_start] != $vs } {
+	    set need_shift 1
+	    # puts stderr "need_shift = $need_shift"
+	}
+    }
+
+    # Actually delete the column
+    if { !$removed || \
+	     ([$contig get_visible_start] <= $pos \
+		  && $pos <= [$contig get_visible_end])} {
+	$contig delete_base $pos
+	lprepend undo [list C_INS $rec $pos $pileup]
+    }
+
+    # Shift the contig if the start position has changed.  Only needed
+    # if we removed all the reads at the first base position,
+    # $contig delete_base will otherwise have handled it.
+    if {$need_shift} {
+	set nvs [$contig get_visible_start]
+	lprepend undo [list C_MOVE $rec $nvs]
+	$contig set_visible_start $vs
+    }
+
+    $contig delete
+    
+    lprepend undo [list C_SET $type $rec [expr {$pos+1}]]
+    store_undo $w $undo {}
+    return $removed
+}
+
 # Dir is 0 for delete base left of cursor (standard Backspace functionality)
 # Dir is 1 for delete base under cursor (standard Delete key)
 #
@@ -2315,106 +2669,34 @@ proc editor_delete_base {w where {end 1} {dir 0} {powerup 0}} {
     # Delete base to left and move cursor, vs delete under cursor and move seq
     if {$dir == 0} {
 	$w cursor_left
+	# Somewhat horrible check to see if the cursor went where expected
+	set new_pos [lindex [$w get_cursor relative] 2]
+	#puts stderr "pos = $pos; new_pos = $new_pos"
+	if { $new_pos != $pos - 1 } {
+	    # Cursor did not move - on leftmost base?
+	    bell
+	    return
+	}
 	incr pos -1
 	#editor_move_seq $w $where 1
     }
 
     if {$type == 18} {
-	set seq [$io get_sequence $rec]
-	foreach {old_base old_conf} [$seq get_base $pos] break
-	foreach {l0 r0} [$seq get_clips] break;
-	set cmp [expr {([$seq get_length] < 0) ^ [$seq get_orient]}] 
-
-	if {$old_base != "*" && !$powerup} {
-	    bell
-	    if {$dir == 0} {
-		$w cursor_right
-	    }
-	    return
-	}
-
-	set undo ""
-	if {$cmp} {
-	    $seq move_annos 1
-	    lappend undo [list T_MOVE $rec -1]
-	}
-
-	$seq delete_base $pos
-
-
-	# Identify if we're in a situation where we need to undo the clip
-	# points too. This occurs when, for example, we delete the last base
-	# of the left-cutoff data. Undoing this would be an insertion to the
-	# start of the used portion, making that base now visible instead.
-	# We use a belt and braces method by temporarily adding a base back
-	# to check our clip points are consistent
-	$seq insert_base $pos A 0
-	foreach {l1 r1} [$seq get_clips] break;
-	$seq delete_base $pos
-
-	$seq delete
-
-	lprepend undo [list C_SET $type $rec [expr {$pos+1}]] \
-	              [list B_INS $rec $pos $old_base $old_conf]
-
-	eval lprepend undo [editor_handle_tag_deletion $io $rec $pos]
-
-	if {$end == 0} {
-	    # Move annos
-	    set seq [$io get_sequence $rec]
-	    $seq move_annos 2
-	    $seq delete
-	    lprepend undo [list T_MOVE $rec -2]
-
-	    # Also shift sequence right one base.
-	    set rpos [editor_shift_seq $io $rec 1]
-	    
-	    if {$l0 != $l1 || $r0 != $r1} {
-		lprepend undo \
-		    [list B_CUT $rec $l0 $r0] \
-		    [list T_MOVE $rec 1] \
-		    [list B_MOVE $rec $rpos]
-	    } else {
-		lprepend undo \
-		    [list T_MOVE $rec 1] \
-		    [list B_MOVE $rec $rpos]
-	    }
-	} else {
-	    if {$l0 != $l1 || $r0 != $r1} {
-		lprepend undo [list B_CUT $rec $l0 $r0]
-	    }
-	}
-
-	# FIXME: to do...
-	#
-	# Also check if the deletion causes the contig extents to change.
-	# If so, we need to check consensus annotation locations and amend.
-
-	store_undo $w $undo {}
+	set res [editor_delete_seq_base $w $io $type $rec $pos $end $dir $powerup]
     } else {
-	set contig [$io get_contig $rec]
-
-	set cons [calc_consensus -io $io -contigs "{=$rec $pos $pos}"]
-	if {$cons != "*" && !$powerup} {
-	    bell
-	    $w cursor_right
-	    $contig delete
-	    return
-	}
-
-	# get pileup at consensus position so we can restore it
-	set pileup [$contig get_pileup $pos]
-
-	$contig delete_base $pos
-	$contig delete
-
-	store_undo $w \
-	    [list \
-		 [list C_SET $type $rec [expr {$pos+1}]] \
-		 [list C_INS $rec $pos $pileup]] {}
+	set res [editor_delete_cons_base $w $io $type $rec $pos $powerup]
     }
     
-    $w redraw
+    if { $res < 0 } {
+	# Deleting the base was not allowed
+	bell
+	if {$dir == 0} {
+	    $w cursor_right
+	}
+	return
+    }
+
+    $w redraw $res
 }
 
 proc editor_shift {w where dir} {

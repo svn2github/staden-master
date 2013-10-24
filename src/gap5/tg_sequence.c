@@ -798,7 +798,7 @@ tg_rec sequence_get_contig(GapIO *io, tg_rec snum) {
     tg_rec bnum;
     seq_t *s = (seq_t *)cache_search(io, GT_Seq, snum);
 
-    if (!s)
+    if (!s || (s->flags & SEQ_UNMAPPED))
 	return -1;
 
     /* Bubble up bins until we hit the root */
@@ -821,6 +821,8 @@ int sequence_get_orient(GapIO *io, tg_rec snum) {
     tg_rec bnum;
     seq_t *s = (seq_t *)cache_search(io, GT_Seq, snum);
     int comp = s->len < 0;
+
+    if (s->flags & SEQ_UNMAPPED) return comp;
 
     /* Bubble up bins until we hit the root */
     for (bnum = s->bin; bnum; bnum = bin->parent) {
@@ -1613,6 +1615,73 @@ int sequence_delete_base(GapIO *io, seq_t **s, int pos, int contig_orient) {
     return sequence_delete_base2(io, s, pos, contig_orient, 0);
 }
 
+/*
+ * Moves a sequence left or right by distance 'dist'.  If dist is negative
+ * the move is to the left, otherwise to the right.  It also recalculates
+ * the range end position so it can be called by sequence_range_length.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int sequence_move(GapIO *io, seq_t **s, int dist) {
+    bin_index_t *old_bin, *new_bin;
+    range_t r, *r_out;
+    int orient;
+    tg_rec crec;
+    contig_t *c = NULL;
+    seq_t *n;
+    int ret = -1;
+
+    cache_incr(io, *s);
+
+    /* Get old range coords and convert from relative to absolute */
+    old_bin = cache_search(io, GT_Bin, (*s)->bin);
+    if (NULL == old_bin) goto out;
+
+    r = arr(range_t, old_bin->rng, (*s)->bin_index);
+    assert(r.rec == (*s)->rec);
+    
+    sequence_get_position(io, (*s)->rec, &crec, &r.start, &r.end, &orient);
+
+    c = cache_search(io, GT_Contig, crec);
+    if (NULL == c) goto out;
+    cache_incr(io, c);
+
+    /* Remove from bin */
+    if (0 != bin_remove_item(io, &c, GT_Seq, (*s)->rec)) goto out;
+    
+    /* Add it back at the new range */
+    r.start += dist;
+    r.end = r.start + ABS((*s)->len) - 1;
+    new_bin = bin_add_range(io, &c, &r, &r_out, NULL, 0);
+    if (NULL == new_bin) goto out;
+
+    /* Update seq if parent has changed */
+    if ((*s)->bin != new_bin->rec) {
+	int old_comp = bin_get_orient(io, (*s)->bin);
+	int new_comp = bin_get_orient(io, new_bin->rec);
+
+	n = cache_rw(io, *s);
+	if (NULL == n) goto out;
+	*s = n;
+	(*s)->bin = new_bin->rec;
+	(*s)->bin_index = r_out - ArrayBase(range_t, new_bin->rng);
+
+	/* Check if the new bin has a different complemented status */
+	if (new_comp != old_comp) {
+	    (*s)->len *= -1;
+	    (*s)->flags ^= SEQ_COMPLEMENTED;
+	}
+
+	/* Pull over any annotations too */
+	if (0 != sequence_move_annos(io, s, 0)) goto out;
+    }
+    ret = 0;
+ out:
+    if (NULL != c) cache_decr(io, c);
+    cache_decr(io, *s);
+    return ret;
+}
 
 /*
  * Updates the range_t struct associated with this seq_t to ensure it is
@@ -1626,14 +1695,19 @@ int sequence_delete_base(GapIO *io, seq_t **s, int pos, int contig_orient) {
  */
 int sequence_range_length(GapIO *io, seq_t **s) {
     int orient, start, end;
+    tg_rec crec;
+    contig_t *contig;
     seq_t *n = *s;
     tg_rec brec;
     bin_index_t *bin;
     range_t *r;
     int check_used = 0;
+    int check_contig = 0;
+    int check_clipped = 0;
+    int expansion;
 
     if (0 != bin_get_item_position(io, GT_Seq, n->rec,
-				   NULL, &start, &end, &orient,
+				   &crec, &start, &end, &orient,
 				   &brec, NULL, NULL))
 	return -1;
 
@@ -1641,84 +1715,90 @@ int sequence_range_length(GapIO *io, seq_t **s) {
 	return 0;
 
     bin = cache_search(io, GT_Bin, brec);
+    if (NULL == bin) return -1;
     bin = cache_rw(io, bin);
+    if (NULL == bin) return -1;
     r = arrp(range_t, bin->rng, n->bin_index);
     assert(r->rec == n->rec);
 
+    /* Check if we are about to exceed the bounds of this bin */
+    if (r->start + ABS(n->len) - 1 >= bin->size) {
+	return sequence_move(io, s, 0);
+    }
+
+    contig = cache_search(io, GT_Contig, crec);
+    if (NULL == contig) return -1;
+
+    /* Check if the bin used range may change */
     if (r->start == bin->start_used || r->end == bin->end_used)
 	check_used = 1;
 
+    /* 
+     * Check if the contig used or clipped ranges may change.
+     */
+    expansion = ABS(n->len) - (r->end - r->start + 1);
+    if (expansion < 0) expansion = 0;
+    if (start - expansion <= contig->start
+	|| end + expansion >= contig->end)
+	check_contig = 1;
+
+    if (contig->clipped_timestamp == contig->timestamp
+	&& ((start - expansion <= contig->clipped_start
+	     && end + expansion >= contig->clipped_start)
+	    || (start - expansion <= contig->clipped_end
+		&& end + expansion >= contig->clipped_end)))
+	check_clipped = 1;
+
+    /* Update range length */
     r->end = r->start + ABS(n->len) - 1;
     bin->flags |= BIN_RANGE_UPDATED;
 
-    /* Check bin used_start/used_end and if changed, contig start/end */
     if (check_used) {
-	int i;
-	int bstart = INT_MAX, bend = INT_MIN;
-	contig_t *c;
-	int comp = 0;
-	int orig_start, orig_end;
-
-	for (i = 0; bin->rng && i < ArrayMax(bin->rng); i++) {
-	    range_t *r = arrp(range_t, bin->rng, i);
-	    if (r->flags & GRANGE_FLAG_UNUSED)
-		continue;
-	    if (bstart > r->start)
-		bstart = r->start;
-	    if (bend   < r->end)
-		bend   = r->end;
-	}
-
-	/* No change still, so bail out now */
-	if (bstart == bin->start_used && bend == bin->end_used)
-	    return 0;
-
-	bin = cache_rw(io, bin);
-	bin->end_used = r->end;
-	bin->flags |= BIN_BIN_UPDATED;
-
-	/* If the bin changed size, then possibly so has the contig. */
-	for (;;) {
-	    if (bin->flags & BIN_COMPLEMENTED) {
-		start = bin->size-1 - start;
-		end   = bin->size-1 - end;
-		comp ^= 1;
-	    }
-	    start += bin->pos;
-	    end   += bin->pos;
-
-	    if (bin->parent_type != GT_Bin)
-		break;
-
-	    bin = (bin_index_t *)cache_search(io, GT_Bin, bin->parent);
-	}
-
-	/* start/end are now the absolute bin position in the contig */
-	c = cache_search(io, GT_Contig, bin->parent);
-
-	/* Make sure contig extends are at least as large as bin start..end */
-	c = cache_rw(io, c);
-	orig_start = c->start;
-	orig_end   = c->end;
-
-	if (c->start > start)
-	    c->start = start;
-	if (c->end < end)
-	    c->end = end;
-
-	/*
-	 * And now compute actual unclipped pos (minus cached consensus seqs).
-	 * We do this in two steps as consensus_unclipped_range() uses a
-	 * contig iterator, which in turn uses the existing c->start and
-	 * c->end parameters so we need them to be at least as large as the
-	 * actual size.
-	 */
-	consensus_unclipped_range(io, c->rec, &c->start, &c->end);
-
-	if (orig_start != c->start || orig_end != c->end)
-	    c->timestamp = io_timestamp_incr(io);
+	/* Fix bin start_used/end_used */
+	if (0 != bin_set_used_range(io, bin)) return -1;
     }
+    if (check_contig) {
+	/* Fix up contig start / end */
+	int orig_start = contig->start;
+	int orig_end   = contig->end;
 
+	/* 
+	 * Recompute contig unclipped start / end, using
+	 * consensus_unclipped_range().  As this uses contig iterators,
+	 * which in turn uses the existing c->start and c->end parameters,
+	 * we need to ensure they are at least as large as the actual size.
+	 * Do this by expanding at each end by the number of bases added
+	 * to the sequence.
+	 */
+	
+	contig = cache_rw(io, contig);
+	if (NULL == contig) return -1;
+
+	contig->start -= expansion;
+	contig->end   += expansion;
+	
+	/* 
+	 * This will set contig->start and contig->end to the actual unclipped
+	 * range (minus cached consensus sequences).
+	 */
+	if (0 != consensus_unclipped_range(io, contig->rec,
+					   &contig->start, &contig->end))
+	    return -1;
+
+	/* Update timestamp if anything changed */
+	if (orig_start != contig->start || orig_end != contig->end)
+	    contig->timestamp = io_timestamp_incr(io);
+    }
+    
+    if (check_clipped) {
+	/*
+	 * Sequence went over contig->clipped_end.  Reset clipped_timestamp
+	 * just in case it changed.
+	 */
+	contig = cache_rw(io, contig);
+	if (NULL == contig) return -1;
+	contig->clipped_timestamp = 0;
+    }
     	
     /* Also force the pair's r->pair_start/end to be invalidated */
     if (r->pair_rec) {
@@ -1727,8 +1807,11 @@ int sequence_range_length(GapIO *io, seq_t **s) {
 	range_t *r2;
 		
 	s = cache_search(io, GT_Seq, r->pair_rec);
+	if (NULL == s) return -1;
 	b = cache_search(io, GT_Bin, s->bin);
+	if (NULL == b) return -1;
 	b = cache_rw(io, b);
+	if (NULL == b) return -1;
 	r2 = arrp(range_t, b->rng, s->bin_index);
 	assert(r2->rec == s->rec);
 			 
