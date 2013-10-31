@@ -207,7 +207,7 @@ static int do_it(mFILE *infp, mFILE *outfp, int in_f, int out_f, char *fn,
     }
 
     mrewind(outfp);
-    if (r->format == TT_CTF || r->format == TT_ZTR || r->format == TT_SCF)
+    if (r->format == TT_ZTR || r->format == TT_SCF)
 	out_f = r->format;
 
     if (dump) {
