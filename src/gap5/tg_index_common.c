@@ -224,7 +224,7 @@ static int cmpstringp(const void *p1, const void *p2) {
 }
 
 
-static void bttmp_save_file(bttmp_store_t *s) {
+static void bttmp_save_file(bttmp_store_t *s, int close) {
     int i;
     
     qsort(s->data.data, s->data.index, sizeof(s->data.data[0]), cmpstringp);
@@ -237,7 +237,12 @@ static void bttmp_save_file(bttmp_store_t *s) {
     
     string_pool_destroy(s->data.data_pool);
     free(s->data.data);
-    fclose(s->files[s->file_no]->fp);
+    if (close) {
+	fclose(s->files[s->file_no]->fp);
+    } else {
+	fflush(s->files[s->file_no]->fp);
+	rewind(s->files[s->file_no]->fp);
+    }
 }
 
 
@@ -265,7 +270,7 @@ static void bttmp_file_store(bttmp_store_t *tmp,  size_t name_len, char *name, t
     tmp->data.data[tmp->data.index++] = string_dup(tmp->data.data_pool, entry);
     
     if (tmp->data.index == tmp->write_size) {
-    	bttmp_save_file(tmp);
+    	bttmp_save_file(tmp, 1);
 	bttmp_add_file(tmp);
     }
 }
@@ -457,7 +462,7 @@ int bttmp_build_index(GapIO *io, bttmp_store_t *bs, long work_size, long group_s
     int round = 0;
     bttmp_sort_t *sort = bttmp_sort_initialise(group_size, work_size);
     
-    bttmp_save_file(bs); // save the last unfinished file
+    bttmp_save_file(bs, bs->file_no); // save the last unfinished file
     bs->file_no++;
     
     printf("Sorting read names...\n");
