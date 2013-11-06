@@ -39,9 +39,9 @@ else
         then
             [ x"$STADEN_PREPEND" != "x" ] \
     	&& DYLD_LIBRARY_PATH=$STADLIB:$DYLD_LIBRARY_PATH \
-            || DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH:$STADLIB
+            || DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH:$STADLIB:$STADENROOT/lib
         else
-            DYLD_LIBRARY_PATH=$STADLIB
+            DYLD_LIBRARY_PATH=$STADLIB:$STADENROOT/lib
         fi
         export DYLD_LIBRARY_PATH
 

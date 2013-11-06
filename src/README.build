@@ -289,6 +289,34 @@ light -ext WixUIExtension staden.wixobj
 MacOS X
 -------
 
+[31st Oct 2013]
+
+Fetch latest tcl/tk (8.6.1 at time of writing) and use the "unix"
+build. Export MACOSX_DEPLOYMENT_TARGET=10.5 (environ) and Configure
+with --prefix=$HOME/sys "CFLAGS=-arch i386 -arch x86_64".
+
+Do a make, make install, and then copy in the ../license.terms file to the
+$HOME/sys/lib/{tcl,tk}* directories too to comply with the
+redistribution clause.
+
+(Or maybe  -macosx_version_min 10.5.0 on cflags too)
+
+Similarly for tcllib and tklib, do configure, make install, and copy
+those licences as well.
+
+Io_lib: as per tcl/tk above, but also add
+--disable-dependency-tracking and --with-libcurl=$HOME/sys too. The
+curl copy in $HOME/sys is needed purely for linking against to get a
+dependency on an old API, but it can be removed from the distributed
+tarball I believe.
+
+The dependency tracking bit is there because it is incompatible with
+cross compiling.
+
+
+
+[older]
+
 Tested on both 10.5 and 10.6.  Just use the configure script as per
 any normal Unix system, but be aware of a few specifics regarding
 tcl/tk.
@@ -345,6 +373,11 @@ $ otool -L libstaden-read.dylib
 $ lipo -info libstaden-read.dylib
 ...
 
+A more verbose version of otool -L is otool -l. It's the same data.
+However it lists the libraries the program wants to load and not the
+libraries it finally resolves and does load. To see those use:
+
+DYLD_PRINT_LIBRARIES=1 DYLD_PRINT_RPATHS=1 DYLD_PRINT_OPTS=1 ./bin/gap5
 
 
 Documentation / Course notes
