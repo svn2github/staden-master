@@ -20,7 +20,7 @@ static int nargs = 1;
 /* Handles kAEOpenDocuments events, adding them to the arg list */
 static OSErr event_handler(const AppleEvent *event,
 			   AppleEvent *reply,
-			   long refcon) {
+			   SRefCon refcon) {
     AEDescList docs;
 
     if (AEGetParamDesc(event, keyDirectObject, typeAEList, &docs) == noErr) {
