@@ -1,4 +1,9 @@
 /*
+ * Historical interest only. Unused now as we use a bourne shell wrapper
+ * script instead.
+ */
+
+/*
 Used to convert a shell script wrapper in STADENROOT/bin into a .app bundle
 in the main STADENROOT dir. Handles file associations too.
 

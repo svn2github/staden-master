@@ -1,0 +1,12 @@
+#!/bin/sh -l
+
+STADENROOT=`echo $0 | sed 's:[^/]*/Contents/MacOS/[^/]*::'`
+export STADENROOT
+
+STADEN_PREPEND=1; export STADEN_PREPEND
+. "$STADENROOT"/share/staden/staden.profile
+
+export TCL_LIBRARY=$STADENROOT/lib/tcl8.6
+export TK_LIBRARY=$STADENROOT/lib/tk8.6
+
+exec "$STADENROOT/bin/tclsh8.6" "$STADENROOT/share/staden/tcl/trev/trev.tcl" &
