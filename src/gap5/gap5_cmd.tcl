@@ -659,7 +659,7 @@ proc ::cmd::fij::_strict {_options} {
 
 proc ::cmd::fij::run {dbname _options} {
     upvar $_options opt
-    set io [db_open $dbname rw]
+    set io [db_open $dbname ro]
 
     if {$opt(rp_libs) == "*"} {
 	set opt(rp_libs) ""; #Gap5 interprets that as all
@@ -815,7 +815,7 @@ set ::cmd::find_read_pairs::opts {
 
 proc ::cmd::find_read_pairs::run {dbname _options} {
     upvar $_options opt
-    set io [db_open $dbname rw]
+    set io [db_open $dbname ro]
 
     if {$opt(contigs) == "*"} {
 	set opt(contigs) [CreateAllContigList=Numbers $io]
