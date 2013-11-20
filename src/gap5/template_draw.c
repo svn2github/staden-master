@@ -173,7 +173,7 @@ int create_image_buffer(image_t *image, int width, int height, int bg_colour) {
     image->height = height;
 	
     if (image->depth >= 24) {
-    	uint32_t *buf = malloc(size * sizeof(uint32_t));
+    	uint32_t *buf = (uint32_t *)ckalloc(size * sizeof(uint32_t));
 	uint32_t *col = return_colour(image, bg_colour);
 
     	if (NULL == buf) return 0;
@@ -184,7 +184,7 @@ int create_image_buffer(image_t *image, int width, int height, int bg_colour) {
 
 	image->buf = buf;
     } else if (image->depth >= 15) {
-    	uint16_t *buf = malloc(size * sizeof(uint16_t));
+    	uint16_t *buf = (uint16_t *)ckalloc(size * sizeof(uint16_t));
 	uint16_t *col = return_colour(image, bg_colour);
 
     	if (NULL == buf) return 0;
@@ -298,7 +298,7 @@ void image_remove(image_t *image) {
     	    XDestroyImage(image->img); // should de-allocate buffer too
 	    image->img = 0;
 	} else if (image->buf) { // to prevent startup memory leaks
-	    free(image->buf);
+	    ckfree(image->buf);
 	    image->buf = 0;
 	}
     }
