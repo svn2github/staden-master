@@ -112,8 +112,14 @@ proc 1.5Dplot {w io wid hei {cnum {}} {pos {}}} {
     label $w.label.l -textvariable ${w}(info)
     pack $w.label.l
 
-    bind $w <5> "zoom1.5 $w %x 1 0 1.3"
-    bind $w <4> "zoom1.5 $w %x 1 0 [expr {1/1.3}]"
+    global tcl_platform
+    if {$tcl_platform(platform) == "unix"} {
+	bind $w <5> "zoom1.5 $w %x 1 0 1.3"
+	bind $w <4> "zoom1.5 $w %x 1 0 [expr {1/1.3}]"
+    } else {
+	# Windows or Darwin
+	bind $w <MouseWheel> "zoom1.5 $w %x 1 0 \[expr {-(%D)>0?1.3:1/1.3}\]"
+    }
 
     bind $w <Any-Configure> "after idle {resize1.5 $w}"
 

@@ -5025,8 +5025,14 @@ bind Editor <Key-greater>       {editor_clip_seq %W [%W get_number] r}
 bind Editor <Control-Key-z>     {editor_undo [winfo toplevel %W]}
 
 # MouseWheel scrolling
-bind Editor  <MouseWheel> {%W yview scroll [expr {-(%D)}] units}
-bind EdNames <MouseWheel> {%W yview scroll [expr {-(%D)}] units}
+if {$tcl_platform(platform) == "Darwin"} {
+    bind Editor  <MouseWheel> {%W yview scroll [expr {-(%D)}] units}
+    bind EdNames <MouseWheel> {%W yview scroll [expr {-(%D)}] units}
+} elseif {$tcl_platform(platform) == "windows"} {
+    bind Editor  <MouseWheel> {%W yview scroll [expr {int(-(%D)/120)}] units}
+    bind EdNames <MouseWheel> {%W yview scroll [expr {int(-(%D)/120)}] units}
+}
+
 if {[tk windowingsystem] eq "x11"} {
     bind Editor <4>               {%W yview scroll  -1 units}
     bind Editor <5>               {%W yview scroll  +1 units}
