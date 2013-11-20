@@ -563,7 +563,7 @@ read_pair_t *spanning_pairs(GapIO *io, int num_contigs,
 
 	    if (lib_hash) {
 		if (r->library_rec) {
-		    if (!HashTableSearch(lib_hash, (char *) &r->library_rec,
+		    if (!HashTableSearch(lib_hash, (char *)&r->library_rec,
 					 sizeof(r->library_rec))) {
 			continue;
 		    }
@@ -619,7 +619,7 @@ read_pair_t *spanning_pairs(GapIO *io, int num_contigs,
 
 		if (lib_hash) {
 		    if (r->library_rec) {
-			if (!HashTableSearch(lib_hash, (char *) &r->library_rec,
+			if (!HashTableSearch(lib_hash, (char *)&r->library_rec,
 					     sizeof(r->library_rec))) {
 			    continue;
 			}
