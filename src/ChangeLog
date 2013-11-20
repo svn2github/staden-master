@@ -1,4 +1,653 @@
 ------------------------------------------------------------------------
+r3505 | jkbonfield | 2013-11-06 09:19:24 +0000 (Wed, 06 Nov 2013) | 2 lines
+Changed paths:
+   M /staden/trunk/src/README.build
+   M /staden/trunk/src/staden.profile
+
+MacOS X updates for building and running.
+
+------------------------------------------------------------------------
+r3504 | jkbonfield | 2013-10-31 09:32:16 +0000 (Thu, 31 Oct 2013) | 2 lines
+Changed paths:
+   M /staden/trunk/src/eba/qual.c
+
+Removed CTF support as it's been purged from io_lib.
+
+------------------------------------------------------------------------
+r3497 | daviesrob | 2013-10-24 15:33:32 +0100 (Thu, 24 Oct 2013) | 54 lines
+Changed paths:
+   M /staden/trunk/src/gap5/consensus.c
+   M /staden/trunk/src/gap5/contig_editor.tcl
+   A /staden/trunk/src/gap5/gap5_del_test.tcl
+   M /staden/trunk/src/gap5/tg_bin.c
+   M /staden/trunk/src/gap5/tg_contig.c
+   M /staden/trunk/src/gap5/tg_sequence.c
+   M /staden/trunk/src/gap5/tg_struct.h
+   M /staden/trunk/src/gap5/tg_tcl.c
+
+Much work on base deletion and associated undo.  Added flag for unmapped seqs.
+
+Re-factor edit_delete_base to pull consensus and sequence cases into
+separate functions.
+
+Remove reads when the last base is deleted, unless it's the last base of the
+last read in the contig, in which case do nothing.
+Add undo command to add removed reads back to the assembly.
+
+Break link with pair for sequences that have been removed.
+When adding reads (for undo), restore pair link for paired reads.
+
+Reset orientation for removed sequences to the original one so that
+undo can get them the right way round.
+
+Set a flag on sequences that get unmapped, and set the bin number to -1.
+Upgrade various routines to sensibly handle sequences that are unmapped.
+
+Correctly handle shrinking and removing annotations, and replacing or
+growing them for undo.
+Make anno_ele move tcl function use anno_get_range to get the object record
+number.
+
+Contig delete base/insert base only delete/insert to visible parts of
+reads, so remove cut-off bases from the pileup stored in the undo array.
+
+Allow contig_insert_base and contig_delete_base to insert/delete the
+first visible base.
+
+When inserting bases (for undo), ensure sequences get promoted to a
+new bin if they exceed the boundaries on the one that they are in.  Added
+new sequence_move function to tg_sequence.c to do this.
+
+Get the correct object record number when moving contig annotations.
+
+Made delete consensus base move the entire contig left when removing the
+leftmost base.
+
+Rewrote sequence_range_length (used to fix sequence position in a contig
+after it has changed length).  The new version is simpler and does a better
+job of fixing the contig start/end positions (both clipped and unclipped).
+
+Make consensus_valid_range better at handling completely clipped reads.
+
+Set clipped_timestamp to zero in bin_add_to_range and bin_remove_item_from_bin
+to force recalculation of clipped start/end.
+
+Recalculate contig start/end earlier in contig_insert_base_common so
+contig iterators used later start from the correct point.
+
+Included somewhat dodgy gap5_del_test.tcl script to exercise the delete and
+undo code.  Currently only really tests the consensus case.
+
+
+------------------------------------------------------------------------
+r3496 | awhitwham | 2013-10-23 14:35:08 +0100 (Wed, 23 Oct 2013) | 2 lines
+Changed paths:
+   M /staden/trunk/src/gap5/newgap5_cmds.c
+   M /staden/trunk/src/gap5/sam_index.c
+   M /staden/trunk/src/gap5/tg_index.c
+   M /staden/trunk/src/gap5/tg_index.h
+   M /staden/trunk/src/gap5/tg_index_common.c
+   M /staden/trunk/src/gap5/tg_index_common.h
+
+Made the name sorting code more efficient.  Should now work with larger numbers of names.  Still needs work.
+
+------------------------------------------------------------------------
+r3491 | jkbonfield | 2013-10-17 09:49:12 +0100 (Thu, 17 Oct 2013) | 2 lines
+Changed paths:
+   M /staden/trunk/src/gap5/contig_extend.c
+
+Fixed Extend Contigs to cope with columns containing pads.
+
+------------------------------------------------------------------------
+r3490 | jkbonfield | 2013-10-16 12:34:21 +0100 (Wed, 16 Oct 2013) | 6 lines
+Changed paths:
+   M /staden/trunk/src/gap5/contig_extend.c
+   M /staden/trunk/src/gap5/contig_extend.h
+   M /staden/trunk/src/gap5/contig_extend.tcl
+   M /staden/trunk/src/gap5/gap5rc
+   M /staden/trunk/src/gap5/gap5rc_menu_full
+   M /staden/trunk/src/gap5/newgap5_cmds.c
+
+Fixed a bug in the Contig Extend code, where extensions containing
+zero base matches would sometimes trim the sequence rather than extend
+it.
+
+Also added Contig Trim, to clip back straggly low-depth contig ends.
+
+------------------------------------------------------------------------
+r3488 | jkbonfield | 2013-10-14 16:56:14 +0100 (Mon, 14 Oct 2013) | 8 lines
+Changed paths:
+   M /staden/trunk/src/gap5/depth.tcl
+   M /staden/trunk/src/gap5/gap_range.c
+
+Changed the min/max mapping quality sliders to be the actual mapping
+quality instead of 3*mqual. (That was an error, multiplied up purely
+for obtaining a colour.)
+
+Also changed the default colour mode to be minimum mapping quality
+instead of average, as minimum is typically what we want when
+evaluating the reliability of an assembly.
+
+------------------------------------------------------------------------
+r3487 | jkbonfield | 2013-10-11 14:45:07 +0100 (Fri, 11 Oct 2013) | 5 lines
+Changed paths:
+   M /staden/trunk/src/Misc/misc.h
+   M /staden/trunk/src/gap5/consensus.c
+   M /staden/trunk/src/gap5/consensus.h
+   M /staden/trunk/src/gap5/tg_sequence.c
+
+Added a consensus_pileup() function to iterate through a contig in
+column by column order instead of sequence by sequence.
+
+This reuses the MIN4 macro from tg_sequence, so I moved this to misc.h
+
+------------------------------------------------------------------------
+r3486 | jkbonfield | 2013-10-11 11:33:47 +0100 (Fri, 11 Oct 2013) | 3 lines
+Changed paths:
+   M /staden/trunk/src/ac_stubs/ax_lib_samtools.m4
+
+Even though we no longer use samtools, here are the corrected M4 macros
+that work with Ubuntu Precise and with multi-threaded samtools.
+
+------------------------------------------------------------------------
+r3485 | jkbonfield | 2013-10-10 12:48:31 +0100 (Thu, 10 Oct 2013) | 3 lines
+Changed paths:
+   M /staden/trunk/src/gap5/auto_break.c
+   M /staden/trunk/src/gap5/auto_break.h
+   M /staden/trunk/src/gap5/gap5_cmd.tcl
+   M /staden/trunk/src/gap5/newgap5_cmds.c
+   M /staden/trunk/src/gap5/newgap_structs.h
+
+Split the singleton and spanning read pair categories/scores into
+uniquely and non-uniquely mapping sets.
+
+------------------------------------------------------------------------
+r3484 | jkbonfield | 2013-10-09 11:19:36 +0100 (Wed, 09 Oct 2013) | 2 lines
+Changed paths:
+   M /staden/trunk/src/gap5/do_fij.c
+
+Removal of debugging output.
+
+------------------------------------------------------------------------
+r3483 | jkbonfield | 2013-10-09 11:19:08 +0100 (Wed, 09 Oct 2013) | 10 lines
+Changed paths:
+   M /staden/trunk/src/gap5/do_fij.c
+
+Corrected check_overlap_pairs() to only count failed pairs in the
+overlap region specified.
+
+This isn't ideal, but at least it's the same count used for good
+pairs, so it doesn't artificially think the worst about all joins.
+
+Ideally we should switch to the pair analysis used in auto-break, on a
+simulated joined up contig. (Or maybe just make the join in a child io,
+evaluate it, and then destroy the io). 
+
+------------------------------------------------------------------------
+r3482 | jkbonfield | 2013-10-08 15:11:40 +0100 (Tue, 08 Oct 2013) | 10 lines
+Changed paths:
+   M /staden/trunk/src/gap5/sam_index.c
+   M /staden/trunk/src/gap5/tg_cache.c
+
+Switch to allocating sequence record numbers at the time of finding
+the last base in a sequence rather than the first base. This means we
+can correct estimate the sequence of the SeqBlock. Also updated the
+maximum SeqBlock size to 1Mb (was 250Kb).
+
+Flush more often if the total number of bases added is high. This is
+useful when dealing with technologies using very long sequence lengths
+as it writes data more often (although it doesn't yet purge from the
+cache, as that also needs knowledge of object size - TO DO).
+
+------------------------------------------------------------------------
+r3481 | jkbonfield | 2013-10-08 12:27:37 +0100 (Tue, 08 Oct 2013) | 6 lines
+Changed paths:
+   M /staden/trunk/src/gap5/export_contigs.c
+
+When exporting in SAM, don't just take any foo/bar to mean foo, but
+explicitly check for foo/1 and foo/2 as they are the only forms where
+we have historically meant "foo" and not foo/bar as a name.
+
+This was tripping up on PacBio generated read names.
+
+------------------------------------------------------------------------
+r3480 | jkbonfield | 2013-10-07 15:21:34 +0100 (Mon, 07 Oct 2013) | 3 lines
+Changed paths:
+   M /staden/trunk/src/gap5/gap5_cmd.tcl
+
+Changed default parameters to be less severe. These have been tuned
+for a few specific datasets on known problems.
+
+------------------------------------------------------------------------
+r3479 | jkbonfield | 2013-10-07 15:20:58 +0100 (Mon, 07 Oct 2013) | 2 lines
+Changed paths:
+   M /staden/trunk/src/gap5/auto_break.c
+
+Bug fix to correct buffer underrun on clip_depth[]
+
+------------------------------------------------------------------------
+r3478 | jkbonfield | 2013-10-07 15:20:25 +0100 (Mon, 07 Oct 2013) | 2 lines
+Changed paths:
+   M /staden/trunk/src/gap5/gap_range.c
+
+Protect against potentially corrupted databases leading to crashes.
+
+------------------------------------------------------------------------
+r3477 | jkbonfield | 2013-10-04 17:11:07 +0100 (Fri, 04 Oct 2013) | 2 lines
+Changed paths:
+   M /staden/trunk/src/gap5/editor_view.c
+   M /staden/trunk/src/gap5/tg_library.c
+
+Various fixes to prevent crashes when dealing with inconsistent data.
+
+------------------------------------------------------------------------
+r3476 | jkbonfield | 2013-10-04 17:10:48 +0100 (Fri, 04 Oct 2013) | 2 lines
+Changed paths:
+   M /staden/trunk/src/gap5/gap5_cmd.tcl
+
+Exposed -end_skip param to command line interface too.
+
+------------------------------------------------------------------------
+r3475 | jkbonfield | 2013-10-04 17:09:40 +0100 (Fri, 04 Oct 2013) | 3 lines
+Changed paths:
+   M /staden/trunk/src/gap5/auto_break.c
+   M /staden/trunk/src/gap5/auto_break.h
+   M /staden/trunk/src/gap5/newgap5_cmds.c
+   M /staden/trunk/src/gap5/newgap_structs.h
+
+Added the option to skip problems near the ends of contigs, as these
+are often poor quality.
+
+------------------------------------------------------------------------
+r3474 | jkbonfield | 2013-10-04 15:02:43 +0100 (Fri, 04 Oct 2013) | 24 lines
+Changed paths:
+   M /staden/trunk/src/gap5/auto_break.c
+
+Many auto_break tidyups.
+
+* Don't break on every negative issue. Instead look for lowest -ve
+  issue within a short span and break that, under the assumption that
+  the other neighbouring ones will get fixed in the process (we don't
+  yet check this so it'd require a second pass).
+
+* Searches for soft clipping errors where more than a certain
+  percentage of reads are clipped at the same base position.
+
+* Be more rigid in the dinucleotide repeat screening to try and speed
+  up the program. It didn't add to much I think.
+
+* Improved detection of library insertion size so that we don't count
+  reads too distant from the problem as verifying or conflicting
+  against a candidate break. This is particularly necessary when
+  dealing with mixed libraries of differing sizes.
+
+* (Debugging tool: gc() function to compute GC content over a given
+  region. It was used in investigations of whether GC biases insertion
+  size.)
+
+* Gap merging now applies to contig end gaps too.
+
+------------------------------------------------------------------------
+r3473 | jkbonfield | 2013-09-27 15:59:25 +0100 (Fri, 27 Sep 2013) | 10 lines
+Changed paths:
+   M /staden/trunk/src/gap5/g-alloc.c
+
+Added some debugging code, now #ifdefed out, to time how long the
+heap_allocate function takes and how many iterations looking for
+blocks.
+
+The intention is to bail out after a fixed number of iterations incase
+of pathologically bad conditions.
+
+Also bumped up the assertion size in the (debug) heap checker as we
+were hitting it on real data.
+
+------------------------------------------------------------------------
+r3472 | jkbonfield | 2013-09-27 15:57:12 +0100 (Fri, 27 Sep 2013) | 6 lines
+Changed paths:
+   M /staden/trunk/src/gap5/dis_readings.c
+
+Delete Contigs now flushes per contig. This seems excessive, but it
+reduces the memory usage of the B+Tree name index (at the expense of
+slowing things down as we may rewrite the same nodes).
+
+[This was causing Delete Contigs on HAEM to use 32Gb of memory up.]
+
+------------------------------------------------------------------------
+r3471 | jkbonfield | 2013-09-27 15:56:08 +0100 (Fri, 27 Sep 2013) | 5 lines
+Changed paths:
+   M /staden/trunk/src/gap5/b+tree2.c
+
+Fixed a reference count leak in the B+Tree code.
+
+Also modified the TEST_MAIN debugging code to check for reference
+counting errors.
+
+------------------------------------------------------------------------
+r3469 | jkbonfield | 2013-09-23 10:03:42 +0100 (Mon, 23 Sep 2013) | 5 lines
+Changed paths:
+   M /staden/trunk/src/gap5/depth_track.c
+
+Removed the -5 adjustment from Y position depth tracks.
+
+I'm not sure why it was there and it made the plot incorrect, implying
+we don't hit zero when we do.
+
+------------------------------------------------------------------------
+r3465 | jkbonfield | 2013-09-19 13:39:49 +0100 (Thu, 19 Sep 2013) | 6 lines
+Changed paths:
+   M /staden/trunk/src/gap5/auto_break.c
+   M /staden/trunk/src/gap5/auto_break.h
+   M /staden/trunk/src/gap5/gap5_cmd.tcl
+   M /staden/trunk/src/gap5/newgap5_cmds.c
+   M /staden/trunk/src/gap5/newgap_structs.h
+
+Updated auto_break.
+
+It now has more categories of read pair, breaking them down into ones
+with uniquely mapping reads and non-unique. There is now also the
+option to detect conesnsus repeat words and filter by them.
+
+------------------------------------------------------------------------
+r3464 | jkbonfield | 2013-09-16 12:14:38 +0100 (Mon, 16 Sep 2013) | 3 lines
+Changed paths:
+   M /staden/trunk/src/gap5/depth.tcl
+   M /staden/trunk/src/gap5/depth_track.c
+   M /staden/trunk/src/gap5/gap_range.c
+   M /staden/trunk/src/gap5/gap_range.h
+   M /staden/trunk/src/gap5/template_display.c
+
+The average template insert size is now drawn superimposed on top of
+the template display.
+
+------------------------------------------------------------------------
+r3463 | jkbonfield | 2013-09-16 10:29:13 +0100 (Mon, 16 Sep 2013) | 3 lines
+Changed paths:
+   M /staden/trunk/src/gap4/GTAGDB
+   M /staden/trunk/src/gap5/Makefile
+   M /staden/trunk/src/gap5/gap5_cmd.tcl
+
+Minor tweaks to auto-break; adding the correct tag type and an option
+to prevent breakage (just tagging).
+
+------------------------------------------------------------------------
+r3462 | jkbonfield | 2013-09-16 10:24:24 +0100 (Mon, 16 Sep 2013) | 3 lines
+Changed paths:
+   M /staden/trunk/src/gap5/newgap5_cmds.c
+
+Fixed Import Reads to work with the newer bttmp_sort_t structures. (It
+was crashing before.)
+
+------------------------------------------------------------------------
+r3459 | jkbonfield | 2013-09-11 12:21:37 +0100 (Wed, 11 Sep 2013) | 2 lines
+Changed paths:
+   M /staden/trunk/src/gap5/auto_break.c
+
+Tags are now addwed to the contigs prior to breaking.
+
+------------------------------------------------------------------------
+r3458 | jkbonfield | 2013-09-11 11:55:53 +0100 (Wed, 11 Sep 2013) | 4 lines
+Changed paths:
+   M /staden/trunk/src/gap5/break_contig.c
+
+Break contig now duplicates consensus tags when they overlap both the
+left and right contig. This was the gap4 behaviour and also what we
+need for auto_break.
+
+------------------------------------------------------------------------
+r3457 | jkbonfield | 2013-09-11 10:10:00 +0100 (Wed, 11 Sep 2013) | 4 lines
+Changed paths:
+   M /staden/trunk/src/gap5/contig_editor.tcl
+
+Added run_cons_command function. It's unused in the existing code, but
+allows for local invocation from gap5rc.local menus. Eg to run Dotter
+on an underlined section of the sequence.
+
+------------------------------------------------------------------------
+r3456 | jkbonfield | 2013-09-11 10:08:53 +0100 (Wed, 11 Sep 2013) | 2 lines
+Changed paths:
+   M /staden/trunk/src/gap5/tg_anno.c
+
+Improved error checking in anno_ele_add()
+
+------------------------------------------------------------------------
+r3455 | jkbonfield | 2013-09-11 10:08:16 +0100 (Wed, 11 Sep 2013) | 5 lines
+Changed paths:
+   M /staden/trunk/src/gap5/sam_index.c
+   M /staden/trunk/src/gap5/tg_index_common.c
+
+Call contig_visible_start/end after importing each contig so it can
+correct for any mistakes in the SAM file where annotations overlap the
+visible end of the contig. This helps to make gap5->sam->gap5 round
+trips a better auto-fix mechanism.
+
+------------------------------------------------------------------------
+r3454 | jkbonfield | 2013-09-09 11:38:01 +0100 (Mon, 09 Sep 2013) | 3 lines
+Changed paths:
+   M /staden/trunk/src/gap5/map_reads.tcl
+
+Type of bam vs bwa.
+See https://sourceforge.net/p/staden/patches/10/
+
+------------------------------------------------------------------------
+r3451 | jkbonfield | 2013-09-06 17:04:27 +0100 (Fri, 06 Sep 2013) | 6 lines
+Changed paths:
+   M /staden/trunk/src/gap5/depth.tcl
+   M /staden/trunk/src/gap5/depth_track.c
+   M /staden/trunk/src/gap5/gap5rc
+   M /staden/trunk/src/gap5/gap_range.c
+   M /staden/trunk/src/gap5/gap_range.h
+   M /staden/trunk/src/gap5/tclIndex
+   M /staden/trunk/src/gap5/template_display.c
+
+The template display can now filter by libraries.
+
+Also a lot of the template display options now come from the gap5rc
+file.  There is still more to be done here though, such as allowing
+the startup list of tracks.
+
+------------------------------------------------------------------------
+r3450 | jkbonfield | 2013-09-06 17:02:56 +0100 (Fri, 06 Sep 2013) | 2 lines
+Changed paths:
+   D /staden/trunk/src/gap5/template_display.tcl
+
+Removed defunct gap4 code.
+
+------------------------------------------------------------------------
+r3449 | daviesrob | 2013-09-06 11:28:47 +0100 (Fri, 06 Sep 2013) | 7 lines
+Changed paths:
+   M /staden/trunk/src/gap5/g-files.c
+
+Fix double free if the database doesn't exist.
+
+find_db_files passed values back in *fndb and *fnaux even if it failed, and
+had therefore called free on them.  This cause a segfault when an invalid
+database name was given on the command line.  Now it only sets them if it
+succeeds.
+
+------------------------------------------------------------------------
+r3448 | daviesrob | 2013-09-05 12:26:32 +0100 (Thu, 05 Sep 2013) | 19 lines
+Changed paths:
+   M /staden/trunk/src/gap5/actf.c
+   M /staden/trunk/src/gap5/g-files.c
+   M /staden/trunk/src/gap5/g-files.h
+   M /staden/trunk/src/gap5/g-struct.c
+   M /staden/trunk/src/gap5/g-struct.h
+   M /staden/trunk/src/gap5/tg_gio.c
+
+Fix bug where g_check_header used the wrong .aux filename.
+
+g_check_header constructed the wrong name for the .g5x file when the
+database name was given with a suffix on the command-line.  This caused it
+to incorrectly complain about the database being renamed, and (due to it not
+stopping then and checking for the wrong value from gfile->low_level_vector)
+also that the timestamp had changed.
+
+g_open_file now stores the actual aux file name in the GFile struct, so
+g_check_header can use it later.  g_check_header now calls panic_shutdown()
+immediately on failure, and also checks for the right return value from
+gfile->low_level_vector.
+
+Took the opportunity to remove various fixed-size buffers when dealing with
+filenames, especially in find_db_files and actf_lock.
+
+Fixed an invalid read in open_log_file when log files are enabled and the
+database name is very short.
+
+------------------------------------------------------------------------
+r3447 | jkbonfield | 2013-09-05 12:20:37 +0100 (Thu, 05 Sep 2013) | 17 lines
+Changed paths:
+   M /staden/trunk/src/gap5/auto_break.c
+   M /staden/trunk/src/gap5/auto_break.h
+   M /staden/trunk/src/gap5/gap5_cmd.tcl
+   M /staden/trunk/src/gap5/newgap5_cmds.c
+   M /staden/trunk/src/gap5/newgap_structs.h
+
+Split the unknown score into (sligtly too) large and (contig) spanning
+scores.
+
+Tweaks to the auto-break parameters:
+    - Increased MIN_OVERLAP
+    - Valid read pairs need to span the region by at least MIN_OVERLAP
+      rather than just 1 bp. We may wish to improve this further by more
+      than that amount; eg based on library insert size.
+    - Read mapping quality is taken into account for the good score.
+      Low mapping still counts, but at about 1/3rd benefit.
+
+Added some currently unusued code for dump_template_dist(). This is an
+experiment to see whether sampling the insert size distribution at a
+specific consensus base is accurate enough to predict small indels. [It
+seems yes, if small is >20bp or so.]
+
+
+------------------------------------------------------------------------
+r3446 | jkbonfield | 2013-09-05 12:15:12 +0100 (Thu, 05 Sep 2013) | 6 lines
+Changed paths:
+   M /staden/trunk/src/gap5/tg_contig.c
+   M /staden/trunk/src/gap5/tg_contig.h
+
+Added a CITER_PAIR option to the contig iterators to call the
+read-pairing code to update COMP1/2 flags. This isn't perfect as it's
+done in blocks, but for the reads that get their pairs recomputed the
+timestamp is updated meaning code that explicitly calls
+sequence_get_range_pair_position will now be far faster.
+
+------------------------------------------------------------------------
+r3445 | jkbonfield | 2013-09-05 12:13:51 +0100 (Thu, 05 Sep 2013) | 4 lines
+Changed paths:
+   M /staden/trunk/src/gap5/tg_sequence.c
+
+sequence_get_range_pair_position() now also updates
+GRANGE_FLAG_COMP[12] flags for this range (but not the pair) if the
+contig is known.
+
+------------------------------------------------------------------------
+r3444 | jkbonfield | 2013-09-05 12:12:29 +0100 (Thu, 05 Sep 2013) | 10 lines
+Changed paths:
+   M /staden/trunk/src/seq_utils/filter_words.c
+
+Fix to the various filter functions. Previously they struck out up to
+the maximum score whenever the running total crossed zero, but that
+means a match like ...==========.....=====.. would only strike out the
+first match as the bit between the two isn't enough to reduce the
+score to zero while the aggregate score still isn't higher than the
+peak score after the first match.
+
+It now resets the score to -1 (and strikes out the previous match if
+appropriate) whenever the drop is higher than the minimum score for a match.
+
+------------------------------------------------------------------------
+r3443 | daviesrob | 2013-08-16 12:18:18 +0100 (Fri, 16 Aug 2013) | 5 lines
+Changed paths:
+   M /staden/trunk/src/gap5/gap5rc_menu_full
+
+Make selecting highlight disagreements mode also turn it on.
+
+Saves having to open the menu twice - once to turn H.D. on, and again to
+select the mode.
+
+------------------------------------------------------------------------
+r3442 | daviesrob | 2013-08-15 11:05:00 +0100 (Thu, 15 Aug 2013) | 12 lines
+Changed paths:
+   M /staden/trunk/src/gap5/auto_break.c
+
+Fixed reference count on libraries in auto break.
+
+compute_lib_type was not calling cache_incr on the library_t pointers
+that it stored in a hash table.  This meant the pointers could go stale
+if the library information later got pushed out of the cache, leading to
+a segmentation fault.
+
+compute_lib_type now calls cache_incr on the library_t pointer to prevent this.
+confirm_gaps calls cache_decr on all of the items in the hash table when it
+has finished with them.
+
+
+------------------------------------------------------------------------
+r3441 | jkbonfield | 2013-08-09 16:41:31 +0100 (Fri, 09 Aug 2013) | 10 lines
+Changed paths:
+   M /staden/trunk/src/gap5/auto_break.c
+   M /staden/trunk/src/gap5/auto_break.h
+   M /staden/trunk/src/gap5/do_fij.c
+   M /staden/trunk/src/gap5/gap5_cmd.tcl
+   M /staden/trunk/src/gap5/gap_range.c
+   M /staden/trunk/src/gap5/newgap5_cmds.c
+   M /staden/trunk/src/gap5/newgap_structs.h
+   M /staden/trunk/src/gap5/tg_sequence.c
+   M /staden/trunk/src/gap5/tg_sequence.h
+   M /staden/trunk/src/gap5/tg_tcl.c
+
+More auto-break updates.
+- Weightings for scores are now adjustable external and are gap5_cmd
+  parameters.
+- Tweaks to default scores
+- Allow for a minimum score (so not just 0).
+
+Also updated sequence_get_range_pair_position() to take extra argument
+indicating the contigs to check timestamps on. This is useful if we
+know both ends for the pair already.
+
+------------------------------------------------------------------------
+r3440 | jkbonfield | 2013-08-09 12:22:21 +0100 (Fri, 09 Aug 2013) | 9 lines
+Changed paths:
+   M /staden/trunk/src/gap5/auto_break.c
+
+More rigorous calculation of invalid read-pairs.
+
+We ensure contig-spanning pairs have an sequence pointing towards the
+problem rather than away from it, and also that it's not close to the
+contig end and pointing off it as it may then be a real join.
+
+Singletons for reads from paired end libraries now also get their own
+scoring category (currently set to 0 while I test they're worth).
+
+------------------------------------------------------------------------
+r3436 | jkbonfield | 2013-08-07 12:16:56 +0100 (Wed, 07 Aug 2013) | 2 lines
+Changed paths:
+   M /staden/trunk/src/gap5/auto_break.c
+
+Removal of debugging output.
+
+------------------------------------------------------------------------
+r3435 | jkbonfield | 2013-08-07 11:59:20 +0100 (Wed, 07 Aug 2013) | 5 lines
+Changed paths:
+   M /staden/trunk/src/gap5/auto_break.c
+
+Fixed the calculation of insert size for swapped fwd/rev pairs:
+rev-->   <--fwd.
+
+Also adjusted the min/max to be 3*sd instead of 2*sd.
+
+------------------------------------------------------------------------
+r3434 | jkbonfield | 2013-08-07 11:24:50 +0100 (Wed, 07 Aug 2013) | 2 lines
+Changed paths:
+   M /staden/trunk/src/ChangeLog
+   M /staden/trunk/src/NEWS
+   M /staden/trunk/src/ReleaseNotes
+
+Collated changes since the last official release.
+
+------------------------------------------------------------------------
 r3433 | jkbonfield | 2013-08-06 11:19:32 +0100 (Tue, 06 Aug 2013) | 6 lines
 Changed paths:
    M /staden/trunk/src/gap5/tg_cache.c
