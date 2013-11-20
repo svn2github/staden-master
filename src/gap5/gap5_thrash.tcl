@@ -414,10 +414,10 @@ if {[lindex $argv 1] != ""} {
 }
 
 # Open DB
-exec cp "[lindex $argv 0].g5d" _tmp.g5d
-exec cp "[lindex $argv 0].g5x" _tmp.g5x
+exec cp "[lindex $argv 0].g5d" _tmp_[pid].g5d
+exec cp "[lindex $argv 0].g5x" _tmp_[pid].g5x
 set db [lindex $argv 0]
-if {[catch {set io [g5::open_database -name _tmp -access rw]} err]} {
+if {[catch {set io [g5::open_database -name _tmp_[pid] -access rw]} err]} {
     puts stderr "Couldn't open database '$db': $err"
     exit 1
 }
@@ -435,7 +435,7 @@ if {[llength $argv] > 2} {
 for {set cycle 0} {$cycle < $ncycles} {incr cycle} {
     set r [expr int(rand()*12)]
 
-    if {$r != 1 && $r != 2 && $r != 0} {incr cycle -1; continue}
+    #if {$r != 1 && $r != 2 && $r != 0} {incr cycle -1; continue}
     #if {$r != 3 && $r != 4 && $r != 2 && $r != 1 && $r != 11} {incr cycle -1; continue}
 
     puts "///$cycle r=$r"
@@ -472,4 +472,7 @@ $io flush
 puts FINAL_CHECK:[$io check 0 2]
 
 $io close
+
+#exec rm _tmp_[pid].g5d _tmp_[pid].g5x
+
 exit 0

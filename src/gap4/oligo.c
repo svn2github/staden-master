@@ -20,7 +20,7 @@
 #include <ctype.h>
 
 #include "edStructs.h"
-#include "IO.h"
+#include "IO1.h"
 #include "edUtils.h"
 #include "tagUtils.h"
 #include "oligo.h"

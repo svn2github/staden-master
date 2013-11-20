@@ -1,7 +1,7 @@
 #ifndef _ASSEMBLE_DIRECT_H_
 #define _ASSEMBLE_DIRECT_H_
 
-#include "IO.h"
+#include "IO1.h"
 #include "align.h"
 #include "seqInfo.h"
 

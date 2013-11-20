@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "IO.h"
+#include "IO1.h"
 #include "template.h"
 #include "xalloc.h"
 #include "qualIO.h"

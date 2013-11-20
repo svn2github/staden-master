@@ -2,7 +2,7 @@
 #include <stdlib.h>
 
 #include "misc.h"
-#include "IO.h"
+#include "IO1.h"
 #include "seqInfo.h"
 #include "array.h"
 #include "io_utils.h"

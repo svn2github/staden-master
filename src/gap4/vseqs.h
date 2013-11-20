@@ -2,7 +2,7 @@
 #define _VSEQS_H_
 
 #include <tcl.h>
-#include "IO.h"
+#include "IO1.h"
 #include "qual.h"
 
 /*

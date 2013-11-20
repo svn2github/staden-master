@@ -1,6 +1,6 @@
 #ifndef _NEWGAP_STRUCTS_H
 #define _NEWGAP_STRUCTS_H
-#include "IO.h"
+#include "IO1.h"
 
 typedef struct {
     GapIO *io;

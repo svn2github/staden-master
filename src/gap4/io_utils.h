@@ -3,7 +3,7 @@
 
 #include <errno.h>
 #include <string.h>
-#include "IO.h"
+#include "IO1.h"
 
 typedef struct contig_list {
     int contig;

@@ -1,4 +1,4 @@
-#include "IO.h"
+#include "IO1.h"
 
 int main(int argc, char **argv) {
     GapIO *io;

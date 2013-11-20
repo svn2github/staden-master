@@ -12,7 +12,7 @@
 
 #include "io_utils.h"
 #include "gap-dbstruct.h"
-#include "IO.h"
+#include "IO1.h"
 #include "fort.h"
 #include "qual.h"
 #include "qualP.h"

@@ -53,7 +53,7 @@
 
 #include "gap-error.h"
 
-#include "IO.h"
+#include "IO1.h"
 #include "actf.h"
 #include "edUtils.h"		/* IMPORT: DB_NAMELEN */
 #include "fortran.h"

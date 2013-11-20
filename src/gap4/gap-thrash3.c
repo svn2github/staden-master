@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-#include "IO.h"
+#include "IO1.h"
 
 /*#define T_MAX_READ_LEN 4096 */
 #define T_MAX_READ_LEN 66

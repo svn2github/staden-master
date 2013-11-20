@@ -71,7 +71,7 @@
 #include <stdio.h>
 #include <ctype.h>
 #include "qual.h"
-#include "IO.h"
+#include "IO1.h"
 #include "align.h"
 #include "dna_utils.h"
 #include "align_lib.h"

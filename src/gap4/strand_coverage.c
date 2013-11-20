@@ -5,7 +5,7 @@
 
 #include "io-reg.h"
 #include "template_display.h"
-#include "IO.h"
+#include "IO1.h"
 #include "canvas_box.h"
 #include "gap_canvas_box.h"
 #include "newgap_cmds.h"

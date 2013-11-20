@@ -30,5 +30,4 @@ install:
 
 # DO NOT DELETE THIS LINE -- make depend depends on it.
 
-stops.o: $(SRCROOT)/Misc/os.h
 stops.o: $(PWD)/staden_config.h

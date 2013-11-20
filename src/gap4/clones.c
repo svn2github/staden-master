@@ -19,7 +19,7 @@
 #include <stdlib.h>
 
 #include "gap-defaults.h"
-#include "IO.h"
+#include "IO1.h"
 #include "seqInfo.h"
 #include "clones.h"
 #include "io_utils.h"

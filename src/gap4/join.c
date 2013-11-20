@@ -21,7 +21,7 @@
 #include "io_handle.h"
 #include "io-reg.h"
 #include "dna_utils.h"
-#include "IO.h"
+#include "IO1.h"
 #include "IO2.h"
 #include "contigEditor.h"
 #include "gap_globals.h"

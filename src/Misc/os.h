@@ -170,12 +170,13 @@ typedef int mode_t;
  * Microsoft Windows running MinGW
  */
 #if defined(__MINGW32__)
+#include <io.h>
 #define mkdir(filename,mode) mkdir((filename))
 #define NOPIPE
 #define NOLOCKF
 #define NO_STRPTIME
 #define sysconf(x) 512
-#define ftruncate(fd,len) _chsize(fd,len)
+//#define ftruncate(fd,len) _chsize(fd,len)
 #define fsync(fd) _commit(fd)
 
 #ifndef F_OK

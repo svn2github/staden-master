@@ -18,7 +18,7 @@
 #include <stdio.h>
 #include <ctype.h>
 
-#include "IO.h"
+#include "IO1.h"
 #include "IO2.h"
 
 #include "tagUtils.h" /* IMPORT: create_tag_for_gel */

@@ -1,5 +1,5 @@
 #include <tk.h>
-#include "IO.h"
+#include "IO1.h"
 #include "newgap_cmds.h"
 #include "template_display.h"
 #include "gap_globals.h"

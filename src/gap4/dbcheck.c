@@ -19,7 +19,7 @@
 #include <ctype.h>
 
 #include "fortran.h"
-#include "IO.h"
+#include "IO1.h"
 
 #include "misc.h"
 #include "gap-error.h"

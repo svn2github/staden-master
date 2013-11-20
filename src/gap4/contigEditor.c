@@ -7,7 +7,7 @@
 #include "tkEdNames.h"
 #include "edUtils.h"
 #include "contigEditor.h"
-#include "IO.h"
+#include "IO1.h"
 #include "locks.h"
 #include "tkSheet.h"
 #include "fort.h"

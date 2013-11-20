@@ -39,8 +39,4 @@ install:
 
 # DO NOT DELETE THIS LINE -- make depend depends on it
 
-make_weights.o: $(SRCROOT)/Misc/misc.h
-make_weights.o: $(SRCROOT)/Misc/os.h
-make_weights.o: $(SRCROOT)/Misc/xalloc.h
 make_weights.o: $(PWD)/staden_config.h
-make_weights.o: $(SRCROOT)/seq_utils/dna_utils.h

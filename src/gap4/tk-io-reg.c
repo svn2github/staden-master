@@ -2,7 +2,7 @@
 #include <tk.h>
 #include <string.h>
 
-#include "IO.h"
+#include "IO1.h"
 #include "tk-io-reg.h"
 #include "io-reg.h"
 #include "gap_cli_arg.h"

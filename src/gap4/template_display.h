@@ -6,7 +6,7 @@
 #include "io-reg.h"
 #include "hash.h"
 #include "gap-dbstruct.h"
-#include "IO.h"
+#include "IO1.h"
 #include "list.h"
 #include "template.h"
 #include "ruler_display.h"

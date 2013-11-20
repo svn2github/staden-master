@@ -2,7 +2,7 @@
 #define _PROBE_H_
 
 #include <tcl.h>
-#include "IO.h"
+#include "IO1.h"
 
 /*
  * Find oligos suitable for the 'probe' sequencing strategy. The strategy

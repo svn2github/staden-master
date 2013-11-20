@@ -11,7 +11,7 @@
 #include <ctype.h>
 #include <unistd.h>
 
-#include "IO.h"
+#include "IO1.h"
 #include "qual.h"
 #include "gap_globals.h"
 #include "misc.h"

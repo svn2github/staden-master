@@ -1,7 +1,7 @@
 #ifndef _COPY_DB_H_
 #define _COPY_DB_H_
 
-#include "IO.h"
+#include "IO1.h"
 
 /*
  * Copies database pointed to by 'iof' to the database pointed to by 'iot'.

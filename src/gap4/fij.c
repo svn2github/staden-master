@@ -2,7 +2,7 @@
 
 #include "io_utils.h"
 #include "fort.h"
-#include "IO.h"
+#include "IO1.h"
 #include "gap_globals.h"
 #include "fij.h"
 #include "io-reg.h"

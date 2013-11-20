@@ -1,7 +1,7 @@
 #ifndef _CLONES_H_
 #define _CLONES_H_
 
-#include "IO.h"
+#include "IO1.h"
 #include "seqInfo.h"
 
 extern int add_vector(GapIO *io, char *V, int level);

@@ -6,7 +6,7 @@
 #include <limits.h>
 #include <ctype.h>
 
-#include "IO.h"
+#include "IO1.h"
 #include "gap_cli_arg.h"
 #include "gap_globals.h"
 #include "qual.h"

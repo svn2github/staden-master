@@ -22,7 +22,7 @@
 
 #include "os.h"
 #include "fort.h"
-#include "IO.h"
+#include "IO1.h"
 #include "tkEditor.h"
 #include "tkEdNames.h"
 #include "io-reg.h"

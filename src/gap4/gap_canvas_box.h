@@ -1,7 +1,7 @@
 #ifndef _GAP_CANVAS_BOX_H
 #define _GAP_CANVAS_BOX_H
 
-#include "IO.h"
+#include "IO1.h"
 #include "canvas_box.h"
 #include "io-reg.h"
 

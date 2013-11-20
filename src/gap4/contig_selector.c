@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "canvas_box.h"
-#include "IO.h"
+#include "IO1.h"
 #include "misc.h"
 #include "io_utils.h"
 #include "io-reg.h"

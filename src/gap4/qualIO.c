@@ -11,7 +11,7 @@
 #include <ctype.h>
 
 #include "gap_globals.h"
-#include "IO.h"
+#include "IO1.h"
 #include "IO2.h"
 #include "qual.h"
 #include "qualP.h"

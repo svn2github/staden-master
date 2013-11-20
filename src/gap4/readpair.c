@@ -20,7 +20,7 @@
 #include <errno.h>
 
 #include "gap-dbstruct.h"
-#include "IO.h"
+#include "IO1.h"
 #include "fortran.h"
 #include "xalloc.h"
 #include "io-reg.h"

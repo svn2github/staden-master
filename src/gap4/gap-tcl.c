@@ -11,7 +11,7 @@
 #include <tcl.h>
 #include <tclXkeylist.h>
 
-#include "IO.h"
+#include "IO1.h"
 #include "cli_arg.h"
 #include "gap_globals.h"
 #include "gap-error.h"

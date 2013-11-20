@@ -3,7 +3,7 @@
 #include <tcl.h>
 
 #include "xalloc.h"
-#include "IO.h"
+#include "IO1.h"
 #include "vseqs.h"
 #include "text_output.h"
 #include "misc.h"

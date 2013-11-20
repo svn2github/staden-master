@@ -29,7 +29,7 @@
 #include "misc.h"   /* IMPORT: strdup */
 #include "FtoC.h"
 #include "xalloc.h"
-#include "IO.h"
+#include "IO1.h"
 #include "parse_ft.h"
 #include "tagUtils.h"
 #include "tagdb.h"

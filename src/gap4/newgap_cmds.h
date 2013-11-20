@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 #include <tk.h>
-#include "IO.h"
+#include "IO1.h"
 #include "list.h"
 #include "gap_globals.h"
 

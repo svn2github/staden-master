@@ -5,7 +5,7 @@
 #include "qual.h"
 #include "gap-dbstruct.h"
 #include "edUtils.h"
-#include "IO.h"
+#include "IO1.h"
 #include "io-reg.h"
 #include "undo.h"
 #include "edStructs.h"

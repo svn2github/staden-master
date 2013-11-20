@@ -1,7 +1,7 @@
 #ifndef _TEMPLATE_H
 #define _TEMPLATE_H
 
-#include "IO.h"
+#include "IO1.h"
 #include "list.h"
 
 /* gel_cont_t structure - part of the template_c structure */

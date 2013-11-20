@@ -3,7 +3,7 @@
 #include <sys/stat.h>
 
 #include "list_proc.h"
-#include "IO.h"
+#include "IO1.h"
 #include "misc.h"
 #include "gap_globals.h"
 #include "fort.h"

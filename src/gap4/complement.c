@@ -1,6 +1,6 @@
 #include <tk.h>
 
-#include "IO.h"
+#include "IO1.h"
 #include "io_handle.h"
 #include "complement.h"
 #include "gap_cli_arg.h"

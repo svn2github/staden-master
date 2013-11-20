@@ -19,7 +19,7 @@
 
 #include "edStructs.h"
 #include "gap-dbstruct.h"
-#include "IO.h"
+#include "IO1.h"
 #include "tagDefs.h"
 #include "tkSheet.h"
 #include "xalloc.h"

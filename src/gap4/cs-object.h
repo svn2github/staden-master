@@ -3,7 +3,7 @@
 
 #include <tcl.h>
 
-#include "IO.h"
+#include "IO1.h"
 #include "io-reg.h"
 
 /*

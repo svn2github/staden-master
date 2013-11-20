@@ -28,7 +28,7 @@
 #include <sys/stat.h>
 #include <time.h>
 
-#include "IO.h"
+#include "IO1.h"
 #include "fort.h"
 #include "FtoC.h"
 #include "edUtils.h"

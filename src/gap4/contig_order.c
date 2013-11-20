@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <tcl.h>
 #include "QueueInterface.h"
-#include "IO.h"
+#include "IO1.h"
 #include "template.h"
 #include "io-reg.h"
 #include "misc.h"

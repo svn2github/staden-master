@@ -41,7 +41,7 @@
 #include "contigEditor.h"
 #include "fort.h"
 #include "edUtils.h"
-#include "IO.h"
+#include "IO1.h"
 #include "io_utils.h"
 #include "gap-dbstruct.h"
 #include <io_lib/expFileIO.h>

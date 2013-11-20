@@ -1,7 +1,7 @@
 #ifndef _HAPLO_H
 #define _HAPLO_H
 
-#include "IO.h"
+#include "IO1.h"
 #include "dstring.h"
 #include "haplo.h"
 

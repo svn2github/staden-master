@@ -2,7 +2,7 @@
 #define _RULER_DISPLAY_H
 
 #include "canvas_box.h"
-#include "IO.h"
+#include "IO1.h"
 
 int display_ruler(Tcl_Interp *interp,  GapIO *io, CanvasPtr *canvas,
 		  c_offset *contig_offset, int *contig_array,

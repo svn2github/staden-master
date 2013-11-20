@@ -8,7 +8,7 @@
 /* #define USE_OSP */
 
 #include <tcl.h>
-#include "IO.h"
+#include "IO1.h"
 #include "vseqs.h"
 #include "template.h"
 #include "finish_hash.h"

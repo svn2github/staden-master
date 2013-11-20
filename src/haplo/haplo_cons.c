@@ -1,5 +1,5 @@
 #include "haplo.h"
-#include "IO.h"
+#include "IO1.h"
 #include "vseqs.h"
 #include "gap_globals.h"
 #include "xalloc.h"

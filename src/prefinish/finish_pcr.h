@@ -1,7 +1,7 @@
 #ifndef _PCR_PRIMERS_H
 #define _PCR_PRIMERS_H_
 
-#include "IO.h"
+#include "IO1.h"
 #include "primlib.h"
 #include "dstring.h"
 #include "finish.h"

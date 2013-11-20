@@ -33,5 +33,4 @@ install:
 
 # DO NOT DELETE THIS LINE -- make depend depends on it.
 
-alfsplit.o: $(SRCROOT)/Misc/os.h
 alfsplit.o: $(PWD)/staden_config.h

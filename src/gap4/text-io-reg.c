@@ -1,4 +1,4 @@
-#include "IO.h"
+#include "IO1.h"
 
 /* ARGSUSED */
 void busy_dialog(GapIO *io, int contig) {

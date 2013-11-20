@@ -4,7 +4,7 @@
 #include "tclXkeylist.h"
 #include "tcl_utils.h"
 #include "misc.h" 
-#include "IO.h"
+#include "IO1.h"
 #include "gap_globals.h"
 #include "canvas_box.h"
 #include "ruler_display.h"

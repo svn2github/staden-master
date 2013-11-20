@@ -17,7 +17,7 @@
 #include <string.h>
 #include <math.h>
 
-#include "IO.h"
+#include "IO1.h"
 #include "haplo.h"
 #include "xalloc.h"
 

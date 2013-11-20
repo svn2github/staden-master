@@ -20,7 +20,7 @@
 #include "seqInfo.h"
 #include "list_proc.h"
 #include "text_output.h"
-#include "IO.h"
+#include "IO1.h"
 #include "IO2.h"
 #include "misc.h"
 #include "align.h"
