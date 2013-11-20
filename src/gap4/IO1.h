@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef _IO_H_
-#define _IO_H_
+#ifndef _SP_IO_H_
+#define _SP_IO_H_
 
 #include "g-defs.h"		/* IMPORT: G_LOCK_EX */
 
@@ -605,4 +605,4 @@ int swap_read(GapIO *io, int M, int N);
 #include "io_handle.h"
 #include "io_utils.h"
 
-#endif /*_IO_H_*/
+#endif /*_SP_IO_H_*/
