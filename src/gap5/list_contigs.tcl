@@ -395,10 +395,10 @@ proc InitListContigs {io parent {csh_win {}}} {
     $w selection clear 0 end
     $w delete 0 end
 
-    set name_list [CreateAllContigList $io]
     set num_list [CreateAllContigListNumbers $io]
-    foreach name $name_list num $num_list {
+    foreach num $num_list {
 	set cstruct [$io get_contig $num]
+	set name [$cstruct get_name]
 	set clen [$cstruct get_length]
 	set nreads [$cstruct nseqs]
 	set nanno [$cstruct nanno]
