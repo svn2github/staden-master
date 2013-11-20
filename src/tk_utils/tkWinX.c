@@ -22,7 +22,7 @@
 
 typedef BOOL (CALLBACK *PolyPolyFunc)(HDC,CONST POINT *,CONST DWORD *, DWORD);
 
-int tkpWinRopModes[] = {
+static int sp_tkpWinRopModes[] = {
     R2_BLACK,			/* GXclear */
     R2_MASKPEN,			/* GXand */
     R2_MASKPENNOT,		/* GXandReverse */
@@ -240,7 +240,7 @@ RenderPolyObject(dc, gc, wPoints, nPoints, mode, pen, func,pRect)
     } else {
 	oldPen = SelectObject(dc, pen);
 	oldBrush = SelectObject(dc, CreateSolidBrush(gc->foreground));
-	SetROP2(dc, tkpWinRopModes[gc->function]);
+	SetROP2(dc, sp_tkpWinRopModes[gc->function]);
 
 	SetPolyFillMode(dc, (gc->fill_rule == EvenOddRule) ? ALTERNATE
 		: WINDING);
