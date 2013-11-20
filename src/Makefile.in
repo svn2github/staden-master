@@ -167,6 +167,7 @@ distsrc:
 #	      windows/stashmsg/stadenmsg.rc\
 #	      $(S)/windows/stashmsg
 #	cp -R windows/install-2003 $(S)/windows
+	tar cvfz $(DS).tar.gz $(DS)
 
 $(DIRS): FORCE
 	@if ! test -f $@/.dir; \
