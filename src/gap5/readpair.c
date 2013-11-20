@@ -456,6 +456,7 @@ read_pair_t *spanning_pairs(GapIO *io, int num_contigs,
     int slow_check_libs = 0;
     pool_alloc_t *rp_pool = NULL;
     HashTable *ctg_hash = NULL;
+    HashTable *ctgs_in_list = NULL;
     tg_rec ctg_pair[2];
 
     h = HashTableCreate(1024, HASH_FUNC_HSIEH |
@@ -478,11 +479,35 @@ read_pair_t *spanning_pairs(GapIO *io, int num_contigs,
 	if (NULL == ctg_hash) goto fail;
     }
 
+    if (end_all == mode) {
+	/*
+	 * Make a hash table of the contigs in contig_array.
+	 * This is needed to filter out pairs that span from
+	 * contigs in the list to ones that are not.
+	 */
+	ctgs_in_list = HashTableCreate(num_contigs,
+				       HASH_FUNC_HSIEH | 
+				       HASH_DYNAMIC_SIZE |
+				       HASH_POOL_ITEMS);
+	if (NULL == ctgs_in_list) goto fail;
+	for (i = 0; i < num_contigs; i++) {
+	    HashData hd;
+	    hd.i = 0;
+	    if (NULL == HashTableAdd(ctgs_in_list,
+				     (char *) &contig_array[i].contig,
+				     sizeof(contig_array[i].contig),
+				     hd, NULL)) {
+		goto fail;
+	    }
+	}
+    }
+
     for (i = 0; i < num_contigs; i++) {
 	contig_iterator *ci;
 	rangec_t *r;
 	contig_t *c;
-	int cstart, cend, crec = contig_array[i].contig;
+	int cstart, cend;
+	tg_rec crec = contig_array[i].contig;
 	int large_contig;
 	
 	c = cache_search(io, GT_Contig, crec);
@@ -665,17 +690,29 @@ read_pair_t *spanning_pairs(GapIO *io, int num_contigs,
 	if (!(hi = HashTableSearch(h, (char *)&rec2, sizeof(rec1)))) {
 	    tg_rec contig;
 	    int start, end, orient;
+	    range_t pair_range;
 
 	    if (mode != end_all || no_large_contigs)
 		continue; // unpaired
 
 	    /* Maybe rec2 was in a large contig that we didn't scan through */
-	    sequence_get_position(io, rec2, &contig, &start, &end, &orient);
+	    /* Should we use pair_* from r1 here ? */
+	    sequence_get_position2(io, rec2, &contig, &start, &end, &orient,
+				   NULL, &pair_range, NULL);
+	    if (!HashTableSearch(ctgs_in_list,
+				 (char *)&contig, sizeof(contig))) {
+		/* Filter out unwanted contigs */
+		continue;
+	    }
 	    r2 = &r2_tmp;
 	    r2->rec = rec2;
 	    r2->orig_rec = contig;
 	    r2->start = start;
 	    r2->end = end;
+	    r2->comp = orient;
+	    r2->pair_start = 0; 
+	    r2->mqual = pair_range.mqual;
+	    r2->flags = pair_range.flags;
 	} else {
 	    r2 = (rangec_t *)hi->data.p;
 	}
@@ -795,6 +832,8 @@ read_pair_t *spanning_pairs(GapIO *io, int num_contigs,
 
     if (ctg_hash)
 	HashTableDestroy(ctg_hash, 0);
+    if (ctgs_in_list)
+	HashTableDestroy(ctgs_in_list, 0);
 
     vmessage("Found %d read-pairs\n", npairs);
 
@@ -805,6 +844,7 @@ read_pair_t *spanning_pairs(GapIO *io, int num_contigs,
     if (h) HashTableDestroy(h, 0);
     if (rp_pool) pool_destroy(rp_pool);
     if (ctg_hash) HashTableDestroy(ctg_hash, 0);
+    if (ctgs_in_list) HashTableDestroy(ctgs_in_list, 0);
     if (pairs) free(pairs);
     return NULL;
 }
