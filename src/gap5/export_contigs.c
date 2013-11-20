@@ -2233,15 +2233,16 @@ static char *parse_acd_tag(char *str,
     if (!*cp)
 	return NULL;
     *key_len = len;
-    str = ++cp;
+    ++cp;
 	
     /* Value */
-    for (len = 0, cp = str; len < *val_len && *cp && *cp != '\n'; len++) {
+    for (len = 0; len < *val_len && *cp && *cp != '\n'; len++) {
 	if (*cp == '\\') {
-	    if (*++cp == 'n') {
+	    ++cp;
+	    if (*cp == 'n') {
 		*val++ = '\n';
 		cp++;
-	    } else {
+	    } else if (*cp) {
 		*val++ = *cp++;
 	    }
 	} else {
@@ -2250,9 +2251,9 @@ static char *parse_acd_tag(char *str,
     }
 
     *val_len = len;
-    str = ++cp;
+    if (*cp) ++cp;
 
-    return str;
+    return cp;
 }
 
 static int export_header_tags_gff(GapIO *io, FILE *fp,
