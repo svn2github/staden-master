@@ -1,6 +1,8 @@
 #ifndef _BTREE2_H_
 #define _BTREE2_H_
 
+#include <inttypes.h>
+
 /* The order of the tree. Keep even for now */
 //#define BTREE_MAX 4
 #define BTREE_MAX 4000
