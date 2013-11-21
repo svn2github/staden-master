@@ -52,6 +52,20 @@ static void code_colour(image_t *image, unsigned int *r, unsigned int *g, unsign
 
     vis = DefaultVisual(image->dis, image->screen);
 
+#ifdef _WIN32
+    // The Tk XImage support uses a BGR layout, but allocating colours
+    // here always yields red and blue swaps as if internally it is RGB.
+    // I know not why this is the case, only that for now this hack
+    // resolves it.
+    //
+    // http://sourceforge.net/p/tktoolkit/bugs/1049/ touches on this
+    // subject, but it was discounted as being a Tk bug.
+
+    unsigned int t = *r;
+    *r = *b;
+    *b = t;
+#endif
+
     r_ratio = vis->red_mask   / 255.0;
     g_ratio = vis->green_mask / 255.0;
     b_ratio = vis->blue_mask  / 255.0;
