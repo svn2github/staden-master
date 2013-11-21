@@ -5,6 +5,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 
@@ -14,6 +15,7 @@
 #include <io_lib/misc.h>
 #include <io_lib/open_trace_file.h>
 #include <io_lib/mFILE.h>
+#include <xalloc.h>
 
 double avg_qual(Read *r) {
     double aq = 0.0;

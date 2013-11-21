@@ -1,4 +1,6 @@
+#include <stdlib.h>
 #include <os.h>
+#include <xalloc.h>
 #include <io_lib/Read.h>
 #include <io_lib/misc.h>
 

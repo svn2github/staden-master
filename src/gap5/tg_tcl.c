@@ -26,8 +26,10 @@
 #include "consensus.h"
 #include "gap4_compat.h"  /* io_cclength() */
 
+#if TCL_MINOR_VERSION <= 4
 extern Tcl_Command Tcl_GetCommandFromObj(Tcl_Interp *interp,
 					 Tcl_Obj *objPtr);
+#endif
 
 /* ------------------------------------------------------------------------ */
 /* Some standard argument types */
