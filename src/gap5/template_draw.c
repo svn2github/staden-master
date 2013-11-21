@@ -9,6 +9,21 @@
 #include "template_draw.h"
 
 /*
+ * On Windows we need ckfree/ckalloc for allocating the XImage as the
+ * X emulation layer inside Tk/win internally uses ckfree/ckalloc (we're
+ * not meant to be calling these functions directly ourselves) and mixing
+ * ckfree with malloc causes crashes.
+ *
+ * On unix though the XImage calls aren't part of Tk, so we get the same
+ * error if we switch to using ckfree/ckalloc instead. Hence we redefine
+ * them here so we can choose which functions to call.
+ */
+#ifndef _WIN32
+#    define ckfree(x) free((x))
+#    define ckalloc(x) malloc((x))
+#endif
+
+/*
     Byte order is significant for the XImage structure.
 */
 static int get_byte_order(void) {
