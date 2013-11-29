@@ -1,6 +1,6 @@
 #!/bin/sh
 #\
-exec tclsh $0 ${@+"$@"}
+exec tclsh "$0" ${@+"$@"}
 
 source $env(STADTABL)/shlib.conf
 load $env(STADLIB)/${lib_prefix}tk_utils${lib_suffix}
