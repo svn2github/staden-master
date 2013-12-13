@@ -5,7 +5,7 @@
 #include <X11/Xlib.h>
 
 #ifdef _WIN32
-#include "tkWinport.h"
+#include "tkWinPort.h"
 #endif
 
 #include <os.h>
