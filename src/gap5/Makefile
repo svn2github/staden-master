@@ -1,5 +1,6 @@
 LIBS = gap5
-PROGS = tg_index.bin tg_view.bin
+# tg_view.bin deprecated
+PROGS = tg_index.bin
 PROGLIBS= $(L)/$(SHLIB_PREFIX)$(LIBS)$(SHLIB_SUFFIX)
 
 SRCROOT=$(SRC)/..
@@ -215,10 +216,10 @@ install:
 	cp $(S)/../gap4/acd2tag.tcl $(INSTALLTCL)/gap5
 	cp $(S)/gap5rc $(S)/gap5rc_menu_full $(INSTALLETC)
 	cp $(PROGLIBS) $(INSTALLLIB)
-	cp tg_view.bin $(INSTALLBIN)
+	@#cp tg_view.bin $(INSTALLBIN)
 	cp tg_index.bin $(INSTALLBIN)
 	$(INSTALL) tg_index $(INSTALLBIN)
-	$(INSTALL) tg_view $(INSTALLBIN)
+	@#$(INSTALL) tg_view $(INSTALLBIN)
 	$(INSTALL) gap5_cmd $(INSTALLBIN)
 
 distsrc: distsrc_dirs
