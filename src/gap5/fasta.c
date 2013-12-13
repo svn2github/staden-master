@@ -14,6 +14,8 @@
 #include <sys/stat.h>
 #include <assert.h>
 
+#include <staden_config.h>
+
 #include "text_output.h"
 #include "tg_gio.h"
 #include "tg_index_common.h"
