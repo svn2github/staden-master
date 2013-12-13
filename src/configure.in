@@ -86,7 +86,7 @@ AC_SUBST([SVNVERSION])
 
 #-----------------------------------------------------------------------------
 # Tcl TEA usage
-TEA_INIT([3.7])
+TEA_INIT([3.9])
 
 # Load the tclConfig.sh and tkConfig.sh
 TEA_PATH_TCLCONFIG
@@ -140,6 +140,8 @@ AC_SUBST([TK_VERSION])
 AC_SUBST([TK_INCLUDE_SPEC])
 AC_SUBST([TK_LIB_SPEC])
 AC_SUBST([TK_LIBS])
+AC_SUBST([CC_SEARCH_FLAGS])
+AC_SUBST([DL_LIBS])
 
 # tklib - extra widgets for Tk
 AX_LIB_TKLIB(,[have_tklib=yes], [AC_MSG_ERROR([Abort: no tklib package found, use --with-tklib=DIR])])

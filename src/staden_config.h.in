@@ -3,6 +3,12 @@
 /* Define if building universal (internal helper macro) */
 #undef AC_APPLE_UNIVERSAL_BUILD
 
+/* Defined when cygwin/mingw does not support EXCEPTION DISPOSITION */
+#undef EXCEPTION_DISPOSITION
+
+/* Defined when compiler supports casting to union type. */
+#undef HAVE_CAST_TO_UNION
+
 /* Define to 1 if you have the <fcntl.h> header file. */
 #undef HAVE_FCNTL_H
 
@@ -35,6 +41,9 @@
 
 /* Define to 1 if you have the <memory.h> header file. */
 #undef HAVE_MEMORY_H
+
+/* Defined when mingw does not support SEH */
+#undef HAVE_NO_SEH
 
 /* Define to 1 if you have the `open64' function. */
 #undef HAVE_OPEN64
@@ -83,6 +92,9 @@
 
 /* Define to 1 if you have the va_copy() function. */
 #undef HAVE_VA_COPY
+
+/* Defined when cygwin/mingw ignores VOID define in winnt.h */
+#undef HAVE_WINNT_IGNORE_VOID
 
 /* Define if zlib is installed */
 #undef HAVE_ZLIB
@@ -144,8 +156,11 @@
 /* Are we building against Mac OS X TkAqua? */
 #undef MAC_OSX_TK
 
-/* Compiler support for module scope symbols */
+/* No Compiler support for module scope symbols */
 #undef MODULE_SCOPE
+
+/* No visibility hidden passed to zlib? */
+#undef NO_VIZ
 
 /* Define to the address where bug reports for this package should be sent. */
 #undef PACKAGE_BUGREPORT
@@ -176,9 +191,6 @@
 
 /* UNDER_CE version */
 #undef UNDER_CE
-
-/* Do we need a special AIX hack for timezones? */
-#undef USE_DELTA_FOR_TZ
 
 /* Define WORDS_BIGENDIAN to 1 if your processor stores words with the most
    significant byte first (like Motorola and SPARC, unlike Intel). */
