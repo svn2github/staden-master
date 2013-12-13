@@ -194,7 +194,8 @@ int Main( int argc, char argv[MAXARG][MAXARGLEN] )
     // we want to run more a remote copy of gap4 then the App Path will be
     // invalid, so we need to do it here again just to be sure we pick up the
     // appropriate dlls.
-    sprintf( buffer, "PATH=%s\\bin;%s/lib/staden;", rootdir, rootdir );
+    sprintf( buffer, "PATH=%s\\bin;%s/lib/staden;%s/lib;",
+	     rootdir, rootdir, rootdir );
     p = getenv( "PATH" );
     assert(p);
     strcat( buffer, p );
@@ -205,7 +206,7 @@ int Main( int argc, char argv[MAXARG][MAXARGLEN] )
     // Set default command to be winstash, don't use quotes otherwise execve
     // won't work properly, but quotes are required in argp[0]!
     strcpy( our_cmd, rootdir );
-    strcat( our_cmd, "\\bin\\wish84.exe" );
+    strcat( our_cmd, "\\bin\\wish86.exe" );
 
 
     // Get command console
