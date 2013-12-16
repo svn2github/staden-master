@@ -1,0 +1,18 @@
+The MacOS X build has a prebuilt tarball of third party components
+to add to the image.
+
+These include tcl, tk, X11 libraries and tcllib/tklib. They have been
+built using -arch i386 -arch x86_64 to target both 32-bit and 64-bit
+platforms.
+
+There is also a staden-macos-link tarball whose sole purpose is to
+force the linker to use specific versions of libraries, namely libcurl.
+We don't need to distribute this, but if we link against it then the
+libraries will have a dependency on an older release and shall work
+with the curl installed on earlier MacOS X releases.  (This shouldn't
+be necessary, but MACOSX_DEPLOYMENT_TARGET environ appears to not work
+for libcurl so we need our own version.)
+
+
+This script also creates the .app bundles and a MacOS drive image to
+make installation easier.

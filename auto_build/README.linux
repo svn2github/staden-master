@@ -1,0 +1,13 @@
+We have 64-bit and 32-bit builds. These come with Tcl/Tk 8.6 bundled
+in the lib directory as we cannot assume they exist on the deployment
+hosts. If we were to build .deb or .rpm packages then these should be
+removed and replaced by dependencies in the package system.
+
+Note that during compilation we need to have the original source
+versions available too as we need to access tclInt.h and similar, the
+locations of which are hard coded in tclConfig.sh when Tcl is first
+compiled (see tcltk861-linux-*.tar.gz).  If we used the native system
+version we wouldn't have this restriction though as the ubuntu
+tclConfig.sh has been changed to point to another system subdirectory
+containing the necessary internal sources.
+

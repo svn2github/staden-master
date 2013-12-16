@@ -1,0 +1,29 @@
+The primary mechanism consists of a Makefile that updates the source
+tarballs (assuming fixed locations of the io_lib and staden checkouts
+- edit Makefile accordingly) and then runs the various local.* bash
+scripts to build per system.
+
+These local scripts copy various files to the remote end including
+their corresponding remote.* script and then execute that script on
+the remote end to do the actual compilation and distribution file
+construction, before copying the result back to the local host.
+
+Note: not everything gets built from scratch. We have a tarball per
+host named staden-${OS}-${ARCH}.root.tar.gz which will be unpacked
+into the distribution verbatim. This generally contains things like
+prebuilt tcl/tk 8.6 binaries, tablelist widget, tklib, and maybe other
+things pertinent to specific OSes (eg pthreads and zlib for windows).
+
+Some architectures also have their own tarballs needed during
+compilation but not for distribution. These are the
+staden-macosx-link.tar.gz and tcltk861-linux-*.tar.gz files. They help
+resolve issues like where tkInt.h resides.
+
+Other important files:
+inno_setup.tar.gz - a bundle of the InnoSetup installer for
+Windows.  We run this under wine as we're cross-compiling.
+
+config - The version numbers of packages and various directories.  (It's
+not the sole source of directory usage though.)
+
+README.${OS} - various platform specific comments.

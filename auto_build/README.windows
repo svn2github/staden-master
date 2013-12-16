@@ -1,0 +1,28 @@
+The windows build is cross-compiled on psgbuild using MinGW-w64. This
+works well, but poses challenges for building the self extracting
+installer.
+
+Previously we used WiX, but that is hard to get working as it needs
+Wine and mono installed under Wine due to its use of .NET components
+not supported by Linux mono. Instead we switched to InnoSetup as it's
+easy to configure and runs easily (under Wine).
+
+We do all building in /tmp/build.${ARCH} as we want to be able to
+compile both 32-bit and 64-bit builds simultaneously.  To aid this we
+already have prebuilt versions of tcl/tk. 
+
+
+When compiling we use --host=x86_64-w64-mingw32 (or i686-).  For the
+sprun.exe though we don't use auto-conf so we control that on the Make
+command line. Ie "make COMPILER=x86_64-w64-mingw32-".
+
+Also note that the tcl.m4 source doesn't work too well with
+cross-compiling and autoconf picks the wrong methods in places.  So
+build with "make OS=MINGW" to override this.
+
+The wine installer may need local wine setup for you to work the first
+time.  It attempts to access everything via C: which is implemented in
+wine as ~/.wine/drive_c. We automatically create symlinks out of there
+to point to the appropriate source and distribution directories before
+running InnoSetup (a copy of which is also transferred over to
+psgbuild).
