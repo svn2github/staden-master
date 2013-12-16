@@ -7,8 +7,10 @@ scp config $iolib_tarball $staden_tarball \
     $auto_build/staden-linux-x86_64-root.tar.gz \
     $auto_build/remote.precise-x86_64 \
     $auto_build/tcltk861-linux-x86_64.tar.gz \
+    $auto_build/doc.unix.tar.gz \
     $remote:/tmp || exit 1
 
 ssh $remote sh -x /tmp/remote.precise-x86_64 || exit 1
 
 scp $remote:/tmp/staden-${STADEN_VERS}-linux-x86_64.tar.gz .
+scp $remote:/tmp/staden-${STADEN_VERS}-linux-x86_64.tar.xz .

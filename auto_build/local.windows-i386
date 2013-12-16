@@ -17,6 +17,7 @@ scp config $iolib_tarball $staden_tarball \
     $auto_build/staden-windows-i386-root.tar.gz \
     $auto_build/inno_setup.tar.gz \
     $auto_build/remote.windows-i386 \
+    $auto_build/doc.windows.tar.gz \
     /tmp/windows.i386.tar.gz \
     $remote:$BUILD || exit 1
 rm /tmp/windows.i386.tar.gz

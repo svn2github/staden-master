@@ -17,6 +17,7 @@ export MACOSX_DEPLOYMENT_TARGET=10.5
 # Make distribution root
 mkdir $DIST
 (cd $DIST;tar xfz /tmp/staden-macosx-root.tar.gz)
+(cd $DIST;tar xfz /tmp/doc.unix.tar.gz)
 (cd /tmp;tar xfz /tmp/staden-macosx-link.tar.gz)
 
 mkdir $BUILD

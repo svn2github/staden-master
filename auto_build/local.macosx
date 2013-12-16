@@ -13,6 +13,7 @@ scp $iolib_tarball $staden_tarball \
     $auto_build/staden-macosx-root.tar.gz \
     $auto_build/staden-macosx-link.tar.gz \
     $auto_build/remote.macosx \
+    $auto_build/doc.unix.tar.gz \
     /tmp/MacOSX.tar.gz \
     $remote:/tmp || exit 1
 

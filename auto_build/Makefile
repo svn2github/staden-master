@@ -44,6 +44,9 @@ macosx: dist
 	bash -x ./local.macosx > make.$@ 2>&1
 	@echo $@ build complete
 
+
+linux: linux-i386 linux-x86_64
+
 linux-i386: dist
 	@echo Starting $@ X build. See make.$@ for output
 	sh -x ./local.lucid-i386 > make.$@ 2>&1
@@ -53,6 +56,8 @@ linux-x86_64: dist
 	@echo Starting $@ X build. See make.$@ for output
 	sh -x ./local.precise-x86_64 > make.$@ 2>&1
 	@echo $@ build complete
+
+windows: windows-i386 windows-x86_64
 
 windows-i386: dist
 	@echo Starting $@ X build. See make.$@ for output

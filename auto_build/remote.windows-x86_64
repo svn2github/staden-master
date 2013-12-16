@@ -20,6 +20,7 @@ export LD_LIBRARY_PATH=$DIST/lib
 # Make distribution root
 mkdir $DIST
 (cd $DIST;tar xfz $BUILD/staden-windows-x86_64-root.tar.gz)
+(cd $DIST;tar xfz $BUILD/doc.windows.tar.gz)
 
 mkdir $BUILD
 cd $BUILD
