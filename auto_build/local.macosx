@@ -1,0 +1,21 @@
+#!/bin/sh
+
+remote=jkb_local@mac105693i.internal.sanger.ac.uk
+auto_build=$HOME/staden/auto_build
+
+iolib_tarball=$HOME/io_lib/build.seq3/io_lib-1.13.3.tar.gz
+staden_tarball=$HOME/staden/trunk/build.seq3/staden-2.0.0b10-src.tar.gz
+srcroot=$HOME/staden/trunk/src
+
+(cd $srcroot;tar cvfz /tmp/MacOSX.tar.gz MacOSX)
+
+scp $iolib_tarball $staden_tarball \
+    $auto_build/staden-macosx-root.tar.gz \
+    $auto_build/staden-macosx-link.tar.gz \
+    $auto_build/remote.macosx \
+    /tmp/MacOSX.tar.gz \
+    $remote:/tmp || exit 1
+
+ssh $remote sh -x /tmp/remote.macosx || exit 1
+
+scp $remote:/tmp/staden-*.dmg .

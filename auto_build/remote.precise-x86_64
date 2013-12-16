@@ -1,0 +1,55 @@
+#!/bin/sh
+# Script to run at the remote end.
+
+MAKE="make -j1"
+
+. /tmp/config
+
+IOLIB=/tmp/io_lib-${IOLIB_VERS}.tar.gz
+STADEN=/tmp/staden-${STADEN_VERS}-src.tar.gz
+STUB=/tmp/staden-linux-x86_64-root.tar.gz
+
+DIST=/tmp/staden-${STADEN_VERS}-linux-x86_64
+BUILD=/tmp/build.linux-x86_64
+
+# Configure options
+export LD_LIBRARY_PATH=$DIST/lib
+
+# Make distribution root
+mkdir $DIST
+(cd $DIST;tar xfz /tmp/staden-linux-x86_64-root.tar.gz)
+
+mkdir $BUILD
+cd $BUILD
+
+# Unpack tcl/tk compilation. Needed for tclInt.h and stubs during compilation.
+tar xfz /tmp/tcltk861-linux-x86_64.tar.gz
+
+# Io_lib
+tar xfz $IOLIB
+pushd io_lib-*
+./configure \
+	--prefix=$DIST  || exit 1
+${MAKE} clean		|| exit 1
+${MAKE}			|| exit 1
+${MAKE} install		|| exit 1
+popd
+
+# Staden
+tar xfz $STADEN
+pushd staden-*
+./configure \
+	--prefix=$DIST \
+	--with-io_lib=$DIST \
+	--with-tcl=$DIST/lib \
+	--with-tk=$DIST/lib \
+	--with-tklib=$DIST/lib/tklib0.5 || exit 1
+${MAKE} clean		|| exit 1
+${MAKE}			|| exit 1
+${MAKE} install		|| exit 1
+popd
+
+
+# Build the final tarball
+cd $DIST/..
+tar cfz /tmp/staden-${STADEN_VERS}-linux-x86_64.tar.gz staden-${STADEN_VERS}-linux-x86_64 || exit 1

@@ -1,0 +1,85 @@
+#!/bin/bash
+# Script to run at the remote end.
+
+# FIXME: make OS_SIZE an environment variable at the top so both
+# 32-bit and 64-bit scripts are identical.
+
+#MAKE="make -j4"
+MAKE="make"
+
+BUILD=/tmp/build.i386
+
+. $BUILD/config
+
+IOLIB=$BUILD/io_lib-${IOLIB_VERS}.tar.gz
+STADEN=$BUILD/staden-${STADEN_VERS}-src.tar.gz
+STUB=$BUILD/staden-windows-i386-root.tar.gz
+
+DIST=$BUILD/staden-${STADEN_VERS}-windows-i386
+
+# Configure options
+export LD_LIBRARY_PATH=$DIST/lib
+
+# Make distribution root
+mkdir $DIST
+(cd $DIST;tar xfz $BUILD/staden-windows-i386-root.tar.gz)
+
+mkdir $BUILD
+cd $BUILD
+
+# Io_lib
+tar xfz $IOLIB
+pushd io_lib-*
+./configure \
+	--host=i686-w64-mingw32 \
+	--with-zlib=$DIST \
+	--prefix=$DIST  || exit 1
+${MAKE} clean		|| exit 1
+${MAKE}			|| exit 1
+${MAKE} install		|| exit 1
+popd
+
+# Staden
+tar xfz $STADEN
+pushd staden-*
+./configure \
+	--host=i686-w64-mingw32 \
+	--prefix=$DIST \
+	--with-io_lib=$DIST \
+	--with-tcl=$DIST/lib \
+	--with-tk=$DIST/lib \
+	--with-tklib=$DIST/lib/tklib0.5 \
+        --with-zlib=$DIST                  || exit 1
+${MAKE} clean		|| exit 1
+${MAKE}	OS=MINGW	|| exit 1
+${MAKE} install		|| exit 1
+
+# Windows specific components
+tar xfz $BUILD/windows.i386.tar.gz         || exit 1
+pushd windows/run
+make COMPILER=i686-w64-mingw32-   || exit 1
+cp sprun.exe $DIST/bin/gap5.exe     || exit 1
+cp sprun.exe $DIST/bin/gap4.exe     || exit 1
+cp sprun.exe $DIST/bin/pregap4.exe  || exit 1
+cp sprun.exe $DIST/bin/trev.exe     || exit 1
+cp sprun.exe $DIST/bin/spin.exe     || exit 1
+popd
+
+mkdir -p $HOME/.wine/drive_c
+pushd $HOME/.wine/drive_c
+rm staden-inst-i386 staden-build-i386
+ln -s $DIST staden-inst-i386
+ln -s $BUILD/staden-*-src staden-build-i386
+popd
+
+pushd windows/inno_setup
+tar xfz $BUILD/inno_setup.tar.gz       || exit 1
+
+sed "s/{%OS_SIZE}/i386/" staden_config.iss > tmp.iss
+iscc/ISCC.exe tmp.iss || exit 1
+
+# Punt over the final exe
+cp staden_setup.exe $BUILD/staden-${STADEN_VERS}-windows-i386.exe
+popd
+
+popd

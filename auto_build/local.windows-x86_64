@@ -1,0 +1,27 @@
+#!/bin/sh
+
+. config
+
+remote=psgbuild
+auto_build=$HOME/staden/auto_build
+
+iolib_tarball=$HOME/io_lib/build.seq3/io_lib-1.13.3.tar.gz
+staden_tarball=$HOME/staden/trunk/build.seq3/staden-2.0.0b10-src.tar.gz
+srcroot=$HOME/staden/trunk/src
+
+(cd $srcroot;tar cfz /tmp/windows.x86_64.tar.gz windows)
+
+BUILD=/tmp/build.x86_64
+ssh $remote mkdir $BUILD
+
+scp config $iolib_tarball $staden_tarball \
+    $auto_build/staden-windows-x86_64-root.tar.gz \
+    $auto_build/inno_setup.tar.gz \
+    $auto_build/remote.windows-x86_64 \
+    /tmp/windows.x86_64.tar.gz \
+    $remote:$BUILD || exit 1
+rm /tmp/windows.x86_64.tar.gz
+
+ssh $remote bash -x $BUILD/remote.windows-x86_64 || exit 1
+
+scp $remote:$BUILD/staden-${STADEN_VERS}-windows-x86_64.exe . || exit 1

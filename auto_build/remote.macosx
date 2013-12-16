@@ -1,0 +1,66 @@
+#!/bin/sh
+# Script to run at the remote end.
+
+MAKE="make -j6"
+
+VERS=2.0.0b10
+IOLIB=/tmp/io_lib-1.13.3.tar.gz
+STADEN=/tmp/staden-${VERS}-src.tar.gz
+STUB=/tmp/staden-macosx-root.tar.gz
+
+DIST=/tmp/staden-${VERS}-MacOSX
+BUILD=/tmp/build
+
+# Configure options
+export MACOSX_DEPLOYMENT_TARGET=10.5
+
+# Make distribution root
+mkdir $DIST
+(cd $DIST;tar xfz /tmp/staden-macosx-root.tar.gz)
+(cd /tmp;tar xfz /tmp/staden-macosx-link.tar.gz)
+
+mkdir $BUILD
+cd $BUILD
+
+# Io_lib
+tar xfz $IOLIB
+pushd io_lib-*
+./configure \
+	--prefix=$DIST \
+	--disable-dependency-tracking \
+	--with-libcurl=/tmp/staden-macosx-link \
+	CFLAGS="-O2 -arch i386 -arch x86_64" || exit 1
+${MAKE} clean		|| exit 1
+${MAKE}			|| exit 1
+${MAKE} install		|| exit 1
+popd
+
+# Staden
+tar xfz $STADEN
+pushd staden-*
+./configure \
+	--prefix=$DIST \
+	--with-io_lib=$DIST \
+	--with-tcl=$DIST/lib \
+	--with-tk=$DIST/lib \
+	--with-tklib=$DIST/lib/tklib0.5 \
+	CFLAGS="-O2 -arch i386 -arch x86_64" \
+	CXXFLAGS="-O2 -arch i386 -arch x86_64" || exit 1
+${MAKE} clean		|| exit 1
+${MAKE}			|| exit 1
+${MAKE} install		|| exit 1
+popd
+
+
+# Apple .app bundles
+pushd staden-*
+tar xvfz /tmp/MacOSX.tar.gz
+cd MacOSX
+${MAKE}  		|| exit 1
+find *.app -name '*.svn' -exec rm -rf {} \;
+cp -r *.app $DIST
+popd
+
+# Build the final drive image
+cd $DIST
+hdiutil create -ov -srcfolder . /tmp/staden-${VERS}-MacOSX.dmg || exit 1

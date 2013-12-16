@@ -1,0 +1,14 @@
+#!/bin/sh
+
+. ./config
+remote=deskpro102485
+
+scp config $iolib_tarball $staden_tarball \
+    $auto_build/staden-linux-i386-root.tar.gz \
+    $auto_build/remote.lucid-i386 \
+    $auto_build/tcltk861-linux-i386.tar.gz \
+    $remote:/tmp || exit 1
+
+ssh $remote sh -x /tmp/remote.lucid-i386 || exit 1
+
+scp $remote:/tmp/staden-${STADEN_VERS}-linux-i386.tar.gz .
