@@ -1,9 +1,8 @@
-#!/bin/sh
+#!/bin/bash
 
 . config
 
 remote=psgbuild
-auto_build=$HOME/staden/auto_build
 
 iolib_tarball=$HOME/io_lib/build.seq3/io_lib-1.13.3.tar.gz
 staden_tarball=$HOME/staden/trunk/build.seq3/staden-2.0.0b10-src.tar.gz

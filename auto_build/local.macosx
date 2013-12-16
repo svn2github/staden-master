@@ -1,7 +1,7 @@
-#!/bin/sh
+#!/bin/bash
 
 remote=jkb_local@mac105693i.internal.sanger.ac.uk
-auto_build=$HOME/staden/auto_build
+. config
 
 iolib_tarball=$HOME/io_lib/build.seq3/io_lib-1.13.3.tar.gz
 staden_tarball=$HOME/staden/trunk/build.seq3/staden-2.0.0b10-src.tar.gz

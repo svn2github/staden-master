@@ -24,8 +24,8 @@ all: .all-recurse
 .all-hosts: macosx linux-x86_64 linux-i386 windows-x86_64 windows-i386
 
 dist_clean:
-	-rm .dist_staden
-	-rm .dist_io_lib
+#	-rm .dist_staden
+#	-rm .dist_io_lib
 
 .dist_staden:
 	cd $(HOME)/staden/trunk/build.seq3; $(MAKE) distsrc
@@ -41,7 +41,7 @@ dist: dist_staden dist_io_lib
 
 macosx: dist
 	@echo Starting $@ X build. See make.$@ for output
-	sh -x ./local.macosx > make.$@ 2>&1
+	bash -x ./local.macosx > make.$@ 2>&1
 	@echo $@ build complete
 
 linux-i386: dist

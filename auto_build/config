@@ -6,5 +6,4 @@ IOLIB_VERS=1.13.3
 IOLIB_DIST=$HOME/io_lib/build.seq3
 iolib_tarball=${IOLIB_DIST}/io_lib-${IOLIB_VERS}.tar.gz
 
-auto_build=$HOME/staden/auto_build
-
+auto_build=$HOME/staden/trunk/auto_build
