@@ -735,7 +735,7 @@ int g_check_header(GFile *gfile)
 	return gerr_set(GERR_INVALID_ARGUMENTS);
 
     /* Re-read from disk, using a new fd to avoid the OS caching for us. */
-    if (-1 == (fd = open(gfile->fnaux, O_RDONLY))) {
+    if (-1 == (fd = open(gfile->fnaux, O_RDONLY|O_BINARY))) {
 	fprintf(stderr, "** SERIOUS PROBLEM - file %s\n", g_filename(gfile));
 	fprintf(stderr, "** %s: %s\n", gfile->fnaux, strerror(errno));
 	fprintf(stderr, "** Did you rename the database while it was open?\n");
