@@ -58,9 +58,9 @@ ${MAKE} install		|| exit 1
 # Windows specific components
 tar xfz $BUILD/windows.i386.tar.gz         || exit 1
 pushd windows/run
-make COMPILER=i686-w64-mingw32-   || exit 1
+make COMPILER=i686-w64-mingw32-     || exit 1
 cp sprun.exe $DIST/bin/gap5.exe     || exit 1
-cp sprun.exe $DIST/bin/gap4.exe     || exit 1
+cp sprun.exe $DIST/bin/gap.exe      || exit 1
 cp sprun.exe $DIST/bin/pregap4.exe  || exit 1
 cp sprun.exe $DIST/bin/trev.exe     || exit 1
 cp sprun.exe $DIST/bin/spin.exe     || exit 1

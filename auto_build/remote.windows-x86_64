@@ -57,7 +57,7 @@ tar xfz $BUILD/windows.x86_64.tar.gz         || exit 1
 pushd windows/run
 make COMPILER=x86_64-w64-mingw32-   || exit 1
 cp sprun.exe $DIST/bin/gap5.exe     || exit 1
-cp sprun.exe $DIST/bin/gap4.exe     || exit 1
+cp sprun.exe $DIST/bin/gap.exe      || exit 1
 cp sprun.exe $DIST/bin/pregap4.exe  || exit 1
 cp sprun.exe $DIST/bin/trev.exe     || exit 1
 cp sprun.exe $DIST/bin/spin.exe     || exit 1
