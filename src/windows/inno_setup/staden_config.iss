@@ -18,34 +18,34 @@ DefaultDirName={pf}\Staden Package
 ;DisableDirPage=yes
 DefaultGroupName=Staden Package
 DisableProgramGroupPage=yes
-LicenseFile=C:\staden-build\LICENCE.txt
-OutputDir=C:\staden-build\windows\inno_setup
+LicenseFile=C:\staden-build-{%OS_SIZE}\LICENCE.txt
+OutputDir=C:\staden-build-{%OS_SIZE}\windows\inno_setup
 OutputBaseFilename=staden_setup
 Compression=lzma
 ;Compression=zip/1
 SolidCompression=yes
 ; none => install as normal user if you have no admin rights, otherwise install as administrator
 PrivilegesRequired=none
-WizardImageFile=c:\staden-build\windows\inno_setup\splash.bmp
+WizardImageFile=c:\staden-build-{%OS_SIZE}\windows\inno_setup\splash.bmp
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "C:\staden-inst\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "C:\staden-inst-{%OS_SIZE}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 ;[Tasks]
 ;Name: associate; Description: "&Associate files"; GroupDescription: "Other tasks:"; Flags: unchecked
 
 [Icons]
-;Name: "{group}\MyProg"; Filename: "{app}\MyProg.exe"
 Name: "{group}\Gap5"; Filename: "{app}\bin\Gap5.exe"
 Name: "{group}\Gap4"; Filename: "{app}\bin\Gap.exe"
 Name: "{group}\Trev"; Filename: "{app}\bin\Trev.exe";
 Name: "{group}\Spin"; Filename: "{app}\bin\Spin.exe"
 Name: "{group}\Pregap4"; Filename: "{app}\bin\Pregap4.exe"
-Name: "{group}\Home Page"; Filename: "http://staden.sourceforge.net"
+Name: "{group}\URL - Home Page"; Filename: "http://staden.sourceforge.net"
+Name: "{group}\URL - Local documentation"; Filename: "{app}\share\doc\staden\index.html"
 Name: "{group}\{cm:UninstallProgram,Staden Package}"; Filename: "{uninstallexe}"
 
 [Registry]
