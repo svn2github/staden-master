@@ -37,10 +37,14 @@ OBJS = \
 	filter_words.o
 
 
+#SU_LIBS = \
+#	$(TKUTILS_LIB) \
+#	$(MISC_LIB) \
+#	$(TK_LIB)
+
 SU_LIBS = \
-	$(TKUTILS_LIB) \
-	$(MISC_LIB) \
-	$(TK_LIB)
+	$(TEXTUTILS_LIB) \
+	$(MISC_LIB)
 
 #
 # Main dependency
