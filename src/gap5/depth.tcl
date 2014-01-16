@@ -178,6 +178,21 @@ proc 1.5plot_contig_event {w type id cdata args} {
 	    }
 	    set cid $arg(id)
 
+	    # Ensure it's visible. Not important if we invoked it.
+	    set x [expr {int([x2c $w $arg(abspos)])}]
+	    incr x -2
+	    if {![info exists ${w}(invoking_editor)] && \
+		    ($x < 0 || $x >= [set ${w}(pwidth)])} {
+		set c [x2c $w $x]
+		set bw [expr {[set ${w}(x2)]-[set ${w}(x1)]+1}]
+		if {$x < 0} {
+		    set m [expr {($arg(abspos)-$bw*.1)/[set ${w}(length)]}]
+		} else {
+		    set m [expr {($arg(abspos)-$bw*.9)/[set ${w}(length)]}]
+		}
+		scrollx1.5 $w moveto $m
+	    }
+
 	    foreach id [set ${w}(tracks)] {
 		set t $w.track$id
 		global $t $t.Cursors $t.Id2Cid
@@ -206,6 +221,10 @@ proc 1.5plot_contig_event {w type id cdata args} {
 		set $t.Cursors($cid) $arg(abspos)
 		set x [expr {int([x2c $w $arg(abspos)])}]
 		incr x -2
+
+		if {[info exists ${w}(cursor_drag)]} {
+		    set ${w}(cursor_drag) $cid
+		}
 
 		global $t.cursorx$cid
 		set $t.cursorx$cid $x
@@ -1427,13 +1446,15 @@ proc template_item_init {w t} {
     bind $d <B2-ButtonRelease> "puts \$firstx-%x,\[c2x $w \$firstx\]-\[c2x $w %x\]"
     bind $d <3> "$d delete withttag tline"
 
-    bind $d <B1-Motion> "drag_x $w $t %x %y"
-    bind $d <B1-ButtonRelease> "end_drag_x $w $t %x %y"
+    bind $d <B1-Motion> "drag_x $w $t %x %y %X %Y"
+    bind $d <B1-ButtonRelease> "end_drag_x $w $t %x %y;
+                                catch {unset ${w}(cursor_drag)}"
 
     bind $d <Any-Motion> "cross_hair $w $t %x %y"
     bind $d <Any-Leave>  "cross_hair_leave $w"
 
-    bind $d <<use>> "invoke_editor $w $t %x"
+    bind $d <<use>> "set ${w}(cursor_drag) {};
+                     invoke_editor $w $t %x"
 
     set ${t}(Init) 1
 }
@@ -1538,13 +1559,15 @@ proc depth_item_init {w t} {
     bind $d <B2-Motion> "addLine $d %x %y"
     bind $d <3> "$d delete withttag tline"
 
-    bind $d <B1-Motion> "drag_x $w $t %x %y"
-    bind $d <B1-ButtonRelease> "end_drag_x $w $t %x %y"
+    bind $d <B1-Motion> "drag_x $w $t %x %y %X %Y"
+    bind $d <B1-ButtonRelease> "end_drag_x $w $t %x %y;
+                                catch {unset ${w}(cursor_drag)}"
 
     bind $d <Any-Motion> "cross_hair $w $t %x %y"
     bind $d <Any-Leave>  "cross_hair_leave $w"
 
-    bind $d <<use>> "invoke_editor $w $t %x"
+    bind $d <<use>> "set ${w}(cursor_drag) {};
+                     invoke_editor $w $t %x"
 
     set ${t}(Init) 1
 }
@@ -1688,9 +1711,14 @@ proc addLine {d x y} {
 # functions used by tracks
 #
 
-proc drag_x {w t x y} {
+proc drag_x {w t x y {X 0} {Y 0}} {
     global $w $t
     
+    if {[info exists ${w}(cursor_drag)]} {
+	1.5cursor_press $t [set ${w}(cursor_drag)]
+	return [1.5cursor_motion $w $t [set ${w}(cursor_drag)] $X]
+    } 
+
     set start [set ${t}(m_start)]
     set d  [set ${t}(canvas)]
     set td [set ${t}(track)]
@@ -1714,6 +1742,11 @@ proc drag_x {w t x y} {
 
 proc end_drag_x {w t x y} {
     global $w $t
+
+    if {[info exists ${w}(cursor_drag)]} {
+	1.5cursor_release $t [set ${w}(cursor_drag)]
+	return
+    }
 
     set start [set ${t}(m_start)]
     set end   [set ${t}(m_stop)]
@@ -1914,11 +1947,13 @@ proc invoke_editor {w t x} {
 		        pos     $x \
 		        sent_by 0]
     } else {
+	set ${w}(invoking_editor) 1
 	edit_contig \
 	    -io $io \
 	    -contig  [set ${w}(cnum)] \
 	    -reading [set ${w}(cnum)] \
 	    -pos $x
+	unset ${w}(invoking_editor)
     }
 }
 
@@ -2462,13 +2497,15 @@ proc quality_item_init {w t} {
     bind $d <B2-Motion> "addLine $d %x %y"
     bind $d <3> "$d delete withttag tline"
 
-    bind $d <B1-Motion> "drag_x $w $t %x %y"
-    bind $d <B1-ButtonRelease> "end_drag_x $w $t %x %y"
+    bind $d <B1-Motion> "drag_x $w $t %x %y %X %Y"
+    bind $d <B1-ButtonRelease> "end_drag_x $w $t %x %y;
+                                catch {unset ${w}(cursor_drag)}"
 
     bind $d <Any-Motion> "cross_hair $w $t %x %y"
     bind $d <Any-Leave>  "cross_hair_leave $w"
 
-    bind $d <<use>> "invoke_editor $w $t %x"
+    bind $d <<use>> "set ${w}(cursor_drag) {};
+                     invoke_editor $w $t %x"
 }
 
 proc quality_item_config {w t} {
@@ -2553,13 +2590,15 @@ proc tag_item_init {w t} {
     bind $d <B2-Motion> "addLine $d %x %y"
     bind $d <3> "$d delete withttag tline"
 
-    bind $d <B1-Motion> "drag_x $w $t %x %y"
-    bind $d <B1-ButtonRelease> "end_drag_x $w $t %x %y"
+    bind $d <B1-Motion> "drag_x $w $t %x %y %X %Y"
+    bind $d <B1-ButtonRelease> "end_drag_x $w $t %x %y;
+                                catch {unset ${w}(cursor_drag)}"
 
     bind $d <Any-Motion> "cross_hair $w $t %x %y"
     bind $d <Any-Leave>  "cross_hair_leave $w"
 
-    bind $d <<use>> "invoke_editor $w $t %x"
+    bind $d <<use>> "set ${w}(cursor_drag) {};
+                     invoke_editor $w $t %x"
 }
 
 proc tag_item_config {w t} {
