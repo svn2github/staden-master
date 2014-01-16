@@ -1690,7 +1690,7 @@ proc ListEditMulti {name {read_only 0}} {
     if {[set t [ListEditMultiExists $name]] == ""} {
         set t "${ed_list_multi}_[ListNextEditor]"
         xtoplevel $t
-	wm geometry $t 990x400
+	wm geometry $t 1130x400
 	if {$read_only} {
 	    wm title $t "Viewing list: \"$name\""
 	} else {
@@ -1705,24 +1705,24 @@ proc ListEditMulti {name {read_only 0}} {
 
         # The text display and it's scrollbars.
 	tablelist $t.list \
-	    -columns {20 Name 10 Number 15 Contig 10 Position 15 Scaffold 10 {Pair Num} 15 {Pair Contig} 10 {Pair Pos} 15 {Pair Scaf}} \
+	    -columns {20 Name 10 Library 10 T.Status 10 Number 15 Contig 10 Position 15 Scaffold 10 {Pair Num} 15 {Pair Contig} 10 {Pair Pos} 15 {Pair Scaf}} \
 	    -labelcommand tablelist::sortByColumn \
 	    -exportselection 0 \
 	    -selectmode extended \
 	    -yscrollcommand [list $t.scrolly set]
 	
 	$t.list columnconfigure 0 -bg #e0e0e0
-	$t.list columnconfigure 1 -sortmode integer
 	$t.list columnconfigure 3 -sortmode integer
-	$t.list columnconfigure 4 -sortmode command \
+	$t.list columnconfigure 5 -sortmode integer
+	$t.list columnconfigure 6 -sortmode command \
 	    -formatcommand ListContigsScaffoldFormat \
 	    -sortcommand [list ListContigsScaffoldSort $t.list]
-	$t.list columnconfigure 5 -bg #e0e0e0 -sortmode command \
-	    -sortcommand SortOptionalInteger
-	$t.list columnconfigure 6 -bg #e0e0e0
 	$t.list columnconfigure 7 -bg #e0e0e0 -sortmode command \
 	    -sortcommand SortOptionalInteger
-	$t.list columnconfigure 8 -bg #e0e0e0 -sortmode command \
+	$t.list columnconfigure 8 -bg #e0e0e0
+	$t.list columnconfigure 9 -bg #e0e0e0 -sortmode command \
+	    -sortcommand SortOptionalInteger
+	$t.list columnconfigure 10 -bg #e0e0e0 -sortmode command \
 	    -formatcommand ListContigsScaffoldFormat \
 	    -sortcommand [list ListContigsScaffoldSort $t.list]
 
@@ -1845,6 +1845,7 @@ proc ListEditMultiUpdate {t name args} {
     }
 
     $t delete 0 end
+    array set lname ""
     if {$NGListTag($name) != ""} {
 	if {$NGListTag($name) == "SEQID"} {
 	    foreach i $NGList($name) {
@@ -1855,6 +1856,22 @@ proc ListEditMultiUpdate {t name args} {
 		    continue
 		}
 		set s [$io get_sequence $rec]
+		set lib [$s get_lib]
+		if {![info exists lname($lib)]} {
+		    if {$lib} {
+			set l [$io get_library $lib]
+			set lname($lib) [$l get_name]
+			$l delete
+		    } else {
+			set lname($lib) "(None)"
+		    }
+		}
+		set lib $lname($lib)
+		# See tg_sequence.h
+		set status [$s get_template_status]
+		set status [lindex {? Single Paired !Size !Orient Spanning} \
+			    [expr {$status+1}]]
+
 		set sname [$s get_name]
 		set pos [$s get_position]
 		set crec [$s get_contig]
@@ -1887,10 +1904,12 @@ proc ListEditMultiUpdate {t name args} {
 		    }
 		    $c delete
 		    
-		    $t insert end [list $sname $rec $cname $pos $fname \
-				      $pair_rec $pcname $pair_start $pfname]
+		    $t insert end [list $sname $lib $status \
+				       $rec $cname $pos $fname \
+				       $pair_rec $pcname $pair_start $pfname]
 		} else {
-		    $t insert end [list $sname $rec $cname $pos $fname]
+		    $t insert end [list $sname $lib $status \
+				       $rec $cname $pos $fname]
 		}
 		$s delete
 	    }
@@ -1957,13 +1976,13 @@ proc ListEditMultiSave {w op} {
     }
     foreach r $l {
 	if {$opt(End) & 1} {
-	    set val [lindex $r 1]
+	    set val [lindex $r 3]
 	    if { $val != "" } {
 		lappend reads "#$val"
 	    }
 	}
 	if {$opt(End) & 2} {
-	    set val [lindex $r 5]
+	    set val [lindex $r 7]
 	    if { $val != ""} {
 		lappend reads "#$val"
 	    }

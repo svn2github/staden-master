@@ -3092,6 +3092,9 @@ Array edview_items_between(edview *xx, tg_rec from_rec, tg_rec to_rec) {
 	if (y < from_y || y > to_y)
 	    continue;
 
+	if ((xx->r[i].flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISSEQ)
+	    continue;
+
 	if ((y == from_y || y == to_y) && xx->ed->stack_mode) {
 	    int p1 = xx->r[i].start - xx->displayPos;
 	    if (p1 < 0) p1 = 0;

@@ -1809,7 +1809,8 @@ static int sequence_cmd(ClientData clientData, Tcl_Interp *interp,
 	"get_clipped_position",         "get_orient",   "get_mapping_qual",
 	"get_base",     "insert_base",  "delete_base",  "replace_base",
 	"get_clips",    "set_clips",    "move_annos",   "get_template_orient",
-	"set_clips_no_invalidate",	"get_pair_pos",
+	"get_template_status",          "set_clips_no_invalidate",
+	"get_pair_pos", "get_library",
 	(char *)NULL,
     };
 
@@ -1821,7 +1822,8 @@ static int sequence_cmd(ClientData clientData, Tcl_Interp *interp,
 	GET_CLIPPED_POSITION,           GET_ORIENT,     GET_MAPPING_QUAL,
 	GET_BASE,       INSERT_BASE,    DELETE_BASE,    REPLACE_BASE,
 	GET_CLIPS,      SET_CLIPS,      MOVE_ANNOS,     GET_TEMPLATE_ORIENT,
-	SET_CLIPS_NO_INVALIDATE,	GET_PAIR_POS,
+	GET_TEMPLATE_STATUS,            SET_CLIPS_NO_INVALIDATE,
+	GET_PAIR_POS,   GET_LIBRARY,
     };
 
     if (objc < 2) {
@@ -1865,6 +1867,15 @@ static int sequence_cmd(ClientData clientData, Tcl_Interp *interp,
 	Tcl_SetStringObj(Tcl_GetObjResult(interp),
 			 ts->seq->name, ts->seq->name_len);
 	break;
+
+    case GET_LIBRARY: {
+	range_t *r = sequence_get_range(ts->io, ts->seq);
+	if (r)
+	    Tcl_SetIntObj(Tcl_GetObjResult(interp), r->library_rec);
+	else
+	    return TCL_ERROR;
+	break;
+    }
 
     case GET_SEQ:
 	Tcl_SetStringObj(Tcl_GetObjResult(interp),
@@ -2041,6 +2052,12 @@ static int sequence_cmd(ClientData clientData, Tcl_Interp *interp,
 	cache_decr(ts->io, s);
 	break;
     }
+
+    case GET_TEMPLATE_STATUS:
+	Tcl_SetIntObj(Tcl_GetObjResult(interp),
+		      sequence_get_template_info(ts->io, ts->seq,
+						 NULL, NULL));
+	break;
 
     case GET_MAPPING_QUAL:
 	Tcl_SetIntObj(Tcl_GetObjResult(interp), ts->seq->mapping_qual);
@@ -2869,6 +2886,8 @@ static int tcl_library_read(GapIO *io, Tcl_Interp *interp,
 
     Tcl_GetWideIntFromObj(interp, objv[1], &rec);
     l = (library_t *)cache_search(io, GT_Library, rec);
+    if (!l)
+	return TCL_ERROR;
 
     if (NULL == (tl = (tcl_library *)ckalloc(sizeof(*tl))))
 	return TCL_ERROR;
