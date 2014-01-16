@@ -673,12 +673,13 @@ add_menu File			1 0 left
 add_menu Tracks			1 0 left
 add_menu Help			1 0 right
 
+add_command {File.Save Settings} 1 0 {1.5plot_save_config $w}
 add_command {File.Exit}		1 0 {1.5plot_exit $w}
 
-add_check {Tracks.Template}     1 0 {${w}(template)} \
-    	    	    	    	{show_track $w template_item -200 \[set ${w}(template)\]}
-add_check {Tracks.Depth}    	1 0 {${w}(depth)} \
-    	    	    	    	{show_track $w depth_item -50 \[set ${w}(depth)\]}
+add_check {Tracks.Template}     1 0 {${w}(Show_Template)} \
+    	    	    	    	{show_track $w template_item -200 \[set ${w}(Show_Template)\]}
+add_check {Tracks.Depth}    	1 0 {${w}(Show_Depth)} \
+    	    	    	    	{show_track $w depth_item -50 \[set ${w}(Show_Depth)\]}
 
 add_command {Help.Main plot} 	1 0 {show_help gap5 {Template Display}}
 add_command {Help.Template button} 	1 0 {show_help gap5 {Template-Template}}

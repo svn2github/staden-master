@@ -49,6 +49,7 @@ proc 1.5Dplot {w io wid hei {cnum {}} {pos {}}} {
     set ${w}(last_x1) -9999999
     set ${w}(last_x2) -9999999
     set ${w}(ntracks) 0
+    set ${w}(Track_Visibility) {}
     set ${w}(FilterAutoUpdate) [keylget gap5_defs TEMPLATE.AUTO_UPDATE]
 
     # something to store the common x range information
@@ -67,8 +68,8 @@ proc 1.5Dplot {w io wid hei {cnum {}} {pos {}}} {
     }
     
     # starting tracks
-    set ${w}(template) 1
-    set ${w}(depth) 1
+    set ${w}(Show_Template) 1
+    set ${w}(Show_Depth) 1
 
     wm title $w "Contig [$c get_name]"
     
@@ -130,6 +131,13 @@ proc 1.5Dplot {w io wid hei {cnum {}} {pos {}}} {
     track_settings $w 
 
     $c delete
+
+    # Key bindings
+    for {set i 1} {$i <= 10} {incr i} {
+	bind $w <Shift-Key-F$i> "1.5plot_store_settings %W $i"
+	catch {bind $w <XF86_Switch_VT_$i> "1.5plot_store_settings %W $i"}
+	bind $w <Key-F$i> "1.5plot_restore_settings %W $i"
+    }
 
     # Contig registration
     set ${w}(reg) [contig_register \
@@ -336,6 +344,84 @@ proc 1.5cursor_release {t id} {
     catch {unset $t.cursor_selected_$id}
 }
 
+
+# Key bindings to save & restore user settings
+# Lowercase elements are considered internal changable things (x, y, width,
+# io, etc). Uppercase are considered to be settings to save (FilterPair,
+# ReadsOnly, PlotDepth, etc).
+proc 1.5plot_store_settings {w n} {
+    set N .read_depth.$n
+    global $w $N
+    array set $N [array get $w {[_A-Z]*}]
+
+    # Repeat for tracks
+    foreach tnum [set ${w}(tracks)] {
+	set t $w.track$tnum
+	set N .read_depth.track$tnum.$n
+	global $t $N
+
+	array set $N [array get $t {[_A-Z]*}]
+    }
+}
+
+proc 1.5plot_restore_settings {w n} {
+    set N .read_depth.$n
+    global $w $N
+
+    set old_tracks [set ${w}(Track_Visibility)]
+
+    # Copy params
+    array set $w [array get $N]
+    set ${w}(ForceRedraw) 1
+    set new_tracks [set ${w}(Track_Visibility)]
+
+    # Update tracks
+    set i 0
+    foreach tnum [set ${w}(tracks)] {
+	set t $w.track$tnum
+	set N .read_depth.track$tnum.$n
+	global $t $N
+	array set $t [array get $N]
+
+	if {[lindex $old_tracks $i] != [lindex $new_tracks $i]} {
+	    if {[lindex $new_tracks $i]} {
+		show_plot $w [set ${t}(func)] 0
+	    } else {
+		remove_plot $w [set ${t}(func)] 0
+	    }
+	}
+
+	incr i
+    }
+
+    update idletasks
+    redraw_plot $w
+}
+
+# Save current settings to gap5rc
+proc 1.5plot_save_config {w} {
+    global $w gap5_defs env
+    1.5plot_store_settings $w 0
+
+    set keys {}
+
+    for {set n 0} {$n <= 10} {incr n} {
+	global .read_depth.$n
+	keylset gap5_defs TEMPLATE_DISPLAY.SETTINGS_$n.BASE \
+	    [array get .read_depth.$n]
+	foreach tnum [set ${w}(tracks)] {
+	    set t $w.track$tnum
+	    global .read_depth.$n
+	    keylset gap5_defs TEMPLATE_DISPLAY.SETTINGS_$n.TRACK$tnum \
+		[array get .read_depth.$n]
+	}
+	lappend keys TEMPLATE_DISPLAY.SETTINGS_$n
+    }
+
+    eval update_defs gap5_defs [list $env(HOME)/.gap5rc] $keys
+}
+
+
 # Resize events
 proc resize1.5 {w} {
     global $w
@@ -510,6 +596,7 @@ proc add_plot {w func height has_scroll has_scale visible args} {
     incr ${w}(ntracks)
     set tnum [set ${w}(ntracks)]
     lappend ${w}(tracks) $tnum
+    lappend ${w}(Track_Visibility) $visible
     set t $w.track$tnum
     global $t
 
@@ -553,6 +640,8 @@ proc add_plot {w func height has_scroll has_scale visible args} {
     if {$visible} {
 	grid rowconfigure $w $tnum -weight $weight
     }
+
+    return $t
 }
 
 #
@@ -994,9 +1083,9 @@ proc show_track {w track_type height show} {
     }
 }
 
-proc show_plot {w track_type} {
+proc show_plot {w track_type {replot 1}} {
     global $w
-    
+
     foreach id [set ${w}(tracks)] {
     	set t $w.track$id
 	global $t
@@ -1015,13 +1104,20 @@ proc show_plot {w track_type} {
 	    }
 	    
 	    grid rowconfigure $w $id -weight 1
+
+	    set i [lsearch [set ${w}(tracks)] $id]
+	    set ${w}(Track_Visibility) [lreplace [set ${w}(Track_Visibility)] $i $i 1]
+	    if {!$replot} {
+		catch {[set ${t}(func)]_config $w $t}
+	    }
 	}
     }
     
-    redraw_plot $w
+
+    if {$replot} {redraw_plot $w}
 }
 
-proc remove_plot {w track_type} {
+proc remove_plot {w track_type {replot 1}} {
     global $w
     
     foreach id [set ${w}(tracks)] {
@@ -1046,11 +1142,16 @@ proc remove_plot {w track_type} {
 	    }
 	    
 	    grid rowconfigure $w $id -weight 0
+
+	    set i [lsearch [set ${w}(tracks)] $id]
+	    set ${w}(Track_Visibility) [lreplace [set ${w}(Track_Visibility)] $i $i 0]
 	}
     }
-    
-    update idletasks
-    redraw_plot $w
+
+    if {$replot} {
+	update idletasks
+	redraw_plot $w
+    }
 }
 
 
@@ -2341,20 +2442,20 @@ proc quality_item_init {w t} {
     $m add separator
     $m add checkbutton \
 	-label "Consensus Quality" \
-        -variable ${w}(quality) \
+        -variable ${w}(Show_Quality) \
 	-command "quality_item_config $w $t"
     $m add checkbutton \
 	-label "Consensus Heterozygosity" \
-	-variable ${w}(hetero) \
+	-variable ${w}(Show_Hetero) \
 	-command "quality_item_config $w $t"
     $m add checkbutton \
 	-label "Consensus Discrepancies" \
-	-variable ${w}(discrep) \
+	-variable ${w}(Show_Discrep) \
 	-command "quality_item_config $w $t"
 
-    set ${w}(quality) 0
-    set ${w}(hetero)  0
-    set ${w}(discrep) 0
+    set ${w}(Show_Quality) 0
+    set ${w}(Show_Hetero)  0
+    set ${w}(Show_Discrep) 0
 #    quality_item_config $w $t
 
     bind $d <2> "set lastx %x; set lasty %y"
@@ -2375,16 +2476,16 @@ proc quality_item_config {w t} {
 
     # Do we need it to be visible
     set visible 0
-    if {[set ${w}(quality)]} {set visible 1}
-    if {[set ${w}(hetero)]}  {set visible 1}
-    if {[set ${w}(discrep)]} {set visible 1}
+    if {[set ${w}(Show_Quality)]} {set visible 1}
+    if {[set ${w}(Show_Hetero)]}  {set visible 1}
+    if {[set ${w}(Show_Discrep)]} {set visible 1}
 
     set d [set ${t}(canvas)]
     set td [set ${t}(track)]
     $d itemconfigure $td \
-	-quality        [set ${w}(quality)] \
-	-heterozygosity [set ${w}(hetero)] \
-	-discrepancies  [set ${w}(discrep)]
+	-quality        [set ${w}(Show_Quality)] \
+	-heterozygosity [set ${w}(Show_Hetero)] \
+	-discrepancies  [set ${w}(Show_Discrep)]
     
     if {$visible} {
 	show_plot $w quality_item
@@ -2438,10 +2539,15 @@ proc tag_item_init {w t} {
     $m add separator
     $m add checkbutton \
 	-label "Tags" \
-        -variable ${w}(tags) \
+        -variable ${w}(Show_Tags) \
 	-command "tag_item_config $w $t"
 
-    set ${w}(tags) 0
+#    trace add variable ${w}(Show_Tags) write "tag_item_config $w $t"
+#    if {![info exists ${w}(Show_Tags)]} {
+#	set ${w}(Show_Tags) 0
+#    } else {
+#	set ${w}(Show_Tags) [set ${w}(Show_Tags)]
+#    }
 
     bind $d <2> "set lastx %x; set lasty %y"
     bind $d <B2-Motion> "addLine $d %x %y"
@@ -2461,7 +2567,7 @@ proc tag_item_config {w t} {
 
     # Do we need it to be visible
     set visible 0
-    if {[set ${w}(tags)]} {set visible 1}
+    if {[set ${w}(Show_Tags)]} {set visible 1}
 
     set d [set ${t}(canvas)]
     set td [set ${t}(track)]
@@ -2583,6 +2689,7 @@ proc CreateTemplateDisplay {io cnum {pos {}}} {
     set pwin .read_depth[counter]
     set width  [keylget gap5_defs TEMPLATE.WIDTH]
     set height [keylget gap5_defs TEMPLATE.HEIGHT]
+    global $pwin
 
     1.5Dplot $pwin $io $width $height $cnum $pos
 #    add_plot $pwin seq_seqs    250  1 1 -bd 0 -relief raised
@@ -2595,7 +2702,41 @@ proc CreateTemplateDisplay {io cnum {pos {}}} {
     add_plot $pwin tag_item        0 0 0 0 -bd 0 -relief raised -bg black
     add_plot $pwin seq_ruler      50 0 0 1 -bd 1 -relief sunken
 
+    set db [[set ${pwin}(io)] get_database]
+    set nc [$db get_num_libraries]
+    array set lib_recs ""
+    for {set i 0} {$i < $nc} {incr i} {
+	set lib_recs([$db get_library_rec $i]) 1
+    }
+
+    # Query global settings and initialise
+    for {set i 0} {$i <= 10} {incr i} {
+	if {![catch {keylget gap5_defs TEMPLATE_DISPLAY.SETTINGS_$i}]} {
+	    set k [keylget gap5_defs TEMPLATE_DISPLAY.SETTINGS_$i]
+	    global .read_depth.$i
+	    array set .read_depth.$i [keylget k BASE]
+	    for {set j 1} {$j <= [set ${pwin}(ntracks)]} {incr j} {
+		global .read_depth.track$j.$i
+		array set .read_depth.track$j.$i [keylget k "TRACK$j"]
+	    }
+
+	    # Correct (Libs) element to see if it's valid for this database.
+	    if {[info exists .read_depth.${i}(Libs)]} {
+		foreach rec [set .read_depth.${i}(Libs)] {
+		    if {![info exists lib_recs($rec)]} {
+			set .read_depth.${i}(Libs) ""
+			break;
+		    }
+		}
+	    }
+	}
+    }
+
     tkwait visibility $pwin
+    update
+
+    1.5plot_restore_settings $pwin 0
+
     after 1 "redraw_plot $pwin"
 }
 
