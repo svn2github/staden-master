@@ -682,7 +682,6 @@ static void find_pair(GapIO *io, tg_pair_t *pair, tg_rec recno, char *tname,
     if (!new) {
 	pair_loc_t *po = (pair_loc_t *)hi->data.p;
 	int st, en;
-	//bin_index_t *bo;
 	
 	/* We found one so update r_out now, before flush */
 	st = po->pos;
@@ -701,29 +700,29 @@ static void find_pair(GapIO *io, tg_pair_t *pair, tg_rec recno, char *tname,
 	    r_out->flags |= GRANGE_FLAG_COMP2;
 	
 	if (!a->fast_mode) {
-	    /* TEMP - move later*/
 	    int st = pl->pos;
 	    int en = pl->pos + (pl->orient ? - (pl->len-1) : pl->len-1);
+	    bin_index_t *bo;
+	    range_t *ro;
 
-	    fprintf(pair->finish->fp,
-		    "%"PRIrec" %d %"PRIrec" %d %d %d %d %"PRIrec"\n",
-		    po->bin, po->idx, pl->rec, pl->flags,
-		    MIN(st, en), MAX(st, en),
-		    pl->mq, pl->crec);
+	    // Make backwards link only if it's still due to be written out.
+	    bo = (bin_index_t *)cache_search_no_load(io, GT_Bin, po->bin);
+	    if (bo && cache_lock_mode(io, bo) == G_LOCK_RW) {
+		//bo = cache_rw(io, bo);
+		bo->flags |= BIN_RANGE_UPDATED;
+		ro = arrp(range_t, bo->rng, po->idx);
+		ro->flags &= ~GRANGE_FLAG_TYPE_MASK;
+		ro->flags |=  GRANGE_FLAG_TYPE_PAIRED;
+		ro->pair_rec = pl->rec;
+	    } else {
+		fprintf(pair->finish->fp,
+			"%"PRIrec" %d %"PRIrec" %d %d %d %d %"PRIrec"\n",
+			po->bin, po->idx, pl->rec, pl->flags,
+			MIN(st, en), MAX(st, en),
+			pl->mq, pl->crec);
+	    }
 	
 	    if (po->bin > pair->max_bin) pair->max_bin = po->bin;
-	    
-	    /* fprintf(stderr, "Get other side\n"); */
-	    /* Link other end to 'us' too */
-	    /*
-	    bo = (bin_index_t *)cache_search(io, GT_Bin, po->bin);
-	    bo = cache_rw(io, bo);
-	    bo->flags |= BIN_RANGE_UPDATED;
-	    ro = arrp(range_t, bo->rng, po->idx);
-	    ro->flags &= ~GRANGE_FLAG_TYPE_MASK;
-	    ro->flags |=  GRANGE_FLAG_TYPE_PAIRED;
-	    ro->pair_rec = pl->rec;
-	    */
 	}
 	
 	if (lib) {

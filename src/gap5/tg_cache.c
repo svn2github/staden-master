@@ -3011,6 +3011,18 @@ cached_item *cache_dup(GapIO *io, cached_item *sub_ci) {
 }
 
 /*
+ * Returns the current cache lock mode for an item.
+ */
+int cache_lock_mode(GapIO *io, void *data) {
+    cached_item *ci = ci_ptr(data);
+    cached_item *mi = cache_master(ci);
+
+    /* Ignore io->base for now */
+
+    return mi->lock_mode;
+}
+
+/*
  * Locks a cached item for read-write access, returning a new pointer.
  * For 'derived' GapIOs this locks the original but returns the duplicated
  * (copy on write) version. Otherwise it locks in situ and returns the

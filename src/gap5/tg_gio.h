@@ -114,6 +114,7 @@ void *cache_search(GapIO *io, int type, tg_rec rec);
 void *cache_search_no_load(GapIO *io, int type, tg_rec rec);
 int cache_upgrade(GapIO *io, cached_item *ci, int mode);
 void *cache_lock(GapIO *io, int type, tg_rec rec, int mode);
+int cache_lock_mode(GapIO *io, void *data);
 
 void cache_dump(GapIO *io); /* Print cache contents, for debugging */
 
