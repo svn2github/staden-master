@@ -12,6 +12,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <math.h>
 
 #include "tg_gio.h"
 #include "tg_index_common.h"
@@ -30,9 +31,10 @@ static char *get_tmp_directory(void) {
     
     /* Find a place to put the tmp files    
        First *nix then Windows */
-    
-    if (NULL == (dir = getenv("TMP_DIR"))) {
-    	 dir = getenv("TEMP");
+    if (NULL == (dir = getenv("TMPDIR"))) {
+    	if (NULL == (dir = getenv("TMP_DIR"))) {
+    	    dir = getenv("TEMP");
+	}
     }
     
     /* if tmp_dir is null then we will just use the default locations */
@@ -350,52 +352,184 @@ static void bttmp_get_next_entry(bttmp_queue_t *que) {
 }
 
 
+// a binary tree sort to speed up the merging
+typedef struct sort_node_s {
+    struct sort_node_s *up;
+    struct sort_node_s *child_left;
+    struct sort_node_s *child_right;
+    bttmp_queue_t      *data;
+} sort_node;
+
+
+sort_node *new_sort_node(sort_node *up, sort_node *left, sort_node *right) {
+    sort_node *leaf = malloc(sizeof(sort_node));
+    leaf->up = up;
+    leaf->child_left = left;
+    leaf->child_right = right;
+    leaf->data = NULL;
+    
+    return leaf;
+}
+
+
+sort_node *add_sort_leaf(sort_node *last_leaf, bttmp_queue_t *val) {
+    int tier = 0;
+    int not_found = 1;
+    
+    // new tree
+    if (last_leaf == NULL) {
+	last_leaf = new_sort_node(NULL, NULL, NULL);
+	last_leaf->data = val;
+	return last_leaf;
+    }
+    
+    // find where the new leaf should go
+    while (not_found) {
+	if (tier && last_leaf->child_left == NULL) { // create new left child
+	    sort_node *leaf = new_sort_node(last_leaf, NULL, NULL);
+	    last_leaf->child_left = leaf;
+	    tier--;
+	    last_leaf = leaf;
+
+	    if (tier == 0) not_found = 0;
+	} else if (tier && last_leaf->child_right == NULL) { // create a right child
+	    sort_node *leaf = new_sort_node(last_leaf, NULL, NULL);
+	    last_leaf->child_right = leaf;
+	    tier--;
+	    last_leaf = leaf;
+
+	    if (tier == 0) not_found = 0;
+	} else { // go up
+	    if (last_leaf->up) {
+	    	last_leaf = last_leaf->up;
+		tier++;
+	    } else { // new top
+	    	sort_node *leaf = new_sort_node(NULL, last_leaf, NULL);
+	    	last_leaf->up = leaf;
+		last_leaf = leaf;
+		tier++;
+	    }
+	}
+    }
+    
+    last_leaf->data = val;
+    
+    return last_leaf;
+}
+
+
+sort_node *sort_tree_head(sort_node *leaf) {
+    
+    while (leaf->up) {
+    	leaf = leaf->up;
+    }
+    
+    return leaf;
+}
+
+
+void populate_sort_tree(sort_node *node) {
+    if (node->child_left) {
+    	populate_sort_tree(node->child_left);
+    }
+    
+    if (node->child_right) {
+    	populate_sort_tree(node->child_right);
+    }
+    
+    if (node->child_left && node->child_right) {
+    	bttmp_queue_t *left  = node->child_left->data; 
+    	bttmp_queue_t *right = node->child_right->data;
+	
+    	node->data = left;
+	
+	if (right->size && strcmp(left->data[left->index], right->data[right->index]) > 0) {
+	   node->data = right;
+	}
+    }
+    
+    return;
+}
+
+
+sort_node *delete_sort_tree(sort_node *node) {
+    sort_node *child = NULL;
+    
+    if (node->child_left) {
+    	child = delete_sort_tree(node->child_left);
+	if (child) free(child);
+    }
+    
+    if (node->child_right) {
+    	child = delete_sort_tree(node->child_right);
+	if (child) free(child);
+    }
+    
+    return node;
+}
+
+
 static bttmp_t *bttmp_merge_sort(bttmp_sort_t *sort) {
     int i;
-    int still_looking = 1;
+    int next;
     bttmp_t *output = bttmp_file_open();
+    sort_node *head, *last_leaf = NULL;
+    bttmp_queue_t dummy;
     
     for (i = 0; i < sort->index; i++) {
     	bttmp_load_data(&sort->que[i]);
+	last_leaf = add_sort_leaf(last_leaf, &sort->que[i]);
+	sort->que[i].node = last_leaf;
     }
     
-    while (still_looking) {
-    	char *compare = NULL;
-	int file;
-	int done = 0;
+    next = pow(2, ceil(log(sort->index) / log(2)));
+    
+    if (sort->index < next) { // balance the tree
+    	dummy.size = 0;
 	
-	for (i = 0; i < sort->index; i++) {
-	    bttmp_queue_t *que = &sort->que[i];
+    	for (i = 0; i < (next - sort->index); i++) {
+   	    last_leaf = add_sort_leaf(last_leaf, &dummy);
+	}
+    }
+    
+    head = sort_tree_head(last_leaf);
+    populate_sort_tree(head);
+    
+    // do the actual sorting
+    while (head->data->size) {
+	sort_node *node = head->data->node;
+    	sort_node *left;
+	sort_node *right;
+    	bttmp_queue_t *que = head->data;
+	
+	fprintf(output->fp, "%s", que->data[que->index]);
+	bttmp_get_next_entry(que);
+	
+	// redo tree with new value
+	while (node->up) {
+	    node = node->up;
+	    left  = node->child_left;
+	    right = node->child_right;
 	    
-	    if (que->size) {
-	    	done++;
-		
-		if (compare == NULL) {
-		    compare = que->data[que->index];
-		    file = i;
-		} else {
-		    if (strcmp(compare, que->data[que->index]) > 0) {
-		    	compare = que->data[que->index];
-			file = i;
-		    }
-		}
+	    node->data = left->data;
+	    
+	    if ((!node->data->size) || (right->data->size &&  
+	    	strcmp(node->data->data[node->data->index], right->data->data[right->data->index]) > 0)) {
+		node->data = right->data;
 	    }
-	}
-	
-	if (done) {
-	    fprintf(output->fp, "%s", compare);
-	    bttmp_get_next_entry(&sort->que[file]);
-	} else {
-	    still_looking = 0;
+	    
 	}
     }
-    
+
+    delete_sort_tree(head);
+    free(head);
+    printf("Partial done %s\n", output->name);
     rewind(output->fp);
     
     return output;
 }
-  
-  
+
+
 static void bttmp_reset_sort(bttmp_sort_t *s) {
     int i;
     
@@ -409,6 +543,7 @@ static void bttmp_reset_sort(bttmp_sort_t *s) {
     
     s->index = 0;
 }
+
 
 static long bttmp_write_index(GapIO *io, FILE *fp) {
     char *line_in  = NULL;

@@ -17,6 +17,7 @@ typedef struct {
 } bttmp_data_t;
 
 typedef struct {
+    struct sort_node *node;
     bttmp_t *file;
     string_alloc_t *data_pool;
     char **data;

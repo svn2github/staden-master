@@ -402,7 +402,7 @@ int main(int argc, char **argv) {
 	/* Add to our sequence name B+Tree */
 	if (a.tmp) {
 	    // save the last queue
-	    bttmp_build_index(io, a.tmp, 1000, 10);
+	    bttmp_build_index(io, a.tmp, 1000, 128);
 	    bttmp_store_delete(a.tmp);
 	}
     }
