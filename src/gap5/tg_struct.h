@@ -569,7 +569,7 @@ typedef struct {
 } anno_ele_t;
 
 #define ANNO_DIR_FWD '+'
-#define ANNO_DIR_REV '+'
+#define ANNO_DIR_REV '-'
 #define ANNO_DIR_NUL '.'
 #define ANNO_DIR_UNK '?'
 
