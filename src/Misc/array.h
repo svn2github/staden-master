@@ -89,5 +89,7 @@ extern int ArrayDestroy(Array a);
 
 extern char *ArrayErrorString(int error);
 
+// Use as ArrayPush(Foo, int, 10);
+#define ArrayPush(a,t,v) (*((t*)ArrayRef((a),ArrayMax((a))))=(v))
 
 #endif /*_ARRAY_H_*/
