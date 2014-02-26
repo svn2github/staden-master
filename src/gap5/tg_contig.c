@@ -165,13 +165,25 @@ int contig_offset(GapIO *io, contig_t **c) {
  * position and offset computed against that absolute pos. These get passed
  * around in apos / aoffset.
  *
+ * start_delta and end_delta are adjustments to the unclipped contig
+ * start and end coordinates. Note that these are not the same as the
+ * maximum start_used and end_used extents in bins as these may also
+ * include cached consensus.  We update these fields as we go based on
+ * knowledge of the bin structure so we can avoid expensive
+ * contig_visible_start() and _end() calls later. Pass them in as -1
+ * (unknown).  This code will adjust to +1 or 0 if the absolute change
+ * is known, otherwise the calling code will have to brute force
+ * recalculate itself.
+ *
  * Returns >=0 for success (0 => no insertion made, 1 => insert done)
  *          -1 for failure
  */
 static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 			       int pos, int apos, int start_of_contig,
 			       int offset, int aoffset, char base, int conf,
-			       int nbases, int comp, HacheTable *hash) {
+			       int nbases, int comp, HacheTable *hash,
+			       int cstart, int cend,
+			       int *start_delta, int *end_delta) {
     int i, ins = 0;
     bin_index_t *bin;
     HacheData hd;
@@ -179,9 +191,6 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 
     bin = get_bin(io, bnum);
     cache_incr(io, bin);
-
-    if (!(bin = cache_rw(io, bin)))
-	return -1;
 
     /* Normalise pos for complemented bins */
     if (bin->flags & BIN_COMPLEMENTED) {
@@ -198,6 +207,11 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	f_a = +1;
 	f_b = aoffset;
     }
+
+    //printf("Raw used range %d..%d ", bin->start_used, bin->end_used);
+
+    if (!(bin = cache_rw(io, bin)))
+	return -1;
 
     /* FIXME: add end_used (or start_used if complemented?) check here,
      * so we can shortcut looping through the bin if we're inserting beyond
@@ -361,6 +375,8 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	if (bin->rng && ArrayMax(bin->rng)) {
 	    int start = INT_MAX;
 	    int end   = INT_MIN;
+	    int seq_start = INT_MAX;
+	    int seq_end   = INT_MIN;
 	    for (i = 0; i < ArrayMax(bin->rng); i++) {
 		range_t *r = arrp(range_t, bin->rng, i);
 	    
@@ -371,8 +387,26 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		    start = r->start;
 		if (end   < r->end)
 		    end   = r->end;
+
+		if ((r->flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISSEQ)
+		    continue;
+
+		if (seq_start > r->start)
+		    seq_start = r->start;
+		if (seq_end   < r->end)
+		    seq_end   = r->end;
 	    }
 	    if (start != INT_MAX) {
+//		if (*start_delta == -1 && NORM(start)!=NORM(bin->start_used)) {
+//		    *start_delta = nbases;
+//		    assert(nbases == NORM(start) - NORM(bin->start_used));
+//		}
+//		if (*end_delta == -1 && NORM(end) != NORM(bin->end_used)) {
+//		    *end_delta = nbases;
+//		    assert(nbases == NORM(end) - NORM(bin->end_used));
+//		}
+		if (NORM(seq_end) > cend)
+		    *end_delta = nbases;
 		bin->start_used = start;
 		bin->end_used = end;
 	    } else {
@@ -394,13 +428,32 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 
 	    ch = get_bin(io, bin->child[i]);
 
+	    /* Using absolute coordinates, measure the impact on contig
+	     * start and end locations.
+	     */
+	    if (ch->nseqs) {
+		if (apos   >  NMAX(ch->pos, ch->pos + ch->size-1) && 
+		    cstart <= NMAX(ch->pos, ch->pos + ch->size-1)) {
+		    // Child entirely to left.
+		    //printf("BIN %"PRIrec" entirely left\n", bin->rec);
+		    *start_delta=0;
+		} else if (apos <  NMIN(ch->pos, ch->pos + ch->size-1) &&
+			   cend >= NMIN(ch->pos, ch->pos + ch->size-1)) {
+		    // Child entirely to right
+		    //printf("BIN %"PRIrec" entirely right\n", bin->rec);
+		    *end_delta=nbases;
+		}
+	    }
+
 	    if (pos >= MIN(ch->pos, ch->pos + ch->size-1) &&
 		pos <= MAX(ch->pos, ch->pos + ch->size-1)) {
 		ins |= contig_insert_base2(io, crec, bin->child[i], pos, apos,
 					   start_of_contig,
 					   MIN(ch->pos, ch->pos + ch->size-1),
 					   NMIN(ch->pos, ch->pos + ch->size-1),
-					   base, conf, nbases, comp, hash);
+					   base, conf, nbases, comp, hash,
+					   cstart, cend,
+					   start_delta, end_delta);
 		/* Children to the right of this one need pos updating too */
 	    } else if (pos < MIN(ch->pos, ch->pos + ch->size-1)) {
 		ch = get_bin(io, bin->child[i]);
@@ -409,12 +462,21 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		    return -1;
 		}
 
-		//printf("Mov bin %"PRIrec"\n", ch->rec);
-
 		ch->pos+=nbases;
 		if (ch->nseqs)
 		    ins=1;
 		ch->flags |= BIN_BIN_UPDATED;
+	    }
+
+	    ch = get_bin(io, bin->child[i]);
+	    if (!(ch->start_used ==0 && ch->end_used == 0)) {
+		// local copies
+		int aoffset = NMIN(ch->pos, ch->pos + ch->size-1);
+		int f_a, f_b;
+		if (comp ^ ((ch->flags & BIN_COMPLEMENTED) != 0))
+		    f_a = -1, f_b = aoffset + ch->size-1;
+		else
+		    f_a = +1, f_b = aoffset;
 	    }
 	}
     }
@@ -591,17 +653,14 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
     int dir;
     HacheTable *hash = NULL;
     int ret;
-    int cstart, cend;
-    int nbases2 = nbases;
+    int nbases2 = nbases; 
+    int cstart = (*c)->start, cend = (*c)->end;
+    int start_delta, end_delta;
 
-    if (pos < (*c)->start || pos > (*c)->end)
-	return 0;
-    
-    consensus_valid_range(io, (*c)->rec, &cstart, &cend);
+    //printf("PRE %d..%d\n", (*c)->start, (*c)->end);
 
-    if (pos < cstart || pos > cend) {
+    if (pos < cstart || pos > cend)
 	return 0;
-    }
     
     if (!(n = cache_rw(io, *c)))
 	return -1;
@@ -619,10 +678,13 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
     hash = HacheTableCreate(4096, HASH_NONVOLATILE_KEYS | HASH_POOL_ITEMS
 			    | HASH_ALLOW_DUP_KEYS | HASH_DYNAMIC_SIZE);
 
+    start_delta = end_delta = -1;
     ret = contig_insert_base2(io, n->rec, contig_get_bin(c), pos, pos,
 			      pos == n->start,
 			      contig_offset(io, c), contig_offset(io, c),
-			      base, conf, nbases, 0, hash);
+			      base, conf, nbases, 0, hash,
+			      cstart, cend, &start_delta, &end_delta);
+
     ret |= contig_insert_tag2(io, n->rec, contig_get_bin(c), pos, pos,
 			      pos == n->start,
 			      contig_offset(io, c), contig_offset(io, c),
@@ -636,14 +698,31 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
      * Similarly inserting a base *may* shrink the contig if the
      * left-most read is in left-cutoff data at pos.
      *
-     * For safety, we simply have to recompute start/end.
+     * For safety, we simply have to recompute start/end when we
+     * haven't worked out the correct start/end delta values.
      */
+    //start_delta=end_delta=-1; // disable optimisation for debugging.
 
-    /* Best guess */
-    contig_set_end(io, c, contig_get_end(c)+nbases);
+    if (start_delta > -1)
+	cstart += start_delta;
+    else
+	consensus_unclipped_range(io, (*c)->rec, &cstart, NULL);
+
+
+    if (end_delta > -1) {
+	cend   += end_delta;
+    } else {
+	/* Best guess */
+	contig_set_end(io, c, contig_get_end(c)+nbases);
+	consensus_unclipped_range(io, (*c)->rec, NULL, &cend);
+    }
 
     /* Verify */
-    consensus_unclipped_range(io, (*c)->rec, &cstart, &cend);
+//    int cs = cstart, ce = cend;
+//    consensus_unclipped_range(io, (*c)->rec, &cstart, &cend); // TEST only
+//    assert(cs == cstart);
+//    assert(ce == cend);
+
     if (contig_get_start(c) != cstart)
 	contig_set_start(io, c, cstart);
     if (contig_get_end(c) != cend)
@@ -654,8 +733,9 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
     /* Force update of clipped start/end */
     (*c)->clipped_timestamp = 0;
 
-    contig_visible_start(io, (*c)->rec, CITER_CSTART);
-    contig_visible_end(io, (*c)->rec, CITER_CEND);
+// Delay updating until we need them.
+//    contig_visible_start(io, (*c)->rec, CITER_CSTART);
+//    contig_visible_end(io, (*c)->rec, CITER_CEND);
 
     if (1 != ret)
 	return 0;
@@ -749,6 +829,8 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
 	}
     }
 
+    //printf("POST %d..%d\n", (*c)->start, (*c)->end);
+
     if (hash)
 	HacheTableDestroy(hash, 0);
 
@@ -800,7 +882,8 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 			       int pos, int apos, int start_of_contig,
 			       int offset, int aoffset,
 			       int base, int comp, HacheTable *hash,
-			       int bcall) {
+			       int bcall, int cstart, int cend,
+			       int *start_delta, int *end_delta) {
     int i, ins = 0;
     bin_index_t *bin;
     HacheData hd;
@@ -1121,13 +1204,32 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 
 	    ch = get_bin(io, bin->child[i]);
 
+	    /* Using absolute coordinates, measure the impact on contig
+	     * start and end locations.
+	     */
+	    if (ch->nseqs) {
+		if (apos   >  NMAX(ch->pos, ch->pos + ch->size-1) && 
+		    cstart <= NMAX(ch->pos, ch->pos + ch->size-1)) {
+		    // Child entirely to left.
+		    //printf("BIN %"PRIrec" entirely left\n", bin->rec);
+		    *start_delta=0;
+		} else if (apos <  NMIN(ch->pos, ch->pos + ch->size-1) &&
+			   cend >= NMIN(ch->pos, ch->pos + ch->size-1)) {
+		    // Child entirely to right
+		    //printf("BIN %"PRIrec" entirely right\n", bin->rec);
+		    *end_delta=1;
+		}
+	    }
+
 	    if (pos >= MIN(ch->pos, ch->pos + ch->size-1) &&
 		pos <= MAX(ch->pos, ch->pos + ch->size-1)) {
 		ins |= contig_delete_base2(io, crec, bin->child[i], pos, apos,
 					   start_of_contig,
 					   MIN(ch->pos, ch->pos + ch->size-1),
 					   NMIN(ch->pos, ch->pos + ch->size-1),
-					   base, comp, hash, bcall);
+					   base, comp, hash, bcall,
+					   cstart, cend,
+					   start_delta, end_delta);
 		/* Children to the right of this one need pos updating too */
 	    } else if (pos < MIN(ch->pos, ch->pos + ch->size-1)) {
 		ch = get_bin(io, bin->child[i]);
@@ -1282,14 +1384,11 @@ int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
     int cur_del = 0;
     int done = 0, reduced;
     HacheTable *hash = NULL;
-    int cstart, cend;
+    int cstart = (*c)->start, cend = (*c)->end;
+    int start_delta, end_delta;
 
-    consensus_valid_range(io, (*c)->rec, &cstart, &cend);
-
-    if (pos < cstart || pos > cend) {
-	puts("Do nothing");
+    if (pos < cstart || pos > cend)
 	return 0;
-    }
 
     if (!(n = cache_rw(io, *c)))
 	return -1;
@@ -1406,10 +1505,12 @@ int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
     hash = HacheTableCreate(4096, /*HASH_NONVOLATILE_KEYS | */HASH_POOL_ITEMS
 			    | HASH_ALLOW_DUP_KEYS | HASH_DYNAMIC_SIZE);
 
+    start_delta = end_delta = -1;
     reduced = contig_delete_base2(io, n->rec, contig_get_bin(c), pos, pos,
 				  pos == n->start,
 				  contig_offset(io, c), contig_offset(io, c),
-				  !shift, 0, hash, base);
+				  !shift, 0, hash, base,
+				  cstart, cend, &start_delta, &end_delta);
 
     /*
      * Deletion can move objects left if the deleted coord is in the left
@@ -1431,15 +1532,25 @@ int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
      *
      * The easiest solution is just recalculate both ends.
      */
-    contig_visible_start(io, (*c)->rec, CITER_CSTART);
-    contig_visible_end(io, (*c)->rec, CITER_CEND);
-    consensus_unclipped_range(io, (*c)->rec, &cstart, &cend);
+    if (start_delta > -1)
+	cstart -= start_delta;
+    else
+	consensus_unclipped_range(io, (*c)->rec, &cstart, NULL);
+
+    if (end_delta > -1)
+	cend -= end_delta;
+    else
+	consensus_unclipped_range(io, (*c)->rec, NULL, &cend);
+
     if (contig_get_start(c) != cstart)
 	contig_set_start(io, c, cstart);
     if (contig_get_end(c) != cend)
 	contig_set_end(io, c, cend);
 
     (*c)->timestamp = io_timestamp_incr(io);
+
+    /* Force update of clipped start/end */
+    (*c)->clipped_timestamp = 0;
 
     if (hash)
 	HacheTableDestroy(hash, 0);
@@ -1462,16 +1573,18 @@ int contig_delete_pad(GapIO *io, contig_t **c, int pos) {
  * The code shares a lot with ins/del, so we just call those functions with
  * specific arguments. Eg insertion base==0 implies shift only.
  *
- * dir +1 => shift right
- *     -1 => shift left
- *
- * Currently 1bp only, but in future we may support +n/-n
+ * dir +N => shift right by N bases
+ *     -N => shift left by N bases
  */
 int contig_shift_base(GapIO *io, contig_t **c, int pos, int dir) {
-    if (dir > 0)
-	return contig_insert_base_common(io, c, pos, 0, 0, 1);
-    else
-	return contig_delete_base_common(io, c, pos+1, 1, 0);
+    if (dir > 0) {
+	return contig_insert_base_common(io, c, pos, 0, 0, dir);
+    } else {
+	int i, r = 0;
+	while (dir++ < 0)
+	    r |= contig_delete_base_common(io, c, pos+1, 1, 0);
+	return r;
+    }
 }
 
 contig_t *contig_new(GapIO *io, char *name) {
