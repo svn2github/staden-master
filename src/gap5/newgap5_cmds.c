@@ -2152,6 +2152,7 @@ int tcl_shuffle_pads(ClientData clientData, Tcl_Interp *interp,
 	{"-io",		ARG_IO,  1, NULL,  offsetof(shuffle_arg, io)},
 	{"-contigs",	ARG_STR, 1, "*",   offsetof(shuffle_arg, inlist)},
 	{"-band",	ARG_INT, 1, "8",   offsetof(shuffle_arg, band)},
+	{"-soft_clips", ARG_INT, 1, "0",   offsetof(shuffle_arg, soft_clips)},
 	{"-flush",	ARG_INT, 1, "1",   offsetof(shuffle_arg, flush)},
 	{NULL,	    0,	     0, NULL, 0}
     };
@@ -2164,7 +2165,8 @@ int tcl_shuffle_pads(ClientData clientData, Tcl_Interp *interp,
     vfuncheader("Shuffle Pads");
 
     active_list_contigs(args.io, args.inlist, &rargc, &rargv);
-    shuffle_contigs_io(args.io, rargc, rargv, args.band, args.flush);
+    shuffle_contigs_io(args.io, rargc, rargv, args.band,
+		       args.soft_clips, args.flush);
 
     xfree(rargv);
 

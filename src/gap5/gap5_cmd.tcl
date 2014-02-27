@@ -293,6 +293,7 @@ set ::cmd::shuffle_pads::opts "
 
     contigs    1 {*}      list     {Output only specific contigs. 'list' is a space separated list of contig names}
     band_size  1 [keylget gap5_defs SHUFFLE_PADS.BAND_SIZE] {num} {Set the alignment band size.}
+    soft_clips 1 [keylget gap5_defs SHUFFLE_PADS.SOFT_CLIPS] {num} {Adjust and align soft-clips/cutoff positions.}
 "
 
 proc ::cmd::shuffle_pads::run {dbname _options} {
@@ -306,7 +307,8 @@ proc ::cmd::shuffle_pads::run {dbname _options} {
     if {[catch {shuffle_pads \
 		    -io $io \
 		    -contigs $opt(contigs) \
-		    -band $opt(band_size)} err]} {
+		    -band $opt(band_size) \
+	            -soft_clips $opt(soft_clips)} err]} {
 	puts stderr "Failed in shuffle_pads call: $err"
 	#$io close
 	exit 1

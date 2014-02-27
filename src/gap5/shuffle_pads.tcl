@@ -19,16 +19,22 @@ proc ShufflePads {io} {
 	-label "Band size" \
 	-default [keylget gap5_defs SHUFFLE_PADS.BAND_SIZE]
 
+    xyn $t.soft_clips \
+	-label "Use cutoff data" \
+	-orient horizontal \
+	-default [keylget gap5_defs SHUFFLE_PADS.SOFT_CLIPS]
+
     okcancelhelp $t.ok \
-	-ok_command "ShufflePads2 $io $t $t.infile $t.id $t.band_size" \
+	-ok_command "ShufflePads2 $io $t $t.infile $t.id $t.band_size \
+                     $t.soft_clips" \
 	-cancel_command "destroy $t" \
 	-help_command "show_help gap5 {Tidying up alignments}" \
 	-bd 2 -relief groove
 
-    pack $t.infile $t.id $t.band_size $t.ok -side top -fill x
+    pack $t.infile $t.id $t.band_size $t.soft_clips $t.ok -side top -fill x
 }
 
-;proc ShufflePads2 {io t infile id band_size} {
+;proc ShufflePads2 {io t infile id band_size soft_clips} {
     if {[lorf_in_get $infile] == 4} {
 	set list [list [contig_id_gel $id]]
 	set lreg [contig_id_lreg $id]
@@ -49,10 +55,16 @@ proc ShufflePads {io} {
 	return
     }
 
+    set clips [$soft_clips get]
+
     destroy $t
 
     SetBusy
-    log_call shuffle_pads -io $io -contigs $list -band $band_size
+    log_call shuffle_pads \
+	-io $io \
+	-contigs $list \
+	-band $band_size \
+	-soft_clips $clips
     ClearBusy
 
     ContigInitReg $io

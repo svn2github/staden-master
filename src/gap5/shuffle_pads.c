@@ -81,6 +81,7 @@
 #include "consensus.h"
 #include "tg_contig.h"
 #include "break_contig.h" /* contig_visible_start(), contig_visible_end() */
+#include "io_lib/hash_table.h"
 
 typedef struct {
     int pos;
@@ -89,6 +90,27 @@ typedef struct {
 
 void print_malign(MALIGN *malign);
 void print_moverlap(MALIGN *malign, MOVERLAP *o, int offset);
+
+
+/* Returns depadded 'pos' in s */
+static int depad_clip(seq_t *s, int pos) {
+    int i, p;
+    for (i = p = 0; i < ABS(s->len) && i < pos; i++) {
+	if (s->seq[i] != '*')
+	    p++;
+    }
+    return p;
+}
+
+/* Repads 'pos' in s */
+static int repad_clip(seq_t *s, int pos) {
+    int i, p;
+    for (i = p = 0; i < ABS(s->len) && p < pos; i++)
+	if (s->seq[i] != '*')
+	    p++;
+    return i;
+}
+
 
 /*
  * Insert 'size' pads into a contig at position 'pos'.
@@ -435,6 +457,7 @@ MALIGN *realign_seqs(int contig, MALIGN *malign, int band, Array indels) {
 
 	    /* fixed_malign(o, p); */
 	    r = realigner_malign(o, p); /* o->score = alignment score */
+	    //printf("Score = %f\n", o->score);
 	    
 	    /*
 	    if (!r)
@@ -626,6 +649,7 @@ MALIGN *build_malign(GapIO *io, tg_rec cnum, int start, int end) {
 	seq_t *s, *sorig;
 	char *seq;
 	int len;
+	int left, l_shift, r_shift;
 
 	assert((r->flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISSEQ);
 
@@ -648,6 +672,7 @@ MALIGN *build_malign(GapIO *io, tg_rec cnum, int start, int end) {
 		s->left = s->right = ABS(s->len);
 	}
 
+	/* Copy from s->left to s->right into mseg */
 	if ((s->len < 0) ^ r->comp) {
 	    s = dup_seq(s);
 	    complement_seq_t(s);
@@ -667,7 +692,7 @@ MALIGN *build_malign(GapIO *io, tg_rec cnum, int start, int end) {
 	seq[j] = 0;
 
 	init_mseg(contig->mseg, seq, len, r->start-1 + s->left-1);
-	contig->mseg->comp = (s != sorig);
+	contig->mseg->comp  = (s != sorig);
 
 	if (last_contig) {
 	    last_contig->next = contig;
@@ -731,7 +756,6 @@ void print_malign(MALIGN *malign) {
 		printf("%10d", j+10);
 	    printf("\n");
 	    for (j = 0; j < ndepth; j++) {
-		printf("%.*s\n", LLEN, depth[j].line);
 		if (!depth[j].seq) {
 		    memmove(&depth[j], &depth[j+1],
 			    (ndepth-(j+1)) * sizeof(depth[j]));
@@ -1434,9 +1458,252 @@ void reassign_confidence_values(GapIO *io, int cnum) {
 }
 #endif
 
+/*
+ * The start..end range constitutes a previous range of Ns in the
+ * consensus, probably due to artificially scaffolding contigs by
+ * butting them end to end with a few Ns inbetween.
+ *
+ * The realigner may correctly identify the overlap, or it may just
+ * give us garbage. We check here whether the new overlap (assuming
+ * there is one) is valid and if not we slip the reads relative to one
+ * another to reintroduce the gap.
+ *
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+static int validate_N(GapIO *io, HashTable *h_clips, tg_rec trec,
+		      tg_rec crec, int start, int end) {
+    contig_iterator *citer;
+    rangec_t *r;
+    consensus_t *cons;
+    int failed_reads = 0, all_reads = 0;
+    int x_start = start - 50;
+    int x_end = end + 50;
+    int mid = (start+end)/2;
+    int left_most = start;
+    int right_most = end;
+    int i, snp, tot;
+
+    if (!(cons = calloc(x_end-x_start+1, sizeof(*cons))))
+	return -1;
+    calculate_consensus(io, crec, x_start, x_end, cons);
+
+    citer = contig_iter_new(io, crec, 0, CITER_FIRST, start, end);
+    while ((r = contig_iter_next(io, citer))) {
+	int i, diff_l, diff_r, i_start;
+	seq_t *s, *sorig;
+	int ignore = 0;
+
+	// Limit this check to only reads that we have extended
+	if (!HashTableSearch(h_clips, (char *)&r->rec, sizeof(tg_rec)))
+	    continue;
+
+	s = sorig = cache_search(io, GT_Seq, r->rec);
+
+	if ((s->len < 0) ^ r->comp) {
+	    s = dup_seq(s);
+	    complement_seq_t(s);
+	}
+
+	//printf("#%"PRIrec"\n", r->rec);
+
+	// Left side
+	i_start = MAX(s->left-1, x_start - r->start);
+	for (diff_l = 0, i = i_start; i < s->right; i++) {
+	    if (r->start + i > mid)
+		break;
+
+	    //printf("  Chk %c %c\n", s->seq[i], cons[r->start+i - x_start]);
+	    if (s->seq[i] != "ACGT*N"[cons[r->start+i - x_start].call])
+		diff_l++;
+	}
+	diff_l = (diff_l > .3*(i-i_start)); // boolean, either good or bad
+	//printf("  L %d bases, %d diff\n", i-i_start, diff_l);
+	
+	if (r->start+s->right - mid > mid - (r->start+s->left-1))
+	    if (left_most > r->start + s->left-1)
+		left_most = r->start + s->left-1;
+
+	if (i-i_start <= 0)
+	    ignore = 1;
+
+	// Right side
+	for (diff_r = 0; i < s->right; i++) {
+	    if (r->start + i > x_end)
+		break;
+	    //printf("  Chk %c %c\n", s->seq[i], cons[r->start+i - x_start]);
+	    if (s->seq[i] != "ACGT*N"[cons[r->start+i - x_start].call])
+		diff_r++;
+	}
+	diff_r = (diff_r > .3*(r->start+i - mid));
+	//printf("  R %d bases, %d diff\n", r->start+i - mid, diff_r);
+
+	if (r->start+s->right - mid < mid - (r->start+s->left-1))
+	    if (right_most < r->start + s->right)
+		right_most = r->start + s->right;
+
+	if (r->start+i - mid <= 0)
+	    ignore = 1;
+
+	if (ignore)
+	    continue;
+
+	if (diff_l || diff_r)
+	    failed_reads++;
+	all_reads++;
+
+	if (s != sorig)
+	    free(s);
+    }
+    contig_iter_del(citer);
+
+    tot = snp = 0;
+    for (i = MAX(left_most,mid-20); i <= MIN(right_most,mid+20); i++) {
+	if (i < x_start)
+	    continue;
+	if (i > x_end)
+	    break;
+	if (cons[i-x_start].scores[6]>0)
+	    snp++;
+	tot++;
+    }
+
+
+    printf("For %d..%d => %d of %d poor, snp=%d of %d\n", left_most, right_most, failed_reads, all_reads, snp, tot);
+
+    /* If more than 1/4tr are poor then we shift, otherwise it's ok */
+    if (failed_reads*3 <= all_reads && snp*4 < tot) {
+	contig_t *c = cache_search(io, GT_Contig, crec);
+	bin_remove_item(io, &c, GT_AnnoEle, trec);
+	vmessage("Consensus N in =%"PRIrec" at %d..%d resolved/ignored\n",
+		 crec, start, end);
+    } else {
+	char *n_cons;
+
+	printf("Leftmost unclipped = %d, rightmost = %d\n",
+	       left_most, right_most);
+
+	// Unclip and see if it reintroduces the N
+	citer = contig_iter_new(io, crec, 0, CITER_FIRST, start, end);
+	while ((r = contig_iter_next(io, citer))) {
+	    seq_t *s;
+	    HashItem *hi;
+	    soft_clips *sc;
+
+	    hi = HashTableSearch(h_clips, (char *)&r->rec, sizeof(tg_rec));
+	    if (!hi) continue;
+	    sc = (soft_clips *)hi->data.p;
+
+	    s = cache_search(io, GT_Seq, r->rec);
+	    s = cache_rw(io, s);
+	    s->left  = repad_clip(s, sc->left);
+	    s->right = repad_clip(s, sc->right);
+	}
+	contig_iter_del(citer);
+
+	n_cons = malloc(x_end - x_start + 1);
+	calculate_consensus_simple(io, crec, x_start, x_end, n_cons, NULL);
+	printf("%d..%d %.*s\n", x_start, x_end, x_end - x_start+1, n_cons);
+	for (i = 0; i <= x_end - x_start + 1; i++) {
+	    if (n_cons[i] == 'N')
+		break;
+	}
+	free(n_cons);
+
+	if (i <= x_end - x_start + 1) {
+	    // has N
+	    contig_t *c = cache_search(io, GT_Contig, crec);
+	    bin_remove_item(io, &c, GT_AnnoEle, trec);
+
+	    vmessage("Consensus N in =%"PRIrec" at %d..%d "
+		     "resolved by unclipping.\n",
+		     crec, start, end);
+	} else {
+	    vmessage("Consensus N in =%"PRIrec" at %d..%d retained\n",
+		     crec, start, end);
+	}
+    }
+
+
+    free(cons);
+
+    return 0;
+}
+
+/*
+ * Checks soft-clipping by counting SNPs over a region and comparing
+ * to the original unclipped version (TODO). If it is significantly
+ * more then we conclude the soft-clips are masking a misassembly so
+ * we keep the tag. Otherwise we remove the tag and consider the
+ * problem as resolved.
+ *
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+static int validate_clip(GapIO *io, tg_rec trec,
+			 tg_rec crec, int start, int end) {
+    consensus_t *cons;
+    int i, snp = 0, expected_snp = 0;
+    anno_ele_t *e = cache_search(io, GT_AnnoEle, trec);
+
+    /* Compute pair-wise consensus and look for high SNP rates */
+    if (!(cons = calloc(end-start+1, sizeof(*cons))))
+	return -1;
+
+    if (e->comment)
+	sscanf(e->comment, "SNPs=%d\n", &expected_snp);
+
+    calculate_consensus(io, crec, start, end, cons);
+    for (i = start; i <= end; i++) {
+	if (cons[i-start].scores[6]>0)
+	    snp++;
+    }
+    free(cons);
+
+    if ((snp-expected_snp) >= 0.3 * (end - start + 1)) {
+	vmessage("Validation of coherent soft-clip =%"PRIrec
+		 " at %d..%d failed\n", crec, start, end);
+    } else {
+	// Remove the tag
+	contig_t *c = cache_search(io, GT_Contig, crec);
+	bin_remove_item(io, &c, GT_AnnoEle, trec);
+	//vmessage("Validation of coherent soft-clip =%"PRIrec
+	//	 " at %d..%d passed\n", crec, start, end);
+    }
+
+    return 0;
+}
+
+/*
+ * Validates tagged soft-clip regions to verify that the extension looks
+ * valid. If it has a large degree of discrepancy and relatively few
+ * spanning reads, then we assume it was two contigs in a scaffold
+ * butted up end to end, so we slip one past the other to ensure we
+ * still have no overlap.
+ */
+static void validate_clip_regions(GapIO *io, HashTable *h_clips,
+				  Array tag_arr) {
+    int i;
+
+    for (i = 0; i < ArrayMax(tag_arr); i++) {
+	tg_rec trec = arr(tg_rec, tag_arr, i), crec;
+	int start, end;
+	anno_ele_t *e = cache_search(io, GT_AnnoEle, trec);
+	
+	if (!e)
+	    continue;
+
+	anno_get_position(io, trec, &crec, &start, &end, NULL);
+	if (e->tag_type == str2type("NCLP"))
+	    validate_N(io, h_clips, trec, crec, start, end);
+	else
+	    validate_clip(io, trec, crec, start, end);
+    }
+}
+
 
 int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
-		       int band, int flush) {
+		       int band, int soft_clips, int flush) {
     int i; //, start;
     Array indels;
     
@@ -1452,8 +1719,30 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 	//  MALIGN *malign = build_malign(io, cnum, start, start + 1000);
 	MALIGN *malign;
 	int c_start, c_shift;
+	contig_t *c;
+	HashTable *h_clips = NULL;
+	Array tag_arr;
 
 	vmessage("Shuffling pads for contig %s\n", get_contig_name(io, cnum));
+
+	if (DB_VERS(io) >= 5) {
+	    c = cache_search(io, GT_Contig, cnum);
+	    if (!c)
+		continue;
+	    if (c->nseqs / (c->end - c->start + 1) >= 100) {
+		verror(ERR_WARN, "Skipping contig %s due to excessive depth\n",
+		       get_contig_name(io, cnum));
+		continue;
+	    }
+	}
+
+	if (soft_clips)
+	    h_clips = coherent_soft_clips(io,
+					  contigs[i].contig,
+					  contigs[i].start,
+					  contigs[i].end,
+					  0, 3, 5,
+					  &tag_arr);
 
 	/*
 	 * The shuffle pads code (malign) comes from gap4 and has lots of
@@ -1462,13 +1751,16 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 	 * the cheat route of moving the contig to ensure the assumption
 	 * is valid.
 	 */
-	if (-1 == consensus_valid_range(io, cnum, &c_start, NULL)) {
-	    verror(ERR_WARN, "shuffle_contigs_io",
-		   "Failure in consensus_valid_range()");
-	    return -1;
-	}
-	//printf("Contig starts at base %d\n", c_start);
-	c_shift = 1-c_start;
+//	if (-1 == consensus_valid_range(io, cnum, &c_start, NULL)) {
+//	    verror(ERR_WARN, "shuffle_contigs_io",
+//		   "Failure in consensus_valid_range()");
+//	    return -1;
+//	}
+//	//printf("Contig starts at base %d\n", c_start);
+//	c_shift = 1-c_start;
+	c = cache_search(io, GT_Contig, cnum);
+	c_shift = 1-c->start;
+	
 	if (c_shift != 0) {
 	    if (move_contig(io, cnum, c_shift) != 0)
 		return -1;
@@ -1555,7 +1847,26 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 	if (c_shift != 0) {
 	    if (move_contig(io, cnum, -c_shift) != 0)
 		return -1;
+	    contigs[i].start -= c_shift;
+	    contigs[i].end -= c_shift;
 	}
+
+	if (h_clips) {
+	    validate_clip_regions(io, h_clips, tag_arr);
+	    ArrayDestroy(tag_arr);
+	}
+
+	if (h_clips) {
+	    rewrite_soft_clips(io,
+			       contigs[i].contig,
+			       contigs[i].start,
+			       contigs[i].end,
+			       h_clips);
+	    HashTableDestroy(h_clips, 1);
+	}
+
+	if (soft_clips)
+	    remove_pad_columns(io, 1, &contigs[i], 100, 1);
 
 	if (flush)
 	    cache_flush(io);
@@ -1633,6 +1944,587 @@ int remove_pad_columns(GapIO *io, int ncontigs, contig_list_t *contigs,
 
     if (cons)
 	free(cons);
+
+    return 0;
+}
+
+
+/*
+ * ----------------------------------------------------------------------
+ * Unclip matching data.
+ *
+ * This algorithm hunts down the softclipped data and builds a
+ * histogram of values per consensus column. Any regions of high depth
+ * and high coherency are deemed to be worthy of unclipping and
+ * realigning.
+ *
+ * Almost always this ambiguity comes from misassemblies or collapsed
+ * repeats, or at the very least it is valuable information we should
+ * know about and tag.
+ * ----------------------------------------------------------------------
+ */
+
+/*
+ * Tags a region of consensus. 
+ *
+ * Returns the tag record number on success;
+ *         -1 on failure
+ */
+tg_rec tag_softclip(GapIO *io, tg_rec crec, int start, int end,
+		    int snp, double avg_depth, int (*depth)[7], int dir) {
+    int j, d = 0;
+    tg_rec r;
+    char *comment = malloc(end-start+1 + 100), *cp;
+    int type;
+
+    if (!comment)
+	return -1;
+
+    cp = comment;
+    if (depth) {
+	cp += sprintf(comment, "SNPs=%d\nAvg. depth=%5.1f\n"
+		      "Soft-clip consensus=", snp, avg_depth);
+	for (j = start; j <= end; j++) {
+	    *cp++ = (*depth++)[6];
+	}
+	*cp++ = 0;
+	type = str2type("CLIP");
+    } else {
+	sprintf(comment, "Consensus N");
+	type = str2type("NCLP");
+    }
+
+    r = anno_ele_add(io, GT_Contig, crec, 0, type, comment, start, end, dir);
+
+    free(comment);
+
+    return r;
+}
+
+/*
+ * Returns a hash table of soft_clips structures, indexed on read names. 
+ * To iterate use HashTableIterCreate.
+ *
+ * Also, if non-NULL, fills out clips array holding the tag recs.
+ * These can be used to identify regions of interest for further
+ * study.  Tags are added for both the coherent soft clips themselves
+ * and also any Ns in consensus caused by contig gaps.  These are
+ * important as we wish to preserve them unless the realignment is
+ * good.
+ *
+ * Returns NULL on failure.
+ *         Hash of soft_clips* on success; caller to free().
+ */
+HashTable *coherent_soft_clips(GapIO *io, tg_rec crec, int start, int end,
+			       int tag_only, int min_depth, int min_tag_length,
+			       Array *tag_arr) {
+    seq_t *s;
+    contig_iterator *citer;
+    rangec_t *r;
+    int (*Ldepth)[7]; // ACGTN* total
+    int (*Rdepth)[7]; // ACGTN* total
+    int i, j, changed, nc = 0, tag_alloc = 0;
+    tg_rec *ctags = NULL;
+    HashTable *h;
+    int pass = 0;
+    consensus_t *cons;
+
+    static int L[256] = {
+	4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //00
+	4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //10
+	4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 5, 4, 4, 4, 4, 4, //20
+	4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //30
+	4, 0, 4, 1, 4, 4, 4, 2,   4, 4, 4, 4, 4, 4, 4, 4, //40
+	4, 4, 4, 4, 3, 3, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //50
+	4, 0, 4, 1, 4, 4, 4, 2,   4, 4, 4, 4, 4, 4, 4, 4, //60
+	4, 4, 4, 4, 3, 3, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //70
+	4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //80
+	4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //90
+	4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //a0
+	4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //b0
+	4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //c0
+	4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //d0
+	4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //e0
+	4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4};//f0
+    
+    if (!(Ldepth = malloc((end - start + 1) * 7*sizeof(int))))
+	return NULL;
+    if (!(Rdepth = malloc((end - start + 1) * 7*sizeof(int)))) {
+	free(Ldepth);
+	return NULL;
+    }
+
+    h = HashTableCreate(128, HASH_DYNAMIC_SIZE);
+    if (!h) {
+	free(Ldepth);
+	free(Rdepth);
+	return NULL;
+    }
+
+    if (tag_arr) {
+	if (!(*tag_arr = ArrayCreate(sizeof(tg_rec), 0)))
+	    return NULL;
+    }
+
+    // Add N tags, to validate later
+    if (!(cons = calloc(end-start+1, sizeof(*cons))))
+	return NULL;
+    calculate_consensus(io, crec, start, end, cons);
+    for (i=start; i<end; i++) {
+	if (cons[i-start].call == 5) {
+	    tg_rec rec;
+	    int j=i;
+	    while(i < end && cons[i-start].call == 5)
+		i++;
+	    rec = tag_softclip(io, crec, j, --i, 0, 0, 0, '+');
+	    if (tag_arr) ArrayPush(*tag_arr, tg_rec, rec);
+	}
+    }
+    
+ second_pass:
+    memset(Ldepth, 0, (end - start + 1) * 7*sizeof(int));
+    memset(Rdepth, 0, (end - start + 1) * 7*sizeof(int));
+    changed = 0;
+
+    /* Gather cutoff depth analysis */
+    citer = contig_iter_new(io, crec, 0, CITER_FIRST, start, end);
+
+    while ((r = contig_iter_next(io, citer))) {
+	seq_t *s, *sorig;
+
+	s = sorig = cache_search(io, GT_Seq, r->rec);
+
+	if ((s->len < 0) ^ r->comp) {
+	    s = dup_seq(s);
+	    complement_seq_t(s);
+	}
+
+	for (i = 0; i < s->left-1; i++) {
+	    if (r->start + i >= start &&
+		r->start + i <= end) {
+		if (s->conf[i] < 20)
+		    continue;
+		Ldepth[r->start+i - start][L[s->seq[i]]]++;
+		Ldepth[r->start+i - start][6]++;
+	    }
+	}
+
+	for (i = s->right; i < ABS(s->len); i++) {
+	    if (r->start + i >= start &&
+		r->start + i <= end) {
+		if (s->conf[i] < 20)
+		    continue;
+		Rdepth[r->start+i - start][L[s->seq[i]]]++;
+		Rdepth[r->start+i - start][6]++;
+	    }
+	}
+
+	if (s != sorig)
+	    free(s);
+    }
+
+    contig_iter_del(citer);
+
+
+    /* Compute cutoff consensus */
+    for (j = 0; j < 2; j++) {
+	int (*depth)[7] = j ? Rdepth : Ldepth;
+	int tag_start, tag_depth = 0;
+
+	for (i = start; i <= end; i++) {
+	    int b, c = 0, m = 0, M = 0;
+	    if (depth[i-start][6] < min_depth) {
+		if (tag_depth && i-1 - tag_start + 1 >= min_tag_length && 
+		    tag_depth/(i-1 - tag_start + 1.0) >= min_depth) {
+		    tg_rec rec;
+		    int snp = 0, x;
+		    vmessage("Coherent %s softclip, length %5d depth %5.1f, "
+			     "from %d to %d\n",
+			     j ? "right" : "left", i-1 - tag_start + 1,
+			     tag_depth/(i-1 - tag_start + 1.0),
+			     tag_start, i-1);
+		    for (x = start; x <= i-1; x++)
+			if (cons[x-start].scores[6]>0)
+			    snp++;
+		    rec = tag_softclip(io, crec, tag_start, i-1, snp,
+				       tag_depth/(i-1 - tag_start + 1.0),
+				       &depth[tag_start-start], "-+"[j]);
+		    if (tag_arr) ArrayPush(*tag_arr, tg_rec, rec);
+		}
+
+		depth[i-start][6] = 0;
+		tag_depth = 0;
+		continue;
+	    }
+
+	    if (m < depth[i-start][0]) M=m, m = depth[i-start][0],c=0; // A
+	    else if (M < depth[i-start][0]) M = depth[i-start][0];
+
+	    if (m < depth[i-start][1]) M=m, m = depth[i-start][1],c=1; // C
+	    else if (M < depth[i-start][1]) M = depth[i-start][1];
+
+	    if (m < depth[i-start][2]) M=m, m = depth[i-start][2],c=2; // G
+	    else if (M < depth[i-start][2]) M = depth[i-start][2];
+
+	    if (m < depth[i-start][3]) M=m, m = depth[i-start][3],c=3; // T
+	    else if (M < depth[i-start][3]) M = depth[i-start][3];
+
+	    if (m < depth[i-start][5]) M=m, m = depth[i-start][5],c=5; // *
+	    else if (M < depth[i-start][5]) M = depth[i-start][5];
+
+	    // At least 60% for 1 base
+	    b = m*100 >= depth[i-start][6]*60 ? "ACGTN*"[c] : 'N';
+
+	    // Or at least 90% for the top two base types.
+	    if (b == 'N')
+		b = (m+M)*100 >= depth[i-start][6]*90 ? "ACGTN*"[c] : 'N';
+
+	    //printf("%6d: %2d %2d %2d %2d %2d %2d / %2d => %c\n",
+	    //	   i,
+	    //	   depth[i-start][0], depth[i-start][1], depth[i-start][2],
+	    //	   depth[i-start][3], depth[i-start][4], depth[i-start][5],
+	    //	   depth[i-start][6], b);
+
+	    depth[i-start][6] = b;
+
+	    if (b == 'N') {
+		//printf("tag_depth %d,  start %d, len %d, avg_depth %f\n",
+		//       tag_depth, tag_start, i-1 - tag_start+1,
+		//       tag_depth/(i-1 - tag_start + 1.0));
+		if (tag_depth && i-1 - tag_start + 1 >= min_tag_length && 
+		    tag_depth/(i-1 - tag_start + 1.0) >= min_depth) {
+		    tg_rec rec;
+		    int snp = 0, x;
+		    vmessage("Coherent %s softclip, length %5d depth %5.1f, "
+			     "from %d to %d\n",
+			     j ? "right" : "left", i-1 - tag_start + 1,
+			     tag_depth/(i-1 - tag_start + 1.0),
+			     tag_start, i-1);
+		    for (x = start; x <= i-1; x++)
+			if (cons[x-start].scores[6]>0)
+			    snp++;
+		    rec = tag_softclip(io, crec, tag_start, i-1, snp,
+				       tag_depth/(i-1 - tag_start + 1.0),
+				       &depth[tag_start-start], "-+"[j]);
+		    if (tag_arr) ArrayPush(*tag_arr, tg_rec, rec);
+		    tag_depth = 0;
+		} else if (tag_depth) {
+		    tag_depth = 0;
+		}
+	    } else {
+		if (tag_depth == 0)
+		    tag_start = i;
+		tag_depth += depth[i-start][c];
+	    }
+	}
+
+	if (tag_depth && i-1 - tag_start + 1 >= min_tag_length &&
+	    tag_depth/(i-1 - tag_start + 1.0) >= min_depth) {
+	    tg_rec rec;
+	    int snp = 0, x;
+	    vmessage("Coherent %s softclip, length %5d depth %5.1f, "
+		     "from %d to %d\n",
+		     j ? "right" : "left", i-1 - tag_start + 1,
+		     tag_depth/(i-1 - tag_start + 1.0),
+		     tag_start, i-1);
+	    for (x = start; x <= i-1; x++)
+		if (cons[x-start].scores[6]>0)
+		    snp++;
+	    rec = tag_softclip(io, crec, tag_start, i-1, snp,
+			       tag_depth/(i-1 - tag_start + 1.0),
+			       &depth[tag_start-start], "-+"[j]);
+	    if (tag_arr) ArrayPush(*tag_arr, tg_rec, rec);
+	}
+    }
+
+
+    if (tag_only) {
+	free(Ldepth);
+	free(Rdepth);
+	return NULL;
+    }
+
+
+    /* Extend cutoffs where matching depth */
+    citer = contig_iter_new(io, crec, 0, CITER_FIRST, start, end);
+
+    while ((r = contig_iter_next(io, citer))) {
+	seq_t *s, *sorig;
+	int new_l, new_r;
+	int i_max, score, score_max;
+
+	s = sorig = cache_search(io, GT_Seq, r->rec);
+	new_l = s->left;
+	new_r = s->right;
+
+	if ((s->len < 0) ^ r->comp) {
+	    s = dup_seq(s);
+	    complement_seq_t(s);
+	}
+
+	// Left clip
+	score = score_max = 0;
+	for (i_max = i = s->left-2; i >= 0; i--) {
+	    if (!(r->start + i >= start &&
+		  r->start + i <= end))
+		break;
+
+	    if (s->seq[i] != Ldepth[r->start+i - start][6]) {
+		if ((score-=3) < -6)
+		    break;
+	    } else {
+		if (score_max < ++score)
+		    score_max = score, i_max = i;
+	    }
+	}
+	i = i_max;
+	if (i < s->left-2) {
+	    if (s == sorig)
+		new_l = i+1;
+	    else
+		new_r = ABS(s->len) - i + 1;
+	    
+	    //printf("%"PRIrec"<%.*s\n", s->rec, s->left-2 -i, &s->seq[i+1]);
+	}
+
+	// Right clip
+	score = score_max = 0;
+	for (i_max = i = s->right; i < ABS(s->len); i++) {
+	    if (!(r->start + i >= start &&
+		  r->start + i <= end))
+		break;
+
+	    if (s->seq[i] != Rdepth[r->start+i - start][6]) {
+		if ((score-=3) < -6)
+		    break;
+	    } else {
+		if (score_max < ++score)
+		    score_max = score, i_max = i+1;
+	    }
+	}
+	i = i_max;
+	if (i > s->right) {
+	    if (s == sorig)
+		new_r = i;
+	    else
+		new_l = ABS(s->len) - i + 1;
+	    //printf("%"PRIrec">%.*s\n", s->rec, i - s->right, &s->seq[s->right]);
+	}
+
+	if (s != sorig)
+	    free(s);
+
+	/*
+	 * This will produce inconsistencies like:
+	 *   Seq 180892: left/right clips outside of sequence bounds.
+	 *
+	 * We will patch up the data later to fix these.
+	 */
+	if (new_r != sorig->right ||
+	    new_l != sorig->left) {
+	    HashData hd;
+	    int new_rec;
+	    soft_clips *c = malloc(sizeof(*c));
+
+	    c->rec   = sorig->rec;
+	    c->left  = depad_clip(sorig, sorig->left);
+	    c->right = depad_clip(sorig, sorig->right);
+
+	    hd.p = c;
+	    HashTableAdd(h, (char *)&c->rec, sizeof(c->rec), hd, &new_rec);
+	    if (!new_rec)
+		free(c);
+
+	    changed=1;
+
+	    s = cache_rw(io, sorig);
+	    s->right = new_r;
+	    s->left  = new_l;
+	}
+    }
+
+    contig_iter_del(citer);
+
+    /*
+     * We may have neighbouring blocks of coherent soft-clips due to SNPs.
+     * This is easiest resolved with multiple passes.
+     */
+    if (++pass < 3 && changed)
+	goto second_pass;
+
+    free(Ldepth);
+    free(Rdepth);
+    free(cons);
+
+    return h;
+}
+
+
+/*
+ * Scans through a contig paying particular attention to the known
+ * soft-clips.  We can ether extend a sequence if the soft clipped
+ * data matches the consensus, or if it was previously extended by
+ * coherent_soft_clip then we can increase soft-clipping back to the
+ * former value if it disagrees with the new consensus.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
+		       HashTable *h_clips) {
+    contig_iterator *citer;
+    rangec_t *r;
+    int i;
+    char *cons;
+    int updated = 0;
+
+    vmessage("Extend soft-clips for contig =%"PRIrec" at %d..%d\n",
+	     crec, start, end);
+
+    /* Compute consensus to align against */
+    if (!(cons = malloc(end - start + 1))) {
+	return -1;
+    }
+    calculate_consensus_simple(io, crec, start, end, cons, NULL);
+
+    citer = contig_iter_new(io, crec, 0, CITER_FIRST, start, end);
+    while ((r = contig_iter_next(io, citer))) {
+	seq_t *sorig;
+	HashItem *hi;
+	seq_t *s = cache_search(io, GT_Seq, r->rec);
+	int score = 0, best_score = 0, best_i = 0;
+	int orig_right = s->right;
+	int orig_left  = s->left;
+
+	/*
+	 * If this is a read we previously unclipped, then back up to
+	 * that point and verify it from there.
+	 *
+	 * NOTE: We should perhaps remember the unpadded clip position
+	 * and recompute the equivalent original s->right again as the
+	 * read has been realigned since then with possibly fewer or
+	 * more pads added. I think for now this is "good enough" though.
+	 */
+	if ((hi = HashTableSearch(h_clips, (char *)&r->rec, sizeof(r->rec)))) {
+	    soft_clips *c = (soft_clips *)hi->data.p;
+	    int p_l, p_r;
+	    s = cache_rw(io, s);
+	    
+	    if (s->left < (p_l = repad_clip(s, c->left)))
+		s->left = p_l;
+	    if (s->right > (p_r = repad_clip(s, c->right)))
+		s->right = p_r;
+	    updated = 1;
+	}
+
+	// Right end
+	if ((s->len<0) ^ r->comp) {
+	    for (i = s->right; i < ABS(s->len); i++) {
+		if (r->end -i -1 < start)
+		    break;
+		if (toupper(complement_base(s->seq[i])) ==
+		    cons[r->end - i - start]) {
+		    if (best_score < ++score) {
+			best_score = score;
+			best_i = i+1;
+		    }
+		} else {
+		    if ((score -= 3) <= -6)
+			break;
+		}
+		//printf("-%4d %7d: %c %c\n",
+		//       i, r->end - i,
+		//       complement_base(s->seq[i]),
+		//       cons[r->end - i - start]);
+	    }
+	} else {
+	    for (i = s->right; i < ABS(s->len); i++) {
+		if (r->start + i > end)
+		    break;
+		if (toupper(s->seq[i]) == cons[r->start + i - start]) {
+		    if (best_score < ++score) {
+			best_score = score;
+			best_i = i+1;
+		    }
+		} else {
+		    if ((score -= 3) <= -6)
+			break;
+		}
+		//printf("+%4d %7d: %c %c\n", i, r->start + i,
+		//       s->seq[i], cons[r->start + i - start]);
+	    }
+	}
+
+	if (best_score > 0) {
+	    //vmessage("#%"PRIrec": Extend 5' end by %d\n",
+	    //	     s->rec, best_i - s->right);
+	    s = cache_rw(io, s);
+	    s->right = best_i;
+	    updated = 1;
+	}
+	//if (s->right < orig_right) {
+	//    printf("#%"PRIrec": Trim 5' end by %d\n",
+	//	   s->rec, orig_right - s->right);
+	//}
+
+
+	// Left end
+	best_i = best_score = score = 0;
+	if ((s->len<0) ^ r->comp) {
+	    for (i = s->left-2; i >= 0; i--) {
+		if (r->end -i -1 > end)
+		    break;
+		if (toupper(complement_base(s->seq[i])) ==
+		    cons[r->end - i - start]) {
+		    if (best_score < ++score) {
+			best_score = score;
+			best_i = i+1;
+		    }
+		} else {
+		    if ((score -= 3) <= -6)
+			break;
+		}
+		//printf("-%4d %7d: %c %c %d\n",
+		//       i, r->end - i,
+		//       complement_base(s->seq[i]),
+		//       cons[r->end - i - start], score);
+	    }
+	} else {
+	    for (i = s->left-2; i >= 0; i--) {
+		if (r->start + i < start)
+		    break;
+		if (toupper(s->seq[i]) == cons[r->start + i - start]) {
+		    if (best_score < ++score) {
+			best_score = score;
+			best_i = i+1;
+		    }
+		} else {
+		    if ((score -= 3) <= -6)
+			break;
+		}
+		//printf("+%4d %7d: %c %c %d\n", i, r->start + i,
+		//       s->seq[i], cons[r->start + i - start], score);
+	    }
+	}
+
+	if (best_score > 0) {
+	    //vmessage("#%"PRIrec": Extend 3' end by %d\n",
+	    //	     s->rec, s->left - best_i);
+	    s = cache_rw(io, s);
+	    s->left = best_i;
+	    updated = 1;
+	}
+	//if (s->left > orig_left) {
+	//    printf("#%"PRIrec": Trim 3' end by %d\n",
+	//	   s->rec, s->left - orig_left);
+	//}
+
+	// Update the range? Not needed as start/end haven't changed.
+	// However the consensus valid range flag may be incorrect.
+    }
+    contig_iter_del(citer);
+
+    free(cons);
 
     return 0;
 }

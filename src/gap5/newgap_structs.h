@@ -557,6 +557,7 @@ typedef struct {
     GapIO *io;
     char *inlist;
     int band;
+    int soft_clips;
     int flush;
 } shuffle_arg;
 

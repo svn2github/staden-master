@@ -3275,7 +3275,8 @@ proc editor_align_cutoff {ed} {
 	    -io $io \
 	    -contigs "{=[$ed contig_rec] $start $end}" \
 	    -flush 0 \
-	    -band [keylget gap5_defs SHUFFLE_PADS.EDITOR_BAND_SIZE]
+	    -band [keylget gap5_defs SHUFFLE_PADS.EDITOR_BAND_SIZE] \
+	    -soft_clips [keylget gap5_defs SHUFFLE_PADS.EDITOR_SOFT_CLIPS]
 	$ed clear_visibility_cache
 	$ed redraw
 

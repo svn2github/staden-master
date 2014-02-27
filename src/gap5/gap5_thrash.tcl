@@ -106,7 +106,7 @@ proc test_insertions {io {cycle 0}} {
     set end 100
     #if {$cycle == 67} {set end 50}
     for {set i 0} {$i < $end} {incr i; incr l 1} {
-	set p [expr {int(rand()*$l)+$s}]
+	set p [expr {int(rand()*($l+100))+$s-50}]
 	#puts "   ///Ins $p/$s..$e"
 	$c insert_base $p * 11
 	#$io flush
@@ -392,7 +392,7 @@ proc test_consensus {io} {
 	}
 
 	puts "/// Computing consensus for contig $crec at $l to $r ///"
-	calc_consensus -io $io -contigs [list =$crec $l $r]
+	calc_consensus -io $io -contigs [list [list =$crec $l $r]]
     }
 }
 
@@ -437,6 +437,7 @@ for {set cycle 0} {$cycle < $ncycles} {incr cycle} {
 
     #if {$r != 1 && $r != 2 && $r != 0} {incr cycle -1; continue}
     #if {$r != 3 && $r != 4 && $r != 2 && $r != 1 && $r != 11} {incr cycle -1; continue}
+    if {$r != 3 && $r != 4 && $r != 7 && $r != 8} {incr cycle -1; continue}
 
     puts "///$cycle r=$r"
 
