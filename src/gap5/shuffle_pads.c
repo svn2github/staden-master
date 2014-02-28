@@ -1640,11 +1640,14 @@ static int validate_N(GapIO *io, HashTable *h_clips, tg_rec trec,
  * Returns 0 on success;
  *        -1 on failure
  */
-static int validate_clip(GapIO *io, tg_rec trec,
+static int validate_clip(GapIO *io, HashTable *h_clips, tg_rec trec,
 			 tg_rec crec, int start, int end) {
     consensus_t *cons;
     int i, snp = 0, expected_snp = 0;
     anno_ele_t *e = cache_search(io, GT_AnnoEle, trec);
+    contig_iterator *citer;
+    rangec_t *r;
+    int mismatch = 0, tot = 0;
 
     /* Compute pair-wise consensus and look for high SNP rates */
     if (!(cons = calloc(end-start+1, sizeof(*cons))))
@@ -1658,19 +1661,98 @@ static int validate_clip(GapIO *io, tg_rec trec,
 	if (cons[i-start].scores[6]>0)
 	    snp++;
     }
-    free(cons);
 
     if ((snp-expected_snp) >= 0.3 * (end - start + 1)) {
 	vmessage("Validation of coherent soft-clip =%"PRIrec
 		 " at %d..%d failed\n", crec, start, end);
-    } else {
-	// Remove the tag
-	contig_t *c = cache_search(io, GT_Contig, crec);
-	bin_remove_item(io, &c, GT_AnnoEle, trec);
-	//vmessage("Validation of coherent soft-clip =%"PRIrec
-	//	 " at %d..%d passed\n", crec, start, end);
+	free(cons);
+	return 0;
     }
 
+    // Passed easy validation, now look harder incase it's deep
+    // and SNPs wouldn't be called.
+    citer = contig_iter_new(io, crec, 0, CITER_FIRST, start, end);
+    while ((r = contig_iter_next(io, citer))) {
+	HashItem *hi;
+	soft_clips *c;
+	int left, right;
+	seq_t *s;
+
+	if (!(hi = HashTableSearch(h_clips, (char *)&r->rec, sizeof(r->rec))))
+	    continue;
+
+	c = (soft_clips *)hi->data.p;
+	s = cache_search(io, GT_Seq, r->rec);
+	    
+	left  = repad_clip(s, c->left);
+	right = repad_clip(s, c->right);
+
+	// Right end
+	if (right != s->right) {
+	    if ((s->len<0) ^ r->comp) {
+		for (i = right; i < s->right; i++, tot++) {
+		    if (r->end -i -1 > end)
+			continue;
+		    if (r->end -i -1 < start)
+			break;
+		    if (toupper(complement_base(s->seq[i])) !=
+			"ACGTN"[cons[r->end - i - start].call])
+			mismatch++;
+		}
+	    } else {
+		for (i = right; i < s->right; i++, tot++) {
+		    if (r->start + i < start)
+			continue;
+		    if (r->start + i > end)
+			break;
+		    if (toupper(s->seq[i]) !=
+			"ACGTN"[cons[r->start + i - start].call])
+			mismatch++;
+		}
+	    }
+	}
+
+
+	// Left end
+	if (left != s->left) {
+	    if ((s->len<0) ^ r->comp) {
+		for (i = s->left-1; i <= left; i++, tot++) {
+		    if (r->end -i -1 > end)
+			continue;
+		    if (r->end -i -1 < start)
+			break;
+		    if (toupper(complement_base(s->seq[i])) !=
+			"ACGTN"[cons[r->end - i - start].call])
+			mismatch++;
+		}
+	    } else {
+		for (i = s->left-1; i <= left; i++, tot++) {
+		    if (r->start + i < start)
+			continue;
+		    if (r->start + i > end)
+			break;
+		    if (toupper(s->seq[i]) !=
+			"ACGTN"[cons[r->start + i - start].call])
+			mismatch++;
+		}
+	    }
+	}
+    }
+
+    contig_iter_del(citer);
+    
+    if (3*mismatch < tot) {
+	contig_t *c = cache_search(io, GT_Contig, crec);
+	
+	bin_remove_item(io, &c, GT_AnnoEle, trec);
+	vmessage("Validation of coherent soft-clip =%"PRIrec
+		 " at %d..%d passed\n", crec, start, end);
+    } else {
+	vmessage("Validation of coherent soft-clip =%"PRIrec
+		 " at %d..%d failed\n", crec, start, end);
+    }
+
+    free(cons);
     return 0;
 }
 
@@ -1697,7 +1779,7 @@ static void validate_clip_regions(GapIO *io, HashTable *h_clips,
 	if (e->tag_type == str2type("NCLP"))
 	    validate_N(io, h_clips, trec, crec, start, end);
 	else
-	    validate_clip(io, trec, crec, start, end);
+	    validate_clip(io, h_clips, trec, crec, start, end);
     }
 }
 
@@ -1730,7 +1812,8 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 	    if (!c)
 		continue;
 	    if (c->nseqs / (c->end - c->start + 1) >= 100) {
-		verror(ERR_WARN, "Skipping contig %s due to excessive depth\n",
+		verror(ERR_WARN, "shuffle_contigs_io",
+		       "Skipping contig %s due to excessive depth\n",
 		       get_contig_name(io, cnum));
 		continue;
 	    }
