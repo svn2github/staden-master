@@ -1244,7 +1244,7 @@ static void store_translation(EdStruct *xx, int pos, int width,
     /* Set the line name */
     sprintf(xx->status_lines[l].name, " %*c %-*s",
 	    DB_GELNOLEN, dir == 0 ? '+' : '-',
-	    DB_NAMELEN, name);
+	    DB_NAMELEN-1, name);
 }
 
 /*
