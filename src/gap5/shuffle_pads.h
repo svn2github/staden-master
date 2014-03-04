@@ -19,6 +19,7 @@ typedef struct {
 } soft_clips;
 
 HashTable *coherent_soft_clips(GapIO *io, tg_rec crec, int start, int end,
+			       int *counts,
 			       int tag_only, int min_depth, int min_tag_length,
 			       Array *tag_arr);
 

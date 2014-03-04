@@ -91,6 +91,9 @@ typedef struct {
 void print_malign(MALIGN *malign);
 void print_moverlap(MALIGN *malign, MOVERLAP *o, int offset);
 
+static int common_word_L(int *counts, char *seq, int len);
+static int common_word_R(int *counts, char *seq, int len);
+int *find_adapter(GapIO *io, int ncontigs, contig_list_t *contigs);
 
 /* Returns depadded 'pos' in s */
 static int depad_clip(seq_t *s, int pos) {
@@ -1691,7 +1694,7 @@ static int validate_clip(GapIO *io, HashTable *h_clips, tg_rec trec,
 	if (right != s->right) {
 	    if ((s->len<0) ^ r->comp) {
 		for (i = right; i < s->right; i++, tot++) {
-		    if (r->end -i -1 > end)
+		    if (r->end -i -1 >= end)
 			continue;
 		    if (r->end -i -1 < start)
 			break;
@@ -1703,7 +1706,7 @@ static int validate_clip(GapIO *io, HashTable *h_clips, tg_rec trec,
 		for (i = right; i < s->right; i++, tot++) {
 		    if (r->start + i < start)
 			continue;
-		    if (r->start + i > end)
+		    if (r->start + i >= end)
 			break;
 		    if (toupper(s->seq[i]) !=
 			"ACGTN"[cons[r->start + i - start].call])
@@ -1717,7 +1720,7 @@ static int validate_clip(GapIO *io, HashTable *h_clips, tg_rec trec,
 	if (left != s->left) {
 	    if ((s->len<0) ^ r->comp) {
 		for (i = s->left-1; i <= left; i++, tot++) {
-		    if (r->end -i -1 > end)
+		    if (r->end -i -1 >= end)
 			continue;
 		    if (r->end -i -1 < start)
 			break;
@@ -1729,7 +1732,7 @@ static int validate_clip(GapIO *io, HashTable *h_clips, tg_rec trec,
 		for (i = s->left-1; i <= left; i++, tot++) {
 		    if (r->start + i < start)
 			continue;
-		    if (r->start + i > end)
+		    if (r->start + i >= end)
 			break;
 		    if (toupper(s->seq[i]) !=
 			"ACGTN"[cons[r->start + i - start].call])
@@ -1784,28 +1787,32 @@ static void validate_clip_regions(GapIO *io, HashTable *h_clips,
 }
 
 
+#define CHUNK_SIZE 32768
+
 int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 		       int band, int soft_clips, int flush) {
     int i; //, start;
     Array indels;
+    int *counts = NULL;
+    int c_shift = 0;
     
     set_malign_lookup(5);
     /* set_alignment_matrix("/tmp/nuc_matrix", "ACGTURYMWSKDHVB-*"); */
 
     indels = ArrayCreate(sizeof(con_indel_t), 0);
 
+    if (soft_clips)
+	counts = find_adapter(io, ncontigs, contigs);
+
     for (i = 0; i < ncontigs; i++) {
 	tg_rec cnum = contigs[i].contig;
+	int j;
 	int64_t old_score, new_score, tot_score, orig_score;
-	//for (start = 0; start < 1000000; start += 1000) {
-	//  MALIGN *malign = build_malign(io, cnum, start, start + 1000);
 	MALIGN *malign;
-	int c_start, c_shift;
 	contig_t *c;
 	HashTable *h_clips = NULL;
 	Array tag_arr;
-
-	vmessage("Shuffling pads for contig %s\n", get_contig_name(io, cnum));
+	int sub_start, sub_end;
 
 	if (DB_VERS(io) >= 5) {
 	    c = cache_search(io, GT_Contig, cnum);
@@ -1819,14 +1826,6 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 	    }
 	}
 
-	if (soft_clips)
-	    h_clips = coherent_soft_clips(io,
-					  contigs[i].contig,
-					  contigs[i].start,
-					  contigs[i].end,
-					  0, 3, 5,
-					  &tag_arr);
-
 	/*
 	 * The shuffle pads code (malign) comes from gap4 and has lots of
 	 * assumptions that the contig goes from base 1 to base N.
@@ -1834,128 +1833,150 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 	 * the cheat route of moving the contig to ensure the assumption
 	 * is valid.
 	 */
-//	if (-1 == consensus_valid_range(io, cnum, &c_start, NULL)) {
-//	    verror(ERR_WARN, "shuffle_contigs_io",
-//		   "Failure in consensus_valid_range()");
-//	    return -1;
-//	}
-//	//printf("Contig starts at base %d\n", c_start);
-//	c_shift = 1-c_start;
 	c = cache_search(io, GT_Contig, cnum);
 	c_shift = 1-c->start;
-	
+
 	if (c_shift != 0) {
 	    if (move_contig(io, cnum, c_shift) != 0)
 		return -1;
 	}
 
-	//printf("Shuffle #%"PRIrec" from %d..%d, shift %d\n",
-	//       contigs[i].contig, contigs[i].start, contigs[i].end, c_shift);
+	/*
+	 * Iterate over 33k chunks from end going backwards. Decrement
+	 * our sub-range by 32k each time. This reduces the maximum
+	 * memory capacity and also prevents our multi-pass method
+	 * from purging the in-memory cache on long contigs.
+	 */
+	sub_end = contigs[i].end;
+	sub_start = sub_end - (CHUNK_SIZE+200);
 
-	malign = build_malign(io, cnum,
-			      contigs[i].start + c_shift,
-			      contigs[i].end   + c_shift);
-	resort_contigl(malign);
-
-	malign_add_region(malign,
-			  contigs[i].start + c_shift,
-			  contigs[i].end + c_shift);
-
-	ArrayMax(indels) = 0;
-	orig_score = new_score = malign_diffs(malign, &tot_score);
-	vmessage("Initial score %.2f%% mismatches (%"PRId64" mismatches)\n",
-		 (100.0 * orig_score)/tot_score, orig_score/128);
-	if (flush)
-	    UpdateTextOutput();
-	//print_malign(malign);
 	do {
-	    old_score = new_score;
-	    malign = realign_seqs(cnum, malign, band, indels);
-	    //print_malign(malign);
-	    new_score = malign_diffs(malign, &tot_score);
-	    vmessage("  Consensus difference score: %"PRId64"\n", new_score);
+	    contig_list_t cl;
+
+	    if (sub_start < contigs[i].start)
+		sub_start = contigs[i].start;
+
+	    cl.contig = contigs[i].contig;
+	    cl.start  = sub_start + c_shift;
+	    cl.end    = sub_end   + c_shift;
+
+	    vmessage("Shuffling pads for contig %s %d..%d\n",
+		     get_contig_name(io, cnum),
+		     sub_start + c_shift, sub_end + c_shift);
+
+	    if (soft_clips)
+		h_clips = coherent_soft_clips(io,
+					      cl.contig,
+					      cl.start,
+					      cl.end,
+					      counts,
+					      0, 3, 5,
+					      &tag_arr);
+
+	    //printf("Shuffle #%"PRIrec" from %d..%d, shift %d\n",
+	    //       contigs[i].contig, contigs[i].start, contigs[i].end, c_shift);
+
+	    malign = build_malign(io,
+				  cl.contig,
+				  cl.start,
+				  cl.end);
+	    resort_contigl(malign);
+
+	    malign_add_region(malign,
+			      cl.start,
+			      cl.end);
+
+	    ArrayMax(indels) = 0;
+	    orig_score = new_score = malign_diffs(malign, &tot_score);
+	    vmessage("Initial score %.2f%% mismatches (%"PRId64
+		     " mismatches)\n",
+		     (100.0 * orig_score)/tot_score, orig_score/128);
 	    if (flush)
 		UpdateTextOutput();
-	} while (new_score < old_score);
-
-	if (new_score < orig_score) {
 	    //print_malign(malign);
-	    update_io(io, cnum, malign, indels);
+	    do {
+		old_score = new_score;
+		malign = realign_seqs(cnum, malign, band, indels);
+		//print_malign(malign);
+		new_score = malign_diffs(malign, &tot_score);
+		vmessage("  Consensus difference score: %"PRId64"\n",
+			 new_score);
+		if (flush)
+		    UpdateTextOutput();
+	    } while (new_score < old_score);
+
+	    if (new_score < orig_score) {
+		//print_malign(malign);
+		update_io(io, cnum, malign, indels);
+
+		/*
+		 * It's possible the contig ends could move if a sequence that
+		 * was previously the end of a contig has been moved such that
+		 * it's no longer the contig end. This can lead to tags off the
+		 * end of the contig, so trim them (reusing break_contig
+		 * code).
+		 */
+		contig_visible_start(io, cnum, CITER_CSTART);
+		contig_visible_end(io, cnum, CITER_CEND);
+	    } else {
+		vmessage("Could not reduce number of consensus "
+			 "differences.\n");
+	    }
+
+	    destroy_malign(malign, 1);
+
+	    vmessage("Final score %.2f%% mismatches\n",
+		     (100.0 * new_score)/tot_score);
 
 	    /*
-	     * It's possible the contig ends could move if a sequence that
-	     * was previously the end of a contig has been moved such that
-	     * it's no longer the contig end. This can lead to tags off the
-	     * end of the contig, so trim them (reusing break_contig
-	     * code).
+	     * Sequences like
+	     *   AGCT**GATGC
+	     *             TGGATCGA
+	     * can end up causing holes. We break the contig in this case to
+	     * avoid minor database inconsistencies.
 	     */
-	     contig_visible_start(io, cnum, CITER_CSTART);
-	     contig_visible_end(io, cnum, CITER_CEND);
-	} else {
-	    vmessage("Could not reduce number of consensus differences.\n");
-	}
+	    // remove_contig_holes(io, cnum);
 
-	/* Remove pad columns */
-	//printf("New score=%d, orig_score=%d\n", new_score, orig_score);
-	if (new_score < orig_score) {
-	    contigs[i].start += c_shift;
-	    contigs[i].end += c_shift;
-	    remove_pad_columns(io, 1, &contigs[i], 100, 1);
+	    /* reassign_confidence_values(io, cnum); */
+	    //}
 
-	    //contig_t *c;
-	    //c = cache_search(io, GT_Contig, cnum);
-	    //cache_incr(io, c);
-	    //remove_pads(io, malign, c, contigs[i].start, contigs[i].end);
-	    //cache_decr(io, c);
-	}
+	    if (h_clips) {
+		validate_clip_regions(io, h_clips, tag_arr);
+		ArrayDestroy(tag_arr);
+	    }
 
-	destroy_malign(malign, 1);
+	    if (h_clips) {
+		rewrite_soft_clips(io,
+				   cl.contig,
+				   cl.start,
+				   cl.end,
+				   h_clips);
+		HashTableDestroy(h_clips, 1);
+	    }
 
-	vmessage("Final score %.2f%% mismatches\n",
-		 (100.0 * new_score)/tot_score);
+	    /* Remove pad columns */
+	    if (soft_clips || new_score < orig_score) {
+		remove_pad_columns(io, 1, &cl, 100, 1);
+	    }
 
-	/*
-	 * Sequences like
-	 *   AGCT**GATGC
-	 *             TGGATCGA
-	 * can end up causing holes. We break the contig in this case to
-	 * avoid minor database inconsistencies.
-	 */
-	// remove_contig_holes(io, cnum);
-
-	/* reassign_confidence_values(io, cnum); */
-      //}
+	    if (flush)
+		cache_flush(io);
+	    
+	    sub_start -= CHUNK_SIZE;
+	    sub_end   -= CHUNK_SIZE;
+	} while (sub_end > contigs[i].start);
 
 	/* Shift contig back */
 	if (c_shift != 0) {
-	    if (move_contig(io, cnum, -c_shift) != 0)
+	    if (move_contig(io, contigs[i].contig, -c_shift) != 0)
 		return -1;
-	    contigs[i].start -= c_shift;
-	    contigs[i].end -= c_shift;
 	}
-
-	if (h_clips) {
-	    validate_clip_regions(io, h_clips, tag_arr);
-	    ArrayDestroy(tag_arr);
-	}
-
-	if (h_clips) {
-	    rewrite_soft_clips(io,
-			       contigs[i].contig,
-			       contigs[i].start,
-			       contigs[i].end,
-			       h_clips);
-	    HashTableDestroy(h_clips, 1);
-	}
-
-	if (soft_clips)
-	    remove_pad_columns(io, 1, &contigs[i], 100, 1);
-
-	if (flush)
-	    cache_flush(io);
     }
 
     ArrayDestroy(indels);
+
+    if (counts)
+	free(counts);
 
     return 0;
 }
@@ -2099,7 +2120,8 @@ tg_rec tag_softclip(GapIO *io, tg_rec crec, int start, int end,
  *         Hash of soft_clips* on success; caller to free().
  */
 HashTable *coherent_soft_clips(GapIO *io, tg_rec crec, int start, int end,
-			       int tag_only, int min_depth, int min_tag_length,
+			       int *counts, int tag_only,
+			       int min_depth, int min_tag_length,
 			       Array *tag_arr) {
     seq_t *s;
     contig_iterator *citer;
@@ -2182,23 +2204,28 @@ HashTable *coherent_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 	    complement_seq_t(s);
 	}
 
-	for (i = 0; i < s->left-1; i++) {
-	    if (r->start + i >= start &&
-		r->start + i <= end) {
-		if (s->conf[i] < 20)
-		    continue;
-		Ldepth[r->start+i - start][L[s->seq[i]]]++;
-		Ldepth[r->start+i - start][6]++;
+	if (!common_word_L(counts, &s->seq[MAX(s->left-13, 0)],
+			   MIN(12, s->left-1))) {
+	    for (i = 0; i < s->left-1; i++) {
+		if (r->start + i >= start &&
+		    r->start + i <= end) {
+		    if (s->conf[i] < 20)
+			continue;
+		    Ldepth[r->start+i - start][L[s->seq[i]]]++;
+		    Ldepth[r->start+i - start][6]++;
+		}
 	    }
 	}
 
-	for (i = s->right; i < ABS(s->len); i++) {
-	    if (r->start + i >= start &&
-		r->start + i <= end) {
-		if (s->conf[i] < 20)
-		    continue;
-		Rdepth[r->start+i - start][L[s->seq[i]]]++;
-		Rdepth[r->start+i - start][6]++;
+	if (!common_word_R(counts, &s->seq[s->right], ABS(s->len)-s->right)) {
+	    for (i = s->right; i < ABS(s->len); i++) {
+		if (r->start + i >= start &&
+		    r->start + i <= end) {
+		    if (s->conf[i] < 20)
+			continue;
+		    Rdepth[r->start+i - start][L[s->seq[i]]]++;
+		    Rdepth[r->start+i - start][6]++;
+		}
 	    }
 	}
 
@@ -2610,4 +2637,198 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
     free(cons);
 
     return 0;
+}
+
+/*
+ * Does a word usage scan on soft-clips to try and identify likely
+ * adapter sequences.
+ *
+ * We compare common words in cutoffs vs common words in used portions
+ * and identify the discrepancies.
+ */
+#define ADAPTER_WORD 12
+#define ADAPTER_SIZE (1<<(2*ADAPTER_WORD))
+#define ADAPTER_MASK (ADAPTER_SIZE-1)
+static int L[256] = {
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*   0-15 */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*  16 */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*  32 */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*  48 */
+    0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, /*  64 */
+    0, 0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*  80 */
+    0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, /*  96 */
+    0, 0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* 112-127 */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* 128 */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  /* 255 */
+};
+
+static unsigned int hash_word(char *seq) {
+    unsigned int w = 0, i;
+    for (i = 0; i < ADAPTER_WORD; i++) {
+	w <<= 2;
+	w |= L[(unsigned char)seq[i]];
+    }
+    return w;
+}
+
+static char *W(unsigned int w) {
+    static char buf[ADAPTER_WORD+1];
+    int i;
+    for (i = 0; i < ADAPTER_WORD; i++)
+	buf[i] = "ACGT"[(w>>(2*(ADAPTER_WORD-i-1)))&3];
+    buf[ADAPTER_WORD]=0;
+    return buf;
+}
+
+static int common_word_L(int *counts, char *seq, int len) {
+    unsigned int w = 0, i;
+    if (len < 4 || !counts)
+	return 0;
+
+    for (i = 0; i < ADAPTER_WORD && i < len; i++) {
+	w <<= 2;
+	w |= L[(unsigned char)seq[i]];
+    }
+    return counts[w];
+}
+
+static int common_word_R(int *counts, char *seq, int len) {
+    unsigned int w = 0, i;
+    if (len < 4 || !counts)
+	return 0;
+
+    for (i = 0; i < ADAPTER_WORD && i < len; i++) {
+	w <<= 2;
+	w |= L[(unsigned char)seq[i]];
+    }
+    return counts[w << (2*(ADAPTER_WORD - MIN(ADAPTER_WORD,len)))];
+}
+
+/*
+ * Returns a malloced array of ADAPTER_WORD bases long holding 1 for an
+ * unusually common word and 0 for a normal/expected word usage.
+ *
+ * Returns NULL on failure.
+ */
+int *find_adapter(GapIO *io, int ncontigs, contig_list_t *contigs) {
+    int i, j;
+    int *counts_clip, *counts_used;
+    uint64_t clip_tot = 0;
+    uint64_t used_tot = 0;
+    uint64_t t1, t2;
+
+    counts_clip = calloc(ADAPTER_SIZE, sizeof(int));
+    counts_used = calloc(ADAPTER_SIZE, sizeof(int));
+
+    for (i = 0; i < ncontigs; i++) {
+	tg_rec crec = contigs[i].contig;
+	int start = contigs[i].start;
+	int end = contigs[i].end;
+	contig_iterator *citer;
+	rangec_t *r;
+	unsigned int w;
+
+	citer = contig_iter_new(io, crec, 0, CITER_FIRST, start, end);
+	while ((r = contig_iter_next(io, citer))) {
+	    seq_t *s, *sorig;
+
+	    sorig = s = cache_search(io, GT_Seq, r->rec);
+
+	    if (s->left < ADAPTER_WORD+1 &&
+		ABS(s->len) - s->right < ADAPTER_WORD)
+		continue;
+
+	    if ((s->len < 0) ^ r->comp) {
+		s = dup_seq(s);
+		complement_seq_t(s);
+	    }
+
+	    // FIXME: needs to work on depadded sequence.
+	    if (s->left > ADAPTER_WORD) {
+		//printf("#%"PRIrec" L %.*s\n",
+		//       s->rec, ADAPTER_WORD, &s->seq[s->left-1-ADAPTER_WORD]);
+		counts_clip[hash_word(&s->seq[s->left-1-ADAPTER_WORD])]++;
+		clip_tot++;
+	    }
+
+	    if (ABS(s->len) - s->right >= ADAPTER_WORD) {
+		//printf("#%"PRIrec" R %.*s\n",
+		//       s->rec, ADAPTER_WORD, &s->seq[s->right]);
+		counts_clip[hash_word(&s->seq[s->right])]++;
+		clip_tot++;
+	    }
+
+	    // First and last word of used portion.
+	    if (s->right - s->left > ADAPTER_WORD) {
+		w = hash_word(&s->seq[s->left-1]);
+		//printf("#%"PRIrec" M %s\n", s->rec, W(w));
+		counts_used[w]++;
+		w = hash_word(&s->seq[s->right-ADAPTER_WORD]);
+		//printf("#%"PRIrec" M %s\n", s->rec, W(w));
+		counts_used[w]++;
+		used_tot+=2;
+	    }
+
+//	    w = hash_word(&s->seq[s->left-1]);
+//	    j = s->left-1 + ADAPTER_WORD;
+//	    do {
+//		counts_used[w]++;
+//		//printf("#%"PRIrec" M %s\n", s->rec, W(w));
+//		w <<= 2;
+//		w |= L[s->seq[j]];
+//		w &= (1<<(2*ADAPTER_WORD))-1;
+//		used_tot++;
+//	    } while (++j <= s->right);
+
+	    if (s != sorig)
+		free(s);
+	}
+	contig_iter_del(citer);
+    }
+
+    // Filter to common words in clips only
+    t1 = clip_tot * 0.01;  // 1%
+    t2 = used_tot * 0.005; // 0.5%
+    if (clip_tot > 1000 && used_tot > 1000) {
+	for (i = 0; i < ADAPTER_SIZE; i++) {
+	    //if (counts_clip[i] > t1)
+	    //	printf("Clip: %s %5.1f\n",
+	    //	       W(i), 100.0 * counts_clip[i]/clip_tot);
+	    //if (counts_used[i] > t2)
+	    //	printf("Used: %s %5.1f\n",
+	    //	       W(i), 100.0 * counts_used[i]/used_tot);
+
+	    if (counts_clip[i]>t1 && counts_used[i]<t2) {
+		counts_clip[i] = 1;
+		vmessage("Discarding word %s as likely adpater (%5.1%%)\n",
+			 W(i), 100.0 * counts_clip[i]/clip_tot);
+	    } else {
+		counts_clip[i] = 0;
+	    }
+	}
+    } else {
+	memset(counts_clip, 0, ADAPTER_SIZE * sizeof(int));
+    }
+
+    // Expand clipped words to partial matches, down to 4 bp.
+    for (i = 0; i < ADAPTER_SIZE; i++) {
+	int j;
+	if (!counts_used[i])
+	    continue;
+	
+	for (j = 4; j < ADAPTER_WORD; j++) {
+	    counts_used[i & ((1<<(2*j))-1)] = 1;
+	    counts_used[(i << (2*(ADAPTER_WORD-j))) & ADAPTER_MASK] = 1;
+	}
+    }
+
+    free(counts_used);
+
+    return counts_clip;
 }
