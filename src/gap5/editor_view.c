@@ -3791,8 +3791,8 @@ void ed_set_sequence_sort(edview *xx) {
     	xx->sort_settings.start = xx->select_start;
     	xx->sort_settings.end   = xx->select_end;
     } else {
-    	xx->sort_settings.start = xx->select_start;
-    	xx->sort_settings.end   = xx->select_end;
+    	xx->sort_settings.start = xx->select_end;
+    	xx->sort_settings.end   = xx->select_start;
     }
 }
     
