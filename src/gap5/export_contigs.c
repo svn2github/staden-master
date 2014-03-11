@@ -1995,7 +1995,8 @@ static int export_contig_ace(GapIO *io, FILE *fp,
  * Returns <fn>.fasta on success
  *         NULL on failure
  */
-static char *create_ref_seq(GapIO *io, int cc, contig_list_t *cv, char *fn) {
+static char *create_ref_seq(GapIO *io, int cc, contig_list_t *cv, char *fn,
+			    int depad) {
     static char fn1[PATH_MAX], fn2[PATH_MAX];
     FILE *fp1 = NULL, *fp2 = NULL;
     int i;
@@ -2029,7 +2030,8 @@ static char *create_ref_seq(GapIO *io, int cc, contig_list_t *cv, char *fn) {
 	    free(seq);
 	}
 
-	depad_seq(seq, &len, NULL);
+	if (depad)
+	    depad_seq(seq, &len, NULL);
 
 	offset += fprintf(fp1, ">%s\n", contig_get_name(&c));
 	if (cv[i].start > 1) {
@@ -2119,7 +2121,7 @@ static int export_contigs(GapIO *io, int cc, contig_list_t *cv, int format,
 
     case FORMAT_CRAM:
 	/* Create fasta reference first */
-	if (!(ref_fn = create_ref_seq(io, cc, cv, fn))) {
+	if (!(ref_fn = create_ref_seq(io, cc, cv, fn, depad))) {
 	    perror(fn);
 	    return -1;
 	}
