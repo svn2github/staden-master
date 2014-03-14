@@ -19,7 +19,13 @@
  * them here so we can choose which functions to call.
  */
 #ifndef _WIN32
+#    ifdef ckfree
+#        undef ckfree
+#    endif
 #    define ckfree(x) free((x))
+#    ifdef ckalloc
+#        undef ckalloc
+#    endif
 #    define ckalloc(x) malloc((x))
 #endif
 

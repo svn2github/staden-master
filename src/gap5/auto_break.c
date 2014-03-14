@@ -43,6 +43,7 @@
 
 #include <assert.h>
 #include <math.h>
+#include <ctype.h>
 #include <io_lib/hash_table.h>
 
 #include "tg_gio.h"
@@ -55,6 +56,7 @@
 #include "qual.h"
 #include "qualIO.h"
 #include "dstring.h"
+#include "consensus.h"
 
 #define MIN3(a,b,c) (MIN(MIN((a),(b)),(c)))
 #define MAX3(a,b,c) (MAX(MAX((a),(b)),(c)))
@@ -372,7 +374,7 @@ int64_t word_count_cons(GapIO *io, int argc, contig_list_t *argv) {
     for (cnum = 0; cnum < argc; cnum++) {
 	contig_t *c;
 	int clen;
-	char *s;
+	unsigned char *s;
 	unsigned int word, cword;
 
 	c = cache_search(io, GT_Contig, argv[cnum].contig);
@@ -389,7 +391,7 @@ int64_t word_count_cons(GapIO *io, int argc, contig_list_t *argv) {
 	if (clen <= 2*CONTIG_END_IGNORE)
 	    continue;
 
-	s = cons + CONTIG_END_IGNORE;
+	s = (unsigned char *) cons + CONTIG_END_IGNORE;
 	cons[clen-1-CONTIG_END_IGNORE] = 0;
 
 	cword = word = 0;
@@ -520,7 +522,7 @@ int filter_common_words(char *seq, char *filt, size_t len, int tw,
 	    continue;
 	}
 
-	word = (word << 2) | lookup[seq[i]];
+	word = (word << 2) | lookup[(unsigned char) seq[i]];
 	j++;
     }
     
@@ -549,7 +551,7 @@ int filter_common_words(char *seq, char *filt, size_t len, int tw,
 	    continue;
 	}
 
-	word = (word << 2) | lookup[seq[i]];
+	word = (word << 2) | lookup[(unsigned char) seq[i]];
 	
 	if (debug)
 	    printf("Seq pos %ld %.*s: => %d",
@@ -655,7 +657,7 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int64_t tw,
 
     memset(legal_chars, 0, 256);
     for (cp = "ACGTacgt"; *cp; cp++)
-	legal_chars[*cp] = 1;
+	legal_chars[(unsigned char) *cp] = 1;
 
     /* Compute consensus */
     if (NULL == (cons = (char *)xmalloc(clen+1)))
@@ -670,7 +672,7 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int64_t tw,
      */
     ci = contig_iter_new(io, contig, 1, CITER_FIRST |CITER_ISTART |CITER_PAIR,
 			 CITER_CSTART, CITER_CEND);
-    while (r = contig_iter_next(io, ci)) {
+    while (NULL != (r = contig_iter_next(io, ci))) {
 	seq_t *s = cache_search(io, GT_Seq, r->rec), *sorig = s;
 	char *seq, *fseq;
 	size_t len;
@@ -1053,7 +1055,7 @@ static void dump_template_dist(GapIO *io, tg_rec contig) {
     sum = 0;
     sum_sq = 0;
     last_i = cstart;
-    while (r = contig_iter_next(io, ci)) {
+    while (NULL != (r = contig_iter_next(io, ci))) {
 	int st, en, severity;
 
 	sequence_get_range_pair_position(io, r, contig, 0);
@@ -1387,36 +1389,40 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 		case LIB_T_INWARD:
 		    if ((r[j].flags & GRANGE_FLAG_COMP1) == 0) {
 			if (gap->start > r[j].start && 
-			    gap->start - r[j].start < isize_mid)
+			    gap->start - r[j].start < isize_mid) {
 			    if (r[j].mqual >= unique_mqual)
 				num_unique_single++;
 			    else
 				num_single++;
+			}
 		    } else {
 			if (r[j].end > gap->end &&
-			    r[j].end - gap->end < isize_mid)
+			    r[j].end - gap->end < isize_mid) {
 			    if (r[j].mqual >= unique_mqual)
 				num_unique_single++;
 			    else
 				num_single++;
+			}
 		    }
 		    break;
 
 		case LIB_T_OUTWARD:
 		    if ((r[j].flags & GRANGE_FLAG_COMP1) != 0) {
 			if (gap->start > r[j].start &&
-			    gap->start - r[j].start < isize_mid)
+			    gap->start - r[j].start < isize_mid) {
 			    if (r[j].mqual >= unique_mqual)
 				num_unique_single++;
 			    else
 				num_single++;
+			}
 		    } else {
 			if (r[j].end > gap->end &&
-			    r[j].end - gap->end < isize_mid)
+			    r[j].end - gap->end < isize_mid) {
 			    if (r[j].mqual >= unique_mqual)
 				num_unique_single++;
 			    else
 				num_single++;
+			}
 		    }
 		    break;
 
@@ -1513,11 +1519,12 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 		/* Shouldn't get here as we only added pairs */
 		int x, valid;
 		compute_lib_type(io, r->library_rec, lt_h, &x, &x, &valid);
-		if (valid)
+		if (valid) {
 		    if (r->mqual >= unique_mqual)
 			num_unique_single++;
 		    else
 			num_single++;
+		}
 		continue;
 	    }
 	    /* Check consistency */
@@ -1577,21 +1584,23 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 			break;
 
 		    if (gap->start > r->start &&
-			gap->start - r->start < isize_mid)
+			gap->start - r->start < isize_mid) {
 			// just left of gap
 			if (unique)
 			    num_unique_spanning++;
 			else
 			    num_spanning++;
+		    }
 		} else {
 		    if (r->end - cstart < isize_max)
 			break;
 
-		    if (r->end > gap->end && r->end - gap->end < isize_mid)
+		    if (r->end > gap->end && r->end - gap->end < isize_mid) {
 			if (unique)
 			    num_unique_spanning++;
 			else
 			    num_spanning++;
+		    }
 		}
 		break;
 
@@ -1601,35 +1610,38 @@ static void confirm_gaps(GapIO *io, tg_rec contig, Array gaps,
 			break;
 
 		    if (gap->start > r->start &&
-			gap->start - r->start < isize_mid)
+			gap->start - r->start < isize_mid) {
 			if (unique)
 			    num_unique_spanning++;
 			else
 			    num_spanning++;
+		    }
 		} else {
 		    if (r->end - cstart < isize_max)
 			break;
 
-		    if (r->end > gap->end && r->end - gap->end < isize_mid)
+		    if (r->end > gap->end && r->end - gap->end < isize_mid) {
 			if (unique)
 			    num_unique_spanning++;
 			else
 			    num_spanning++;
+		    }
 		}
 		break;
 
 	    case LIB_T_SAME:
 		/* We can't tell which is 1st and 2nd read easily? */
-		if (gap->start > r->start && gap->start - r->start < isize_mid)
+		if (gap->start > r->start && gap->start - r->start < isize_mid){
 		    if (unique)
 			num_unique_spanning++;
 		    else
 			num_spanning++;
-		else if (r->end > gap->end && r->end - gap->end < isize_mid)
+		} else if (r->end > gap->end && r->end - gap->end < isize_mid) {
 		    if (unique)
 			num_unique_spanning++;
 		    else
 			num_spanning++;
+		}
 		break;
 
 	    default:

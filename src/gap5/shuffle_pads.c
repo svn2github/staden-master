@@ -94,6 +94,8 @@ void print_moverlap(MALIGN *malign, MOVERLAP *o, int offset);
 static int common_word_L(int *counts, char *seq, int len);
 static int common_word_R(int *counts, char *seq, int len);
 int *find_adapter(GapIO *io, int ncontigs, contig_list_t *contigs);
+int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
+		       HashTable *h_clips);
 
 /* Returns depadded 'pos' in s */
 static int depad_clip(seq_t *s, int pos) {
@@ -2211,7 +2213,7 @@ HashTable *coherent_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 		    r->start + i <= end) {
 		    if (s->conf[i] < 20)
 			continue;
-		    Ldepth[r->start+i - start][L[s->seq[i]]]++;
+		    Ldepth[r->start+i - start][L[(unsigned char) s->seq[i]]]++;
 		    Ldepth[r->start+i - start][6]++;
 		}
 	    }
@@ -2223,7 +2225,7 @@ HashTable *coherent_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 		    r->start + i <= end) {
 		    if (s->conf[i] < 20)
 			continue;
-		    Rdepth[r->start+i - start][L[s->seq[i]]]++;
+		    Rdepth[r->start+i - start][L[(unsigned char) s->seq[i]]]++;
 		    Rdepth[r->start+i - start][6]++;
 		}
 	    }
@@ -2806,7 +2808,7 @@ int *find_adapter(GapIO *io, int ncontigs, contig_list_t *contigs) {
 
 	    if (counts_clip[i]>t1 && counts_used[i]<t2) {
 		counts_clip[i] = 1;
-		vmessage("Discarding word %s as likely adpater (%5.1%%)\n",
+		vmessage("Discarding word %s as likely adpater (%5.1f%%)\n",
 			 W(i), 100.0 * counts_clip[i]/clip_tot);
 	    } else {
 		counts_clip[i] = 0;

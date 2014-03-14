@@ -42,6 +42,7 @@
 #include "consensus.h"
 #include "text_output.h"
 #include "gap4_compat.h"  /* complement_contig */
+#include "break_contig.h" /* contig_visible_{start,end} */
 
 #define CSZ 1024 /* consensus size - how far back in contig we'll look */
 #define ESZ 1024 /* extension size - how far we can extend */

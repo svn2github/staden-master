@@ -8,6 +8,7 @@
 #include "tg_gio.h"
 #include "tg_struct.h"
 #include "tg_index_common.h"
+#include "break_contig.h" /* For contig_visible_{start,end} */
 #include "sam_index.h"
 
 #include <staden_config.h>

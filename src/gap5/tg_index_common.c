@@ -17,6 +17,7 @@
 #include "tg_gio.h"
 #include "tg_index_common.h"
 #include "zfio.h"
+#include "break_contig.h"  /* For contig_visible_{start,end} */
 
 /* --------------------------------------------------------------------------
  * Temporary file handling for storing name + record.
@@ -638,6 +639,7 @@ int bttmp_build_index(GapIO *io, bttmp_store_t *bs, long work_size, long group_s
     bttmp_write_index(io, bs->files[0]->fp);
     bttmp_file_close(bs->files[0]);
     bttmp_sort_delete(sort);
+    return 0;
 }
     
 
