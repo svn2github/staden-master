@@ -333,7 +333,7 @@ typedef struct {
     signed int clipped_start, clipped_end;
     tg_rec bin;
     tg_rec scaffold;
-    tg_rec flags; /* For clipped_start/end updating and marking as deleted */
+    uint32_t flags; /* For clipped_start/end updating and marking as deleted */
     int nseqs;
     int nanno;
     int nrefpos;

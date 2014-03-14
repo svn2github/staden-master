@@ -5114,7 +5114,7 @@ static cached_item *io_contig_block_read(void *dbh, tg_rec rec) {
     /* Flags */
     for (i = 0; i < CONTIG_BLOCK_SZ; i++) {
 	if (!in[i].bin) continue;
-	cp += u72int(cp, (uint32_t *)&in[i].flags);
+	cp += u72int(cp, &in[i].flags);
 
 	/* Move elsewhere once we start storing this */
 	in[i].timestamp = 1;
