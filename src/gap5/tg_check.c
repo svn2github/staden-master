@@ -373,6 +373,12 @@ static int check_anno(GapIO *io, int fix, bin_index_t *bin, range_t *r,
 	    
 	    err++;
 
+#if 0
+	    /* Disable this for now.  Moving an annotation to a different
+	     * bin causes other checks (e.g. for the nanno count) to fail
+	     * even though nothing is really wrong.  Worse, the resulting
+	     * attempted fixes leave the database in much worse shape than
+	     * it was originally */
 	    if (fix && !io->base) {
 		bin_index_t *abin;
 		contig_t *ca, *co;
@@ -398,6 +404,7 @@ static int check_anno(GapIO *io, int fix, bin_index_t *bin, range_t *r,
 		if (ca)   cache_decr(io, ca);
 		if (co)   cache_decr(io, co);
 	    }
+#endif
 	}
     }
 
