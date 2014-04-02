@@ -116,7 +116,18 @@ int sequence_delete_base(GapIO *io, seq_t **s, int pos,
 			 int contig_orient);
 int sequence_delete_base2(GapIO *io, seq_t **s, int pos, int contig_orient,
 			  int check_base);
-			  
+
+/*
+ * Moves a sequence left or right by distance 'dist'.  If dist is negative
+ * the move is to the left, otherwise to the right.  It also recalculates
+ * the range end position so it can be called by sequence_range_length.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int sequence_move(GapIO *io, seq_t **s, contig_t **c, int dist);
+
+
 /* Fix range_t length values after insert or delete */
 int sequence_range_length(GapIO *io, seq_t **s);
 

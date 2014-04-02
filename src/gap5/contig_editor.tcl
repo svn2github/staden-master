@@ -182,7 +182,7 @@ proc io_undo_exec {w crec cmdu} {
 			# orientation, so we may also need to fix this
 			set s_pos [$seq get_position]
 			if {$s_pos != $start} {
-			    # puts stderr "rec = $rec; s_pos = $s_pos; start = $start"
+			    # puts stderr "move_seq rec = $rec; s_pos = $s_pos; start = $start"
 			    $contig move_seq $rec [expr {$start-$s_pos}]
 			}
 		    } else {
@@ -198,6 +198,7 @@ proc io_undo_exec {w crec cmdu} {
 			    # orientation, so we may also need to fix this
 			    set s_pos [$seq get_position]
 			    if {$s_pos != $start} {
+				# puts stderr "move_seq rec = $rec; s_pos = $s_pos; start = $start"
 				$contig move_seq $rec [expr {$start-$s_pos}]
 			    }
 			} else {

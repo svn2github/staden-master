@@ -1623,16 +1623,16 @@ int sequence_delete_base(GapIO *io, seq_t **s, int pos, int contig_orient) {
  * Returns 0 on success
  *        -1 on failure
  */
-int sequence_move(GapIO *io, seq_t **s, int dist) {
+int sequence_move(GapIO *io, seq_t **s, contig_t **c, int dist) {
     bin_index_t *old_bin, *new_bin;
     range_t r, *r_out;
     int orient;
     tg_rec crec;
-    contig_t *c = NULL;
     seq_t *n;
     int ret = -1;
 
     cache_incr(io, *s);
+    cache_incr(io, *c);
 
     /* Get old range coords and convert from relative to absolute */
     old_bin = cache_search(io, GT_Bin, (*s)->bin);
@@ -1643,17 +1643,13 @@ int sequence_move(GapIO *io, seq_t **s, int dist) {
     
     sequence_get_position(io, (*s)->rec, &crec, &r.start, &r.end, &orient);
 
-    c = cache_search(io, GT_Contig, crec);
-    if (NULL == c) goto out;
-    cache_incr(io, c);
-
     /* Remove from bin */
-    if (0 != bin_remove_item(io, &c, GT_Seq, (*s)->rec)) goto out;
+    if (0 != bin_remove_item(io, c, GT_Seq, (*s)->rec)) goto out;
     
     /* Add it back at the new range */
     r.start += dist;
     r.end = r.start + ABS((*s)->len) - 1;
-    new_bin = bin_add_range(io, &c, &r, &r_out, NULL, 0);
+    new_bin = bin_add_range(io, c, &r, &r_out, NULL, 0);
     if (NULL == new_bin) goto out;
 
     /* Update seq if parent has changed */
@@ -1678,7 +1674,7 @@ int sequence_move(GapIO *io, seq_t **s, int dist) {
     }
     ret = 0;
  out:
-    if (NULL != c) cache_decr(io, c);
+    cache_decr(io, *c);
     cache_decr(io, *s);
     return ret;
 }
@@ -1721,13 +1717,13 @@ int sequence_range_length(GapIO *io, seq_t **s) {
     r = arrp(range_t, bin->rng, n->bin_index);
     assert(r->rec == n->rec);
 
-    /* Check if we are about to exceed the bounds of this bin */
-    if (r->start + ABS(n->len) - 1 >= bin->size) {
-	return sequence_move(io, s, 0);
-    }
-
     contig = cache_search(io, GT_Contig, crec);
     if (NULL == contig) return -1;
+
+    /* Check if we are about to exceed the bounds of this bin */
+    if (r->start + ABS(n->len) - 1 >= bin->size) {
+	return sequence_move(io, s, &contig, 0);
+    }
 
     /* Check if the bin used range may change */
     if (r->start == bin->start_used || r->end == bin->end_used)

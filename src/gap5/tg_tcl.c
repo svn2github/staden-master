@@ -25,6 +25,7 @@
 #include "tg_struct.h"
 #include "consensus.h"
 #include "gap4_compat.h"  /* io_cclength() */
+#include "tg_sequence.h"  /* sequence_move() */
 
 #if TCL_MINOR_VERSION <= 4
 extern Tcl_Command Tcl_GetCommandFromObj(Tcl_Interp *interp,
@@ -1159,41 +1160,16 @@ static int contig_cmd(ClientData clientData, Tcl_Interp *interp,
 
 	/* Get old range coords and convert from relative to absolute */
 	s = cache_search(tc->io, GT_Seq, rec);
-	cache_incr(tc->io, s);
-
-	bin = cache_search(tc->io, GT_Bin, s->bin);
-	r = arr(range_t, bin->rng, s->bin_index);
-	assert(r.rec == s->rec);
-	assert(ABS(r.end - r.start) + 1 == ABS(s->len));
-	sequence_get_position(tc->io, s->rec, NULL, &r.start, &r.end, &dir);
-
-	bin_remove_item(tc->io, &tc->contig, GT_Seq, rec);
-
-	/* Add it back at the new range */
-	r.start += dist;
-	r.end += dist;
-	bin = bin_add_range(tc->io, &tc->contig, &r, &r_out, NULL, 0);
-
-	/* Update seq if parent has changed */
-	if (s->bin != bin->rec) {
-	    int old_comp = bin_get_orient(tc->io, s->bin);
-	    int new_comp = bin_get_orient(tc->io, bin->rec);
-
-	    s = cache_rw(tc->io, s);
-	    s->bin = bin->rec;
-	    s->bin_index = r_out - ArrayBase(range_t, bin->rng);
-
-	    /* Check if the new bin has a different complemented status too */
-	    if (new_comp != old_comp) {
-		s->len *= -1;
-		s->flags ^= SEQ_COMPLEMENTED;
-		//tmp = s->left;
-		//s->left  = ABS(s->len) - (s->right-1);
-		//s->right = ABS(s->len) - (tmp-1);
-	    }
+	if (NULL == s) {
+	    vTcl_SetResult(interp,
+			   "move_seq: couldn't get sequence #%"PRIrec"\n",
+			   rec);
+	    return TCL_ERROR;
 	}
-
-	cache_decr(tc->io, s);
+	if (0 != sequence_move(tc->io, &s, &tc->contig, dist)) {
+	    vTcl_SetResult(interp, "move_seq failed\n");
+	    return TCL_ERROR;
+	}
 
 	break;
     }

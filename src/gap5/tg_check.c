@@ -286,7 +286,15 @@ static int check_anno(GapIO *io, int fix, bin_index_t *bin, range_t *r,
 					    sizeof(a->obj_rec));
 	    if (!hi || hi->data.i != a->bin) {
 		vmessage("Anno %"PRIrec": attached to seq %"PRIrec" held "
-			 "within a different bin.\n", a->rec, a->obj_rec);
+			 "within a different bin.\n"
+			 "  Anno %"PRIrec" is in bin %"PRIrec"\n",
+			 a->rec, a->obj_rec, a->rec, a->bin);
+		if (hi) {
+		    vmessage("  Seq  %"PRIrec" is in bin %"PRIrec"\n",
+			     a->obj_rec, (tg_rec) hi->data.i);
+		} else {
+		    vmessage("  Seq  %"PRIrec" not seen yet\n", a->obj_rec);
+		}
 		err++;
 	    }
 	}
