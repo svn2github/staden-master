@@ -208,7 +208,8 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	f_b = aoffset;
     }
 
-    //printf("Raw used range %d..%d ", bin->start_used, bin->end_used);
+    //printf("Raw used range bin %"PRIrec" %d..%d ",
+    //	   bnum, bin->start_used, bin->end_used);
 
     if (!(bin = cache_rw(io, bin)))
 	return -1;
@@ -231,10 +232,11 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	    (!start_of_contig &&
 	     pos <= MAX(r->start, r->end)   &&
 	     pos >  MIN(r->start, r->end))) {
-	    //printf("pos overlap obj #%"PRIrec" %d in %d..%d\n",
+	    //printf("pos overlap obj #%"PRIrec" %d in %d..%d %d\n",
 	    //	   r->rec, pos,
 	    //	   MIN(r->start, r->end),
-	    //	   MAX(r->start, r->end));
+	    //	   MAX(r->start, r->end),
+	    //	   start_of_contig);
 	    /* Insert */
 	    if ((r->flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISREFPOS &&
 		(r->flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISANNO) {
@@ -331,8 +333,18 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		}
 	    } else if ((r->flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISANNO) {
 		if (base && !(r->flags & GRANGE_FLAG_TAG_SEQ)) {
-		    //printf("grow anno %"PRIrec"\n", r->rec);
-		    r->end+=nbases;
+		    //printf("anno %"PRIrec" before %d..%d\n",
+		    //	   r->rec, r->start, r->end);
+		    if (pos <= MIN(r->start, r->end)) {
+			/* Shift instead of grow if inserting at the left end */
+			r->start += nbases;
+		    }
+		    if (pos < MAX(r->start, r->end)) {
+			/* Grow if inserting in middle. */
+			r->end+=nbases;
+		    }
+		    //printf("anno %"PRIrec" after  %d..%d\n",
+		    //	   r->rec, r->start, r->end);
 		    ins = 1;
 		}
 	    }
@@ -560,7 +572,7 @@ static int contig_insert_tag2(GapIO *io, tg_rec crec, tg_rec bnum,
 	    //	   r->rec, r->start, r->end,
 	    //	   NMIN(r->start, r->end),
 	    //	   NMAX(r->start, r->end),
-	    //	   hi->data.i);
+	    //	   (int) hi->data.i);
 
 	    if (comp) {
 		if (NMAX(r->start, r->end) <= (int64_t)hi->data.i) {
