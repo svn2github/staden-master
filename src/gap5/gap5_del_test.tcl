@@ -167,7 +167,7 @@ proc check_contig { io crec { expected "" } } {
     set checked [$c check]
     if {[lindex $checked 0] != 0} {
 	puts stderr "Errors found ($checked), quitting."
-	exit 1
+	return 1
     }
     set vs [$c get_visible_start]
     set ve [$c get_visible_end]
@@ -189,9 +189,10 @@ proc check_contig { io crec { expected "" } } {
 	    } else {
 		puts stderr "Got      $cons"
 	    }
-	    exit 1
+	    return 1
 	}
     }
+    return 0
 }
 
 proc check_sequence { io srec expected } {
@@ -212,8 +213,9 @@ proc check_sequence { io srec expected } {
 	} else {
 	    puts stderr "Got      $dna"
 	}
-	exit 1
+	return 1
     }
+    return 0
 }
 
 proc check_tags { io crec clen etags } {
@@ -231,11 +233,11 @@ proc check_tags { io crec clen etags } {
 	    foreach { trec tstart tend } $tags($arec) break
 	    if { $trec != $rec || $tstart != $astart || $tend != $aend } {
 		puts stderr "Tag mismatch for $arec: expected ($trec, $tstart, $tend) got ($rec $astart $aend)"
-		exit 1
+		return 1
 	    }
 	} else {
 	    puts stderr "Tag mismatch for $arec: expected (deleted) got ($rec $astart $aend)"
-	    exit 1
+	    return 1
 	}
     }
     foreach arec [array names tags] {
@@ -243,9 +245,10 @@ proc check_tags { io crec clen etags } {
 	if { ![info exists seen($arec)] } {
 	    foreach { trec tstart tend } $tags($arec) break
 	    puts stderr "Tag mismatch for $arec: expected ($trec, $tstart, $tend) got (absent)"
-	    exit 1
+	    return 1
 	}
     }
+    return 0
 }
 
 proc sim_ctrl_delete { undo exp pos {tags {}}} {
@@ -340,13 +343,19 @@ proc basic_tests { base_io ed clen crec srec dna tags_array pos } {
 	    update idletasks
 	    # after 100
 	    sim_ctrl_delete u expected strpos etags
-	    check_contig [$w io] $crec $expected
-	    check_sequence [$w io] $srec $expected
-	    check_tags [$w io] $crec $clen etags
+	    if {[check_contig [$w io] $crec $expected] != 0
+		|| [check_sequence [$w io] $srec $expected] != 0
+		|| [check_tags [$w io] $crec $clen etags] != 0} {
+		editor_save $ed
+		$base_io flush
+		exit 1
+	    }
 	}
 	editor_save $ed
 	$base_io flush
-	check_contig $base_io $crec $expected
+	if {[check_contig $base_io $crec $expected] != 0} {
+	    exit 1
+	}
 
 	set ui [expr {[llength $u] - 1}]
 	for {set i $pos} {$i < $clen} {incr i} {
@@ -354,13 +363,19 @@ proc basic_tests { base_io ed clen crec srec dna tags_array pos } {
 	    update idletasks
 	    # after 100
 	    sim_undo $u ui expected etags
-	    check_contig [$w io] $crec $expected
-	    check_sequence [$w io] $srec $expected
-	    check_tags [$w io] $crec $clen etags
+	    if {[check_contig [$w io] $crec $expected] != 0
+		|| [check_sequence [$w io] $srec $expected] != 0
+		|| [check_tags [$w io] $crec $clen etags] != 0} {
+		editor_save $ed
+		$base_io flush
+		exit 1
+	    }
 	}
 	editor_save $ed
 	$base_io flush
-	check_contig $base_io $crec $expected
+	if {[check_contig $base_io $crec $expected] != 0} {
+	    exit 1
+	}
     }
 
     if {$pos > 1} {
@@ -373,26 +388,38 @@ proc basic_tests { base_io ed clen crec srec dna tags_array pos } {
 	    editor_delete_base $w [list 17 $crec $i] 1 0 1
 	    update idletasks
 	    sim_ctrl_backspace u expected strpos etags
-	    check_contig [$w io] $crec $expected
-	    check_sequence [$w io] $srec $expected
-	    check_tags [$w io] $crec $clen etags
+	    if {[check_contig [$w io] $crec $expected] != 0
+		|| [check_sequence [$w io] $srec $expected] != 0
+		|| [check_tags [$w io] $crec $clen etags] != 0} {
+		editor_save $ed
+		$base_io flush
+		exit 1
+	    }
 	}
 	editor_save $ed
 	$base_io flush
-	check_contig $base_io $crec $expected
+	if {[check_contig $base_io $crec $expected] != 0} {
+	    exit 1
+	}
 	
 	set ui [expr {[llength $u] - 1}]
 	for { set i $pos } { $i > 0 } { incr i -1 } {
 	    editor_undo $ed
 	    update idletasks
 	    sim_undo $u ui expected etags
-	    check_contig [$w io] $crec $expected
-	    check_sequence [$w io] $srec $expected
-	    check_tags [$w io] $crec $clen etags
+	    if {[check_contig [$w io] $crec $expected] != 0
+		|| [check_sequence [$w io] $srec $expected] != 0
+		|| [check_tags [$w io] $crec $clen etags] != 0} {
+		editor_save $ed
+		$base_io flush
+		exit 1
+	    }
 	}
 	editor_save $ed
 	$base_io flush
-	check_contig $base_io $crec $expected
+	if {[check_contig $base_io $crec $expected] != 0} {
+	    exit 1
+	}
     }
 }
 
@@ -410,23 +437,35 @@ proc del_undo_test { base_io ed clen crec dna } {
 	$w set_cursor 17 $crec 1
 	editor_delete_base $w [list 17 $crec 1] 1 1 1
 	sim_ctrl_delete u expected strpos
-	check_contig [$w io] $crec $expected
+	if {[check_contig [$w io] $crec $expected] != 0} {
+	    editor_save $ed
+	    $base_io flush
+	    exit 1
+	}
 	update idletasks
     }
     editor_save $ed
     $base_io flush
-    check_contig $base_io $crec $expected
+    if {[check_contig $base_io $crec $expected] != 0} {
+	exit 1
+    }
 
     set ui [expr {[llength $u] - 1}]
     for {set i 0} {$i <= $clen} {incr i} {
 	editor_undo $ed
 	sim_undo $u ui expected
-	check_contig [$w io] $crec
+	if {[check_contig [$w io] $crec $expected] != 0} {
+	    editor_save $ed
+	    $base_io flush
+	    exit 1
+	}
 	update idletasks
     }
     editor_save $ed
     $base_io flush
-    check_contig $base_io $crec $expected
+    if {[check_contig $base_io $crec $expected] != 0} {
+	exit 1
+    }
 
     set u {}
     set expected $dna
@@ -435,23 +474,35 @@ proc del_undo_test { base_io ed clen crec dna } {
 	$w set_cursor 17 $crec $i
 	editor_delete_base $w [list 17 $crec $i] 1 0 1
 	sim_ctrl_backspace u expected strpos
-	check_contig [$w io] $crec $expected
+	if {[check_contig [$w io] $crec $expected] != 0} {
+	    editor_save $ed
+	    $base_io flush
+	    exit 1
+	}
 	update idletasks
     }
     editor_save $ed
     $base_io flush
-    check_contig $base_io $crec $expected
+    if {[check_contig $base_io $crec $expected] != 0} {
+	exit 1
+    }
 
     set ui [expr {[llength $u] - 1}]
     for {set i 0} {$i <= $clen} {incr i} {
 	editor_undo $ed
 	sim_undo $u ui expected
-	check_contig [$w io] $crec $expected
+	if {[check_contig [$w io] $crec $expected] != 0} {
+	    editor_save $ed
+	    $base_io flush
+	    exit 1
+	}
 	update idletasks
     }
     editor_save $ed
     $base_io flush
-    check_contig $base_io $crec $expected
+    if {[check_contig $base_io $crec $expected] != 0} {
+	exit 1
+    }
 
     set mid [expr { int($clen / 2 + 1) }]
     set u {}
@@ -462,35 +513,55 @@ proc del_undo_test { base_io ed clen crec dna } {
 	$w set_cursor 17 $crec $edpos
 	editor_delete_base $w [list 17 $crec $edpos] 1 1 1
 	sim_ctrl_delete u expected strpos
-	check_contig [$w io] $crec $expected
+	if {[check_contig [$w io] $crec $expected] != 0} {
+	    editor_save $ed
+	    $base_io flush
+	    exit 1
+	}
 	update idletasks
 	editor_delete_base $w [list 17 $crec $edpos] 1 0 1
 	sim_ctrl_backspace u expected strpos
-	check_contig [$w io] $crec $expected
+	if {[check_contig [$w io] $crec $expected] != 0} {
+	    editor_save $ed
+	    $base_io flush
+	    exit 1
+	}
 	# puts stderr $expected
 	update idletasks
     }
     editor_save $ed
     $base_io flush
-    check_contig $base_io $crec $expected
+    if {[check_contig $base_io $crec $expected] != 0} {
+	exit 1
+    }
 
     set ui [expr {[llength $u] - 1}]
     for {set i 0} {$i <= $mid} {incr i} {
 	editor_undo $ed
 	sim_undo $u ui expected
 	# puts stderr $expected
-	check_contig [$w io] $crec $expected
+	if {[check_contig [$w io] $crec $expected] != 0} {
+	    editor_save $ed
+	    $base_io flush
+	    exit 1
+	}
 	update idletasks
 	editor_undo $ed
 	sim_undo $u ui expected
-	check_contig [$w io] $crec $expected
+	if {[check_contig [$w io] $crec $expected] != 0} {
+	    editor_save $ed
+	    $base_io flush
+	    exit 1
+	}
 	update idletasks
     }
 
     puts stderr "Saving."
     editor_save $ed
     $base_io flush
-    check_contig $base_io $crec $expected
+    if {[check_contig $base_io $crec $expected] != 0} {
+	exit 1
+    }
 }
 
 proc close_editor { w } {
@@ -669,6 +740,7 @@ proc run_child { seed clean } {
 
     if { [do_test $clean sim [ expr { 100 + [exprand 1000] } ] ] } {
 	puts stderr "Simulated data test failed"
+	exit 1
     }
 }
 
@@ -682,8 +754,8 @@ load $env(STADLIB)/${lib_prefix}tk_utils${lib_suffix}
 package require Tk
 
 set seed [expr {int(rand() * 2147483647)}]
-if {[lindex $argv 1] != ""} {
-    set seed [lindex $argv 1]
+if {[lindex $argv 0] != ""} {
+    set seed [lindex $argv 0]
 }
 set clean 0
 

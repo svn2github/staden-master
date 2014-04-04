@@ -163,6 +163,7 @@ proc io_undo_exec {w crec cmdu} {
 
 	    C_INS {
 		set contig [$io get_contig $op1]
+		# puts stderr "1. $contig insert_base $op2"
 		$contig insert_base $op2
 		foreach seq $op3 {
 		    foreach {rec pos base val cut start} $seq break;
@@ -176,13 +177,14 @@ proc io_undo_exec {w crec cmdu} {
 		    # puts "pos = $pos; r = $r"
 		    if {$pos >= $r} {
 			# Add to end as "$contig insert_base" hasn't
+			# puts stderr "2. $seq insert_base $pos $base $val"
 			$seq insert_base $pos $base $val
 
 			# Whether or not the insert also moved depends on
 			# orientation, so we may also need to fix this
 			set s_pos [$seq get_position]
 			if {$s_pos != $start} {
-			    # puts stderr "move_seq rec = $rec; s_pos = $s_pos; start = $start"
+			    # puts stderr "3. move_seq rec = $rec; s_pos = $s_pos; start = $start"
 			    $contig move_seq $rec [expr {$start-$s_pos}]
 			}
 		    } else {
@@ -192,13 +194,14 @@ proc io_undo_exec {w crec cmdu} {
 			    # $contig insert_base moved the sequence instead
 			    # of inserting to it, probably because we're
 			    # adding to the first base. Manually insert instead
+			    # puts stderr "4. $seq insert_base $pos $base $val"
 			    $seq insert_base $pos $base $val
 
 			    # Whether or not the insert also moved depends on
 			    # orientation, so we may also need to fix this
 			    set s_pos [$seq get_position]
 			    if {$s_pos != $start} {
-				# puts stderr "move_seq rec = $rec; s_pos = $s_pos; start = $start"
+				# puts stderr "5. move_seq rec = $rec; s_pos = $s_pos; start = $start"
 				$contig move_seq $rec [expr {$start-$s_pos}]
 			    }
 			} else {
@@ -206,6 +209,7 @@ proc io_undo_exec {w crec cmdu} {
 			    # been the original base we removed and the quality
 			    # is almost certainly wrong. Replace it with the
 			    # correct value.
+			    # puts stderr "6. $seq replace_base $pos $base $val"
 			    $seq replace_base $pos $base $val
 			}
 		    }
@@ -227,7 +231,7 @@ proc io_undo_exec {w crec cmdu} {
 			    incr r -1
 			}
 
-			# puts stderr "rec = $rec c = $c cut = $cut l = $l r = $r"
+			# puts stderr "7. rec = $rec c = $c cut = $cut l = $l r = $r"
 			$seq set_clips $l $r
 		    }
 		    $seq delete
