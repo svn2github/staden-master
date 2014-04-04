@@ -387,7 +387,6 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	if (bin->rng && ArrayMax(bin->rng)) {
 	    int start = INT_MAX;
 	    int end   = INT_MIN;
-	    int seq_start = INT_MAX;
 	    int seq_end   = INT_MIN;
 	    for (i = 0; i < ArrayMax(bin->rng); i++) {
 		range_t *r = arrp(range_t, bin->rng, i);
@@ -403,21 +402,11 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		if ((r->flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISSEQ)
 		    continue;
 
-		if (seq_start > r->start)
-		    seq_start = r->start;
 		if (seq_end   < r->end)
 		    seq_end   = r->end;
 	    }
 	    if (start != INT_MAX) {
-//		if (*start_delta == -1 && NORM(start)!=NORM(bin->start_used)) {
-//		    *start_delta = nbases;
-//		    assert(nbases == NORM(start) - NORM(bin->start_used));
-//		}
-//		if (*end_delta == -1 && NORM(end) != NORM(bin->end_used)) {
-//		    *end_delta = nbases;
-//		    assert(nbases == NORM(end) - NORM(bin->end_used));
-//		}
-		if (NORM(seq_end) > cend)
+		if (seq_end != INT_MIN && NORM(seq_end) > cend)
 		    *end_delta = nbases;
 		bin->start_used = start;
 		bin->end_used = end;
@@ -478,17 +467,6 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		if (ch->nseqs)
 		    ins=1;
 		ch->flags |= BIN_BIN_UPDATED;
-	    }
-
-	    ch = get_bin(io, bin->child[i]);
-	    if (!(ch->start_used ==0 && ch->end_used == 0)) {
-		// local copies
-		int aoffset = NMIN(ch->pos, ch->pos + ch->size-1);
-		int f_a, f_b;
-		if (comp ^ ((ch->flags & BIN_COMPLEMENTED) != 0))
-		    f_a = -1, f_b = aoffset + ch->size-1;
-		else
-		    f_a = +1, f_b = aoffset;
 	    }
 	}
     }
