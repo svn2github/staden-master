@@ -664,6 +664,13 @@ bin_index_t *bin_add_to_range(GapIO *io, contig_t **c, tg_rec brec, range_t *r,
 	    contig_set_end(io, c, r->end);
 	    (*c)->clipped_timestamp = 0;
 	}
+	
+	/* Check if the sequence may have changed visible start/end even if
+	   it was within the boundaries of used start/end */
+	if ((*c)->clipped_timestamp == (*c)->timestamp
+	    && (r->start < (*c)->clipped_start || r->end > (*c)->clipped_end)) {
+	    (*c)->clipped_timestamp = 0;
+	}
     }
 
     if (brec) {
