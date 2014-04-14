@@ -53,7 +53,7 @@
  *
  *    As before, the parent has the ref count boosted by 1.
  *    The child I/O obj has ref count of 2. (Why 2?)
-
+ *
  *    eg:
  *    b=cache_search(io_child, GT_Bin, 30); // base rc 0
  *    cache_rw(io_child, b);                // base rc 1, child rc 2.
