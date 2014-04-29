@@ -165,25 +165,89 @@ int contig_offset(GapIO *io, contig_t **c) {
  * position and offset computed against that absolute pos. These get passed
  * around in apos / aoffset.
  *
- * start_delta and end_delta are adjustments to the unclipped contig
- * start and end coordinates. Note that these are not the same as the
- * maximum start_used and end_used extents in bins as these may also
- * include cached consensus.  We update these fields as we go based on
- * knowledge of the bin structure so we can avoid expensive
- * contig_visible_start() and _end() calls later. Pass them in as -1
- * (unknown).  This code will adjust to +1 or 0 if the absolute change
- * is known, otherwise the calling code will have to brute force
- * recalculate itself.
+ * io   is the current GapIO struct
+ * crec is the contig record number
+ * bnum is the record number of the current bin.
+ * pos  is the position to be deleted wrt. parent bin/contig
+ * apos is the position to be deleted wrt. contig
+ * start_of_contig is a flag to say that the deletion is the first base of the
+ *   contig.
+ * offset  is the position of the bin wrt. its parent
+ * aoffset is the position of the bin wrt. the contig
+ * base is the base to insert (shift only if 0)
+ * conf is the confidence value for the inserted base
+ * nbases is the number of bases to insert
+ * comp is 1 if the parent bin was complemented, 0 otherwise
+ * hash is a hache table tracking sequences that have moved
+ * cstart is the start position of the contig
+ * cend is the end position of the contig
+ * *moved_left is the leftmost contig position where a sequence that overlaps
+               pos has moved.
+ * *moved_right is the rightmost contig position where a sequence has moved
+ * *fixed_right is the rightmost contig position where a sequence has not
+ *              moved.
+ *
  *
  * Returns >=0 for success (0 => no insertion made, 1 => insert done)
  *          -1 for failure
  */
+
+/* Note on sequence range updates.
+ *
+ * For the uncomplemented case, this is fairly simple.  If the position
+ * to be inserted (pos) is in the visible part of a sequence, the sequence
+ * base gets bigger and r->end is incremented by nbases.  If the visible part
+ * of the sequence is entirely to the right of pos, the sequence needs to
+ * shift right so both r->start and r->end are incremented by nbases.
+ *
+ * When all the sequences have been grown or moved, bin->size is
+ * incremented by nbases as the entire bin is now nbases longer.
+ *
+ * In ascii art:
+ *    bin->pos                bin->pos + bin->size     bin->size+=nbases
+ *    v                       v
+ *    ===========*============>
+ *      r->start..r->end
+ *      v         v
+ *      ---=====---                           no change 
+ *          ---==*==---                       r->end+=nbases (inserting bases)
+ *          ---=====---                       no change (shift only)
+ *              ---=====---                   r->start+=nbases,r->end+=nbases
+ *               ^
+ *               pos
+ *
+ * In the complemented case, as the bin's size has changed,
+ * the entire contents will already have moved right with respect to the
+ * contig.  Also, r->end is the left end of the sequence in the contig
+ * and r->start is the right.  Incrementing them will move the position
+ * to the left in the contig.  Hence, when pos is in the visible part
+ * of the sequence, we need to increment r->end by nbases so the left end of
+ * the sequence stays still.  (Note that this is the same update as needed
+ * in the uncomplemented case).  For the shift case, any reads where
+ * pos is to the right of the visible start in the contig need to
+ * have both r->start and r->end incremented by nbases.  This compensates the
+ * move of the bin to the left, resulting in the sequence staying still.
+ *
+ *    bin->pos                bin->pos + bin->size   bin->size+=nbases
+ *    v                       v                      (moves everything right) 
+ *    <==========*=============
+ *      r->end....r->start
+ *      v         v
+ *      ---=====---                r->start+=bases,r->end+=nbases
+ *          ---==*==---            r->end+=nbases  (inserting bases)
+ *          ---=====---            r->start+=nbases,r->end+=nbases (shift only)
+ *              ---=====---        no change
+ *               ^
+ *               pos
+ */
+
 static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 			       int pos, int apos, int start_of_contig,
 			       int offset, int aoffset, char base, int conf,
 			       int nbases, int comp, HacheTable *hash,
 			       int cstart, int cend,
-			       int *start_delta, int *end_delta) {
+			       int *moved_left, int *moved_right,
+			       int *fixed_right) {
     int i, ins = 0;
     bin_index_t *bin;
     HacheData hd;
@@ -242,6 +306,7 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		(r->flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISANNO) {
 		/* ISCONS? skip perhaps as we invalidate them anyway */
 		seq_t *s = cache_search(io, GT_Seq, r->rec);
+		int v_start, v_end; /* Visible start/end wrt. bin */
 		int no_ins;
 
 		if (!s) {
@@ -256,20 +321,16 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		}
 
 		no_ins = 0;
+		/* Find visible start/end of seq in bin */
+		if (s->len < 0) {
+		    v_start = MIN(r->end - (s->right-1), r->end - (s->left-1));
+		    v_end   = MAX(r->end - (s->right-1), r->end - (s->left-1));
+		} else {
+		    v_start = MIN(r->start + s->left-1, r->start + s->right-1);
+		    v_end   = MAX(r->start + s->left-1, r->start + s->right-1);
+		}
 		if (base) {
-		    int r_start, r_end;
-		    if (/*comp ^ */(s->len < 0)) {
-			r_start = MIN(r->end - (s->right-1),
-				      r->end - (s->left-1));
-			r_end = MAX(r->end - (s->right-1),
-				    r->end - (s->left-1));
-		    } else {
-			r_start = MIN(r->start + s->left-1,
-				      r->start + s->right-1);
-			r_end = MAX(r->start + s->right-1,
-				    r->start + s->left-1);
-		    }
-		    if (pos <= r_start || pos > r_end)
+		    if (pos <= v_start || pos > v_end)
 			no_ins = 1;
 
 		    // printf("Rec %"PRIrec" visible %d..%d abs %d..%d\n",
@@ -279,55 +340,80 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		    if (!no_ins) {
 			//printf("INS %"PRIrec" at %d\n", r->rec,
 			//       pos - MIN(r->start, r->end));
-			//int i;
-			//for (i = 0; i < nbases; i++)
-			//    sequence_insert_base(io, &s,
-			//			 pos - MIN(r->start, r->end),
-			//			 base, conf, 0);
 			sequence_insert_bases(io, &s,
 					      pos - MIN(r->start, r->end),
 					      base, conf, nbases, 0);
 			if (hash) {
 			    //printf("1 Mov %"PRIrec"\n", r->rec);
-			    hd.i = MAX(NMIN(r_start, r_end), apos);
+			    hd.i = MAX(NMIN(v_start, v_end), apos);
 			    HacheTableAdd(hash, (char *)&r->rec,
 					  sizeof(r->rec), hd, NULL);
 			}
 			//printf("1 %"PRIrec"->end++\n", r->rec);
 			r->end+=nbases;
 			ins = 1;
+			if ((r->flags & GRANGE_FLAG_ISMASK) ==
+			    GRANGE_FLAG_ISSEQ) {
+			    /* The sequence has got nbases longer,
+			       so the right end will have moved */
+			    *moved_right = MAX(NMAX(r->start, r->end),
+					       *moved_right);
+			}
 		    }
 		}
 
 		if (!base || no_ins) {
-		    /* Shift instead, but only if in left-cutoff data */ 
-		    if (/*comp ^ */ (s->len < 0)) {
-			if (MIN(r->end - (s->right-1), r->end - (s->left-1))
-			    >= pos) {
-			    if (hash) {
-				//printf("2 Mov %"PRIrec"\n", r->rec);
-				hd.i = comp ? INT_MAX : INT_MIN;
-				HacheTableAdd(hash, (char *)&r->rec,
-					      sizeof(r->rec), hd, NULL);
+		    /* Shift instead.
+		       For uncomplemented bins, need to shift if
+		       v_start >= pos.
+		       For complemented bins, the entire bin will shift
+		       as the parent gets nbases longer.  To keep the
+		       reads to the right in the correct place we need to
+		       shift them if pos < visible end.
+		     */
+		    if (comp ? (pos < v_end) : (v_start >= pos)) {
+			if (hash) {
+			    //printf("2 Mov %"PRIrec"\n", r->rec);
+			    hd.i = comp ? INT_MAX : INT_MIN;
+			    HacheTableAdd(hash, (char *)&r->rec,
+					  sizeof(r->rec), hd, NULL);
+			}
+			//printf("2 %"PRIrec"->start/end++\n", r->rec);
+			r->start+=nbases;
+			r->end+=nbases;
+			ins = 1;
+			if ((r->flags & GRANGE_FLAG_ISMASK) ==
+			    GRANGE_FLAG_ISSEQ) {
+			    if (comp) {
+				/* The sequence did not move, so
+				   update *fixed_right */
+				*fixed_right = MAX(NMAX(r->start, r->end),
+						   *fixed_right);
+			    } else {
+				/* The sequence moved to the right so
+				   update *moved_left and *moved_right */
+				*moved_left = MIN(NMIN(r->start, r->end),
+						  *moved_left);
+				*moved_right = MAX(NMAX(r->start, r->end),
+						   *moved_right);
 			    }
-			    //printf("2 %"PRIrec"->start/end++\n", r->rec);
-			    r->start+=nbases;
-			    r->end+=nbases;
-			    ins = 1;
 			}
 		    } else {
-			if (MIN(r->start + s->left-1, r->start + s->right-1)
-			    >= pos) {
-			    if (hash) {
-				//printf("3 Mov %"PRIrec"\n", r->rec);
-				hd.i = comp ? INT_MAX : INT_MIN;
-				HacheTableAdd(hash, (char *)&r->rec,
-					      sizeof(r->rec), hd, NULL);
+			if ((r->flags & GRANGE_FLAG_ISMASK) ==
+			    GRANGE_FLAG_ISSEQ) {
+			    if (comp) {
+				/* The sequence moved to the right so
+				   update *moved_left and *moved_right */
+				*moved_left = MIN(NMIN(r->start, r->end),
+						  *moved_left);
+				*moved_right = MAX(NMAX(r->start, r->end),
+						   *moved_right);
+			    } else {
+				/* The sequence did not move, so
+				   update *fixed_right */
+				*fixed_right = MAX(NMAX(r->start, r->end),
+						   *fixed_right);
 			    }
-			    //printf("3 %"PRIrec"->start/end++\n", r->rec);
-			    r->start+=nbases;
-			    r->end+=nbases;
-			    ins = 1;
 			}
 		    }
 		}
@@ -406,8 +492,9 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		    seq_end   = r->end;
 	    }
 	    if (start != INT_MAX) {
-		if (seq_end != INT_MIN && NORM(seq_end) > cend)
-		    *end_delta = nbases;
+		if (seq_end != INT_MIN && NORM(seq_end) > cend) {
+		    // *end_delta = nbases;
+		}
 		bin->start_used = start;
 		bin->end_used = end;
 	    } else {
@@ -437,12 +524,16 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		    cstart <= NMAX(ch->pos, ch->pos + ch->size-1)) {
 		    // Child entirely to left.
 		    //printf("BIN %"PRIrec" entirely left\n", bin->rec);
-		    *start_delta=0;
 		} else if (apos <  NMIN(ch->pos, ch->pos + ch->size-1) &&
 			   cend >= NMIN(ch->pos, ch->pos + ch->size-1)) {
 		    // Child entirely to right
 		    //printf("BIN %"PRIrec" entirely right\n", bin->rec);
-		    *end_delta=nbases;
+		    /* Assumption: at lease one of the seqs in the
+		       child bin has a visible base, so the rightmost
+		       visible base that has moved must be at least at 
+		       NMIN(ch->pos, ch->pos + ch->size-1) */
+		    *moved_right = MAX(NMIN(ch->pos, ch->pos + ch->size-1),
+				       *moved_right);
 		}
 	    }
 
@@ -454,7 +545,8 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 					   NMIN(ch->pos, ch->pos + ch->size-1),
 					   base, conf, nbases, comp, hash,
 					   cstart, cend,
-					   start_delta, end_delta);
+					   moved_left, moved_right,
+					   fixed_right);
 		/* Children to the right of this one need pos updating too */
 	    } else if (pos < MIN(ch->pos, ch->pos + ch->size-1)) {
 		ch = get_bin(io, bin->child[i]);
@@ -645,7 +737,7 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
     int ret;
     int nbases2 = nbases; 
     int cstart = (*c)->start, cend = (*c)->end;
-    int start_delta, end_delta;
+    int moved_left, moved_right, fixed_right;
 
     //printf("PRE %d..%d\n", (*c)->start, (*c)->end);
 
@@ -668,12 +760,14 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
     hash = HacheTableCreate(4096, HASH_NONVOLATILE_KEYS | HASH_POOL_ITEMS
 			    | HASH_ALLOW_DUP_KEYS | HASH_DYNAMIC_SIZE);
 
-    start_delta = end_delta = -1;
+    moved_left = INT_MAX;
+    moved_right = fixed_right = INT_MIN;
     ret = contig_insert_base2(io, n->rec, contig_get_bin(c), pos, pos,
 			      pos == n->start,
 			      contig_offset(io, c), contig_offset(io, c),
 			      base, conf, nbases, 0, hash,
-			      cstart, cend, &start_delta, &end_delta);
+			      cstart, cend, &moved_left, &moved_right,
+			      &fixed_right);
 
     ret |= contig_insert_tag2(io, n->rec, contig_get_bin(c), pos, pos,
 			      pos == n->start,
@@ -688,19 +782,26 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
      * Similarly inserting a base *may* shrink the contig if the
      * left-most read is in left-cutoff data at pos.
      *
-     * For safety, we simply have to recompute start/end when we
-     * haven't worked out the correct start/end delta values.
+     * To work out if we need to update, we keep track of the left and
+     * rightmost positions where a sequence has moved (moved_left,
+     * moved_right) and the rightmost position where a sequence overlapping
+     * pos did not move.
+     *
+     * We only need to recalculate the contig start if moved_left <= cstart.
+     *
+     * If moved_right > fixed_right we know that the contig has grown,
+     * otherwise we have to recalculate.
      */
-    //start_delta=end_delta=-1; // disable optimisation for debugging.
 
-    if (start_delta > -1)
-	cstart += start_delta;
-    else
+    //fprintf(stderr, "I moved_left = %d\nI cstart = %d\n"
+    //	    "I moved_right = %d\nI fixed_right = %d\n",
+    //	    moved_left, cstart, moved_right, fixed_right);
+
+    if (moved_left <= cstart + nbases)
 	consensus_unclipped_range(io, (*c)->rec, &cstart, NULL);
 
-
-    if (end_delta > -1) {
-	cend   += end_delta;
+    if (moved_right > fixed_right + nbases) {
+	cend += nbases;
     } else {
 	/* Best guess */
 	contig_set_end(io, c, contig_get_end(c)+nbases);
@@ -868,13 +969,93 @@ static int bin_delete(GapIO *io, bin_index_t *bin) {
     return 0;
 }
 
+/*
+ * Recursive delete consensus base function.  Gets called for each bin
+ * that overlaps the position to be deleted.
+ *
+ * io   is the current GapIO struct
+ * crec is the contig record number
+ * bnum is the record number of the current bin.
+ * pos  is the position to be deleted wrt. parent bin/contig
+ * apos is the position to be deleted wrt. contig
+ * start_of_contig is a flag to say that the deletion is the first base of the
+ *   contig.
+ * offset  is the position of the bin wrt. its parent
+ * aoffset is the position of the bin wrt. the contig
+ * base is a flag to say that the base should be deleted (otherwise just shift)
+ * comp is 1 if the parent bin was complemented, 0 otherwise
+ * hash is a hache table tracking sequences that have moved
+ * bcall if non-zero only delete this type of base
+ * cstart is the start position of the contig
+ * cend is the end position of the contig
+ * *moved_left is the leftmost contig position where a sequence that
+ *             overlaps pos has moved.
+ * *moved_right is the rightmost contig position where a sequence has moved
+ * *fixed_right is the rightmost contig position where a sequence has not
+ *              moved.
+ *
+ * Returns -1 on failure
+ *          1 if a base was deleted
+ *          0 if no base was deleted (shift only)
+ */
+
+/* Note on sequence range updates.
+ *
+ * For the uncomplemented case, this is fairly simple.  If the position
+ * to be deleted (pos) is in the visible part of a sequence, the sequence
+ * base is deleted and r->end is decremented.  If the visible part of
+ * the sequence is entirely to the right of pos, the sequence needs to
+ * shift left so both r->start and r->end are decremented.
+ *
+ * In ascii art:
+ *    bin->pos                bin->pos + bin->size     bin->size--
+ *    v                       v
+ *    ===========*============>
+ *      r->start..r->end
+ *      v         v
+ *      ---=====---                           no change 
+ *          ---==*==---                       r->end--  (deleting base)
+ *          ---=====---                       no change (shift only)
+ *              ---=====---                   r->start--,r->end--
+ *               ^
+ *               pos
+ *
+ * When all the sequences have been shrunk or moved, bin->size is
+ * decremented as the entire bin is now one base shorter.
+ *
+ * In the complemented case, as the bin's size has changed,
+ * the entire contents will already have moved left with respect to the
+ * contig.  Also, r->end is the left end of the sequence in the contig
+ * and r->start is the right.  Decrementing them will move the position
+ * to the right in the contig.  Hence, when pos is in the visible part
+ * of the sequence, we need to decrement r->end so the left end of the
+ * sequence stays still.  (Note that this is the same update as needed
+ * in the uncomplemented case).  For the shift case, any reads where
+ * pos is to the right of the visible start in the contig need to
+ * have both r->start and r->end decremented.  This compensates the move
+ * of the bin to the left, resulting in the sequence staying still.
+ *
+ *    bin->pos                bin->pos + bin->size   bin->size--
+ *    v                       v                      (moves everything left) 
+ *    <==========*=============
+ *      r->end....r->start
+ *      v         v
+ *      ---=====---                           r->start--,r->end--
+ *          ---==*==---                       r->end--  (deleting base)
+ *          ---=====---                       r->start--,r->end-- (shift only)
+ *              ---=====---                   no change
+ *               ^
+ *               pos
+ */
+
 static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 			       int pos, int apos, int start_of_contig,
 			       int offset, int aoffset,
 			       int base, int comp, HacheTable *hash,
 			       int bcall, int cstart, int cend,
-			       int *start_delta, int *end_delta) {
-    int i, ins = 0;
+			       int *moved_left, int *moved_right,
+			       int *fixed_right) {
+    int i, del = 0;
     bin_index_t *bin;
     HacheData hd;
     int f_a, f_b;
@@ -894,6 +1075,7 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	pos -= offset;
     }
 
+    /* Parameters for NORM, NMIN and NMAX macros */
     if (comp) {
 	f_a = -1;
 	f_b = aoffset + bin->size-1;
@@ -915,49 +1097,52 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	    continue;
 
 	if (MAX(r->start, r->end) >= pos && MIN(r->start, r->end) <= pos) {
+	    /* Range overlaps pos */
+
 	    //printf("pos overlap obj %d/#%"PRIrec" %d in %d..%d\n",
 	    //	   r->flags & GRANGE_FLAG_ISMASK, r->rec, pos,
 	    //	   MIN(r->start, r->end),
 	    //	   MAX(r->start, r->end));
-	    /* Delete */
+
 	    if ((r->flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISREFPOS &&
 		(r->flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISANNO) {
 		/* ISCONS? skip perhaps as we invalidate them anyway */
 		seq_t *s = cache_search(io, GT_Seq, r->rec);
-		int no_ins;
+		int v_start, v_end; /* Visible start/end wrt. bin */
+		int no_del;
 
 		if (ABS(r->end - r->start) + 1 != ABS(s->len)) {
 		    verror(ERR_WARN, "contig_delete_base2", 
 			   "Range start/end are inconsistent with seq len. ");
 		}
 
-		no_ins = 0;
-		if (base) {
-		    int r_start, r_end;
-		    if (/*comp ^ */(s->len < 0)) {
-			r_start = MIN(r->end - (s->right-1),
-				      r->end - (s->left-1));
-			r_end = MAX(r->end - (s->right-1),
-				    r->end - (s->left-1));
-		    } else {
-			r_start = MIN(r->start + s->left-1,
-				      r->start + s->right-1);
-			r_end = MAX(r->start + s->right-1,
-				    r->start + s->left-1);
-		    }
-		    if (pos < r_start || pos > r_end)
-			no_ins = 1;
+		no_del = 0;
+		/* Find visible start/end of seq in bin */
+		if (s->len < 0) {
+		    v_start = MIN(r->end - (s->right-1), r->end - (s->left-1));
+		    v_end   = MAX(r->end - (s->right-1), r->end - (s->left-1));
+		} else {
+		    v_start = MIN(r->start + s->left-1, r->start + s->right-1);
+		    v_end   = MAX(r->start + s->left-1, r->start + s->right-1);
+		}
 
-		    // printf("Rec %"PRIrec" visible %d..%d abs %d..%d\n",
-		    //	   r->rec, r_start, r_end,
-		    //	   NORM(r_start), NORM(r_end));
+		if (base) { /* See if we need to delete any bases */
+		    /* No need to delete if pos is outside visible portion */
+		    if (pos < v_start || pos > v_end)
+			no_del = 1;
 
-		    if (!no_ins) {
+		    //printf("Rec %"PRIrec" visible %d..%d abs %d..%d\n",
+		    //	   r->rec, v_start, v_end,
+		    //	   NORM(v_start), NORM(v_end));
+
+		    if (!no_del) {
+			/* In visible part, so delete */
+
 			if (r->start == r->end) {
 			    /* Remove completely */
 			    if (hash) {
 				//printf("1 Mov %"PRIrec"\n", r->rec);
-				hd.i = MAX(NMIN(r_start, r_end), apos);
+				hd.i = MAX(NMIN(v_start, v_end), apos);
 				HacheTableAdd(hash, (char *)&r->rec,
 					      sizeof(r->rec), hd, NULL);
 			    }
@@ -973,9 +1158,10 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 				bin->end_used == r->end)
 				bin_set_used_range(io, bin);
 			} else {
+			    /* delete the base */
 			    int bb;
 			    //printf("DEL %"PRIrec" at %d\n", r->rec,
-			    //       pos - MIN(r->start, r->end));
+			    //     pos - MIN(r->start, r->end));
 
 			    bb = ((r->flags & GRANGE_FLAG_ISMASK) ==
 				  GRANGE_FLAG_ISCONS)
@@ -985,46 +1171,78 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 						  0, bb);
 			    if (hash) {
 				//printf("1 Mov %"PRIrec"\n", r->rec);
-				hd.i = MAX(NMIN(r_start, r_end), apos);
+				hd.i = MAX(NMIN(v_start, v_end), apos);
 				HacheTableAdd(hash, (char *)&r->rec,
 					      sizeof(r->rec), hd, NULL);
 			    }
 			    //printf("1 %"PRIrec"->end--\n", r->rec);
 			    r->end--;
-			    ins = 1;
+			    del = 1;
+			    if ((r->flags & GRANGE_FLAG_ISMASK) ==
+				GRANGE_FLAG_ISSEQ) {
+				/* The sequence has got one base shorter,
+				   so the right end will have moved */
+				*moved_right = MAX(NMAX(r->start, r->end),
+						   *moved_right);
+			    }
 			}
 		    }
 		}
 
-		if (!base || no_ins) {
-		    /* Shift instead, but only if in left-cutoff data */ 
-		    if (/*comp ^ */ (s->len < 0)) {
-			if (MIN(r->end - (s->right-1), r->end - (s->left-1))
-			    >= pos) {
-			    if (hash) {
-				//printf("2 Mov %"PRIrec"\n", r->rec);
-				hd.i = comp ? INT_MAX : INT_MIN;
-				HacheTableAdd(hash, (char *)&r->rec,
-					      sizeof(r->rec), hd, NULL);
-			    }
-			    //printf("2 %"PRIrec"->start/end--\n", r->rec);
-			    r->start--;
-			    r->end--;
-			    ins = 1;
+		if (!base || no_del) {
+		    /* Shift instead.
+		       For uncomplemented bins, need to shift if
+		       v_start >= pos.
+		       For complemented bins, the entire bin will shift
+		       as the parent gets one base shorter.  To keep the
+		       reads to the right in the correct place we need to
+		       shift them if pos < visible end.
+		     */
+		    if (comp ? (pos < v_end) : (v_start >= pos)) {
+			if (hash) {
+			    //printf("2 Mov %"PRIrec"\n", r->rec);
+			    hd.i = comp ? INT_MAX : INT_MIN;
+			    HacheTableAdd(hash, (char *)&r->rec,
+					  sizeof(r->rec), hd, NULL);
 			}
-		    } else {
-			if (MIN(r->start + s->left-1, r->start + s->right-1)
-			    >= pos) {
-			    if (hash) {
-				//printf("3 Mov %"PRIrec"\n", r->rec);
-				hd.i = comp ? INT_MAX : INT_MIN;
-				HacheTableAdd(hash, (char *)&r->rec,
-					      sizeof(r->rec), hd, NULL);
+
+			//printf("2 %"PRIrec"->start/end--\n", r->rec);
+			r->start--;
+			r->end--;
+
+			if ((r->flags & GRANGE_FLAG_ISMASK) ==
+			    GRANGE_FLAG_ISSEQ) {
+			    if (comp) {
+				/* This sequence did not move, so
+				   update *fixed_right */
+				*fixed_right = MAX(NMAX(r->start, r->end),
+						   *fixed_right);
+			    } else {
+				/* This sequence moved to the left, so
+				   update *moved_left and *moved_right */
+				*moved_left = MIN(NMIN(r->start, r->end),
+						  *moved_left);
+				*moved_right = MAX(NMAX(r->start, r->end),
+						   *moved_right);
 			    }
-			    //printf("3 %"PRIrec"->start/end--\n", r->rec);
-			    r->start--;
-			    r->end--;
-			    ins = 1;
+			}
+			del = 1;
+		    } else {
+			if ((r->flags & GRANGE_FLAG_ISMASK) ==
+			    GRANGE_FLAG_ISSEQ) {
+			    if (comp) {
+				/* This sequence moved to the left, so
+				   update *moved_left and *moved_right */
+				*moved_left = MIN(NMIN(r->start, r->end),
+						  *moved_left);
+				*moved_right = MAX(NMAX(v_start, v_end),
+						   *moved_right);
+			    } else {
+				/* This sequence did not move, so
+				   update *fixed_right */
+				*fixed_right = MAX(NMAX(r->start, r->end),
+						   *fixed_right);
+			    }
 			}
 		    }
 		}
@@ -1045,7 +1263,7 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		    } else {
 			r->end--;
 		    }
-		    ins = 1;
+		    del = 1;
 		}
 	    }
 	    
@@ -1061,7 +1279,7 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		//printf("4 %"PRIrec"->start/end--\n", r->rec);
 		r->start--;
 		r->end--;
-		ins = 1;
+		del = 1;
 		bin->flags |= BIN_RANGE_UPDATED;
 
 		if (hash) {
@@ -1074,7 +1292,7 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		/* Move consensus tags */
 		r->start--;
 		r->end--;
-		ins = 1;
+		del = 1;
 		bin->flags |= BIN_RANGE_UPDATED;
 	    }
 	} /* else pos to right of object */
@@ -1153,11 +1371,11 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
     {
 	if (bin->size != max_r+1) {
 	    if (--bin->size <= 0) {
-		fprintf(stderr, "Delete bin bin-%"PRIrec"\n", bin->rec);
+		//fprintf(stderr, "Delete bin bin-%"PRIrec"\n", bin->rec);
 		bin->size = 0;
 		bin_delete(io, bin);
 	    } else {
-		ins = 1;
+		del = 1;
 		if (bin->rng && ArrayMax(bin->rng)) {
 		    if (min_r != INT_MAX) {
 			bin->start_used = min_r;
@@ -1197,31 +1415,34 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	    /* Using absolute coordinates, measure the impact on contig
 	     * start and end locations.
 	     */
-	    if (ch->nseqs) {
-		if (apos   >  NMAX(ch->pos, ch->pos + ch->size-1) && 
-		    cstart <= NMAX(ch->pos, ch->pos + ch->size-1)) {
-		    // Child entirely to left.
-		    //printf("BIN %"PRIrec" entirely left\n", bin->rec);
-		    *start_delta=0;
-		} else if (apos <  NMIN(ch->pos, ch->pos + ch->size-1) &&
-			   cend >= NMIN(ch->pos, ch->pos + ch->size-1)) {
-		    // Child entirely to right
-		    //printf("BIN %"PRIrec" entirely right\n", bin->rec);
-		    *end_delta=1;
-		}
+	    if (ch->nseqs > 0 && 
+		apos <  NMIN(ch->pos, ch->pos + ch->size-1) &&
+		cend >= NMIN(ch->pos, ch->pos + ch->size-1)) {
+		// Child entirely to right
+		//printf("BIN %"PRIrec" entirely right\n", bin->rec);
+		
+		/* Assumption: at lease one of the seqs in the
+		   child bin has a visible base, so the rightmost
+		   visible base that has moved must be at least at 
+		   NMIN(ch->pos, ch->pos + ch->size-1) */
+		*moved_right = MAX(NMIN(ch->pos, ch->pos + ch->size-1),
+				   *moved_right);
 	    }
 
 	    if (pos >= MIN(ch->pos, ch->pos + ch->size-1) &&
 		pos <= MAX(ch->pos, ch->pos + ch->size-1)) {
-		ins |= contig_delete_base2(io, crec, bin->child[i], pos, apos,
+		/* pos is within the child bin, so recurse into it */
+		del |= contig_delete_base2(io, crec, bin->child[i], pos, apos,
 					   start_of_contig,
 					   MIN(ch->pos, ch->pos + ch->size-1),
 					   NMIN(ch->pos, ch->pos + ch->size-1),
 					   base, comp, hash, bcall,
 					   cstart, cend,
-					   start_delta, end_delta);
-		/* Children to the right of this one need pos updating too */
+					   moved_left, moved_right,
+					   fixed_right);
 	    } else if (pos < MIN(ch->pos, ch->pos + ch->size-1)) {
+		/* Children to the right of pos need their position
+		   updating too */
 		ch = get_bin(io, bin->child[i]);
 		if (!(ch = cache_rw(io, ch))) {
 		    cache_decr(io, bin);
@@ -1232,7 +1453,7 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 
 		ch->pos--;
 		if (ch->nseqs)
-		    ins=1;
+		    del=1;
 		ch->flags |= BIN_BIN_UPDATED;
 	    }
 	}
@@ -1240,7 +1461,7 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 
     cache_decr(io, bin);
 
-    return ins;
+    return del;
 }
 
 
@@ -1365,6 +1586,14 @@ static int contig_delete_base_fix(GapIO *io, tg_rec crec, tg_rec bnum,
     return r;
 }
 
+/*
+ * Common entry-point for delete / shift contig base code.
+ *
+ * pos   is the contig position to delete or shift
+ * shift is a flag to say we want to shift only
+ * base  if non-zero, prevents bases other than this type from being removed.
+ */
+
 int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
 			      int base) {
     contig_t *n;
@@ -1375,7 +1604,8 @@ int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
     int done = 0, reduced;
     HacheTable *hash = NULL;
     int cstart = (*c)->start, cend = (*c)->end;
-    int start_delta, end_delta;
+    int moved_left, moved_right;
+    int fixed_right;
 
     if (pos < cstart || pos > cend)
 	return 0;
@@ -1495,12 +1725,14 @@ int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
     hash = HacheTableCreate(4096, /*HASH_NONVOLATILE_KEYS | */HASH_POOL_ITEMS
 			    | HASH_ALLOW_DUP_KEYS | HASH_DYNAMIC_SIZE);
 
-    start_delta = end_delta = -1;
+    moved_left  = INT_MAX;
+    moved_right = fixed_right = INT_MIN;
     reduced = contig_delete_base2(io, n->rec, contig_get_bin(c), pos, pos,
 				  pos == n->start,
 				  contig_offset(io, c), contig_offset(io, c),
 				  !shift, 0, hash, base,
-				  cstart, cend, &start_delta, &end_delta);
+				  cstart, cend, &moved_left, &moved_right,
+				  &fixed_right);
 
     /*
      * Deletion can move objects left if the deleted coord is in the left
@@ -1520,15 +1752,26 @@ int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
      * sometimes it moves sequences and other times it deletes from sequences,
      * depending on whether we're in cutoff data or not.
      *
-     * The easiest solution is just recalculate both ends.
+     * To work out if we need to update, we keep track of the left and
+     * rightmost positions where a sequence has moved (moved_left,
+     * moved_right) and the rightmost position where a sequence overlapping
+     * pos did not move.
+     *
+     * We only need to recalculate the contig start if moved_left <= cstart.
+     *
+     * If moved_right > fixed_right we know that the contig has shrunk,
+     * otherwise we have to recalculate.
      */
-    if (start_delta > -1)
-	cstart -= start_delta;
-    else
+
+    //fprintf(stderr, "D moved_left = %d\nD cstart = %d\n"
+    //	    "D moved_right = %d\nD fixed_right = %d\n",
+    //	    moved_left, cstart, moved_right, fixed_right);
+
+    if (moved_left <= cstart)
 	consensus_unclipped_range(io, (*c)->rec, &cstart, NULL);
 
-    if (end_delta > -1)
-	cend -= end_delta;
+    if (moved_right > fixed_right)
+	cend -= 1;
     else
 	consensus_unclipped_range(io, (*c)->rec, NULL, &cend);
 

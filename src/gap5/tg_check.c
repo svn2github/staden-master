@@ -1193,8 +1193,9 @@ int check_contig(GapIO *io, tg_rec crec, int fix, int level,
 
     if (bs.cstart != c->start ||
 	bs.cend   != c->end) {
-	vmessage("Contig %"PRIrec": used start/end range are incorrect\n",
-		 crec);
+	vmessage("Contig %"PRIrec": used start/end range are incorrect\n"
+		 "  Contig:   %d .. %d\n  Bin walk: %d .. %d\n",
+		 crec, c->start, c->end, bs.cstart, bs.cend);
 	err++;
 	if (fix) {
 	    c = cache_rw(io, c);

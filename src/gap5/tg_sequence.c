@@ -1629,6 +1629,8 @@ int sequence_move(GapIO *io, seq_t **s, contig_t **c, int dist) {
     int orient;
     tg_rec crec;
     seq_t *n;
+    int update_contig = 0; /* 1 = start, 2 = end, 4 = clipped_timestamp */
+    int orig_start, orig_end;
     int ret = -1;
 
     cache_incr(io, *s);
@@ -1643,12 +1645,25 @@ int sequence_move(GapIO *io, seq_t **s, contig_t **c, int dist) {
     
     sequence_get_position(io, (*s)->rec, &crec, &r.start, &r.end, &orient);
 
+    orig_start = r.start;
+    orig_end   = r.end;
+
     /* Remove from bin */
     if (0 != bin_remove_item(io, c, GT_Seq, (*s)->rec)) goto out;
     
     /* Add it back at the new range */
     r.start += dist;
     r.end = r.start + ABS((*s)->len) - 1;
+
+    /* Have we changed contig (clipped) start/end? */
+    if (MIN(r.start, orig_start) <= (*c)->start) update_contig |= 1;
+    if (MAX(r.end,   orig_end)   >= (*c)->end)   update_contig |= 2;
+    if ((*c)->clipped_timestamp == (*c)->timestamp
+	&& (MIN(r.start, orig_start) <= (*c)->clipped_start
+	    || MAX(r.end,   orig_end)   >= (*c)->clipped_end)) {
+	update_contig |= 4;
+    }
+
     new_bin = bin_add_range(io, c, &r, &r_out, NULL, 0);
     if (NULL == new_bin) goto out;
 
@@ -1672,6 +1687,25 @@ int sequence_move(GapIO *io, seq_t **s, contig_t **c, int dist) {
 	/* Pull over any annotations too */
 	if (0 != sequence_move_annos(io, s, 0)) goto out;
     }
+
+    if (update_contig) {
+	/* Fix contig start/end/clipped_timestamp as necessary */
+	contig_t *ctg = cache_rw(io, *c);
+	if (NULL == ctg) goto out;
+	*c = ctg;
+
+	if (update_contig & 4) ctg->clipped_timestamp = 0;
+	if (update_contig & 3) {
+	    if (0 != consensus_unclipped_range(io, ctg->rec,
+					       (update_contig & 1
+						? &ctg->start : NULL),
+					       (update_contig & 2
+						? &ctg->end : NULL))) {
+		    goto out;
+		}
+	}
+    }
+
     ret = 0;
  out:
     cache_decr(io, *c);

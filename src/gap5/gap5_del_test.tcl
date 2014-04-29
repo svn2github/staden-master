@@ -440,14 +440,14 @@ proc del_undo_test { base_io ed clen crec dna } {
 	if {[check_contig [$w io] $crec $expected] != 0} {
 	    editor_save $ed
 	    $base_io flush
-	    exit 1
+	    return 1
 	}
 	update idletasks
     }
     editor_save $ed
     $base_io flush
     if {[check_contig $base_io $crec $expected] != 0} {
-	exit 1
+	return 1
     }
 
     set ui [expr {[llength $u] - 1}]
@@ -457,14 +457,14 @@ proc del_undo_test { base_io ed clen crec dna } {
 	if {[check_contig [$w io] $crec $expected] != 0} {
 	    editor_save $ed
 	    $base_io flush
-	    exit 1
+	    return 1
 	}
 	update idletasks
     }
     editor_save $ed
     $base_io flush
     if {[check_contig $base_io $crec $expected] != 0} {
-	exit 1
+	return 1
     }
 
     set u {}
@@ -477,14 +477,14 @@ proc del_undo_test { base_io ed clen crec dna } {
 	if {[check_contig [$w io] $crec $expected] != 0} {
 	    editor_save $ed
 	    $base_io flush
-	    exit 1
+	    return 1
 	}
 	update idletasks
     }
     editor_save $ed
     $base_io flush
     if {[check_contig $base_io $crec $expected] != 0} {
-	exit 1
+	return 1
     }
 
     set ui [expr {[llength $u] - 1}]
@@ -494,14 +494,14 @@ proc del_undo_test { base_io ed clen crec dna } {
 	if {[check_contig [$w io] $crec $expected] != 0} {
 	    editor_save $ed
 	    $base_io flush
-	    exit 1
+	    return 1
 	}
 	update idletasks
     }
     editor_save $ed
     $base_io flush
     if {[check_contig $base_io $crec $expected] != 0} {
-	exit 1
+	return 1
     }
 
     set mid [expr { int($clen / 2 + 1) }]
@@ -516,7 +516,7 @@ proc del_undo_test { base_io ed clen crec dna } {
 	if {[check_contig [$w io] $crec $expected] != 0} {
 	    editor_save $ed
 	    $base_io flush
-	    exit 1
+	    return 1
 	}
 	update idletasks
 	editor_delete_base $w [list 17 $crec $edpos] 1 0 1
@@ -524,7 +524,7 @@ proc del_undo_test { base_io ed clen crec dna } {
 	if {[check_contig [$w io] $crec $expected] != 0} {
 	    editor_save $ed
 	    $base_io flush
-	    exit 1
+	    return 1
 	}
 	# puts stderr $expected
 	update idletasks
@@ -532,7 +532,7 @@ proc del_undo_test { base_io ed clen crec dna } {
     editor_save $ed
     $base_io flush
     if {[check_contig $base_io $crec $expected] != 0} {
-	exit 1
+	return 1
     }
 
     set ui [expr {[llength $u] - 1}]
@@ -543,7 +543,7 @@ proc del_undo_test { base_io ed clen crec dna } {
 	if {[check_contig [$w io] $crec $expected] != 0} {
 	    editor_save $ed
 	    $base_io flush
-	    exit 1
+	    return 1
 	}
 	update idletasks
 	editor_undo $ed
@@ -551,7 +551,7 @@ proc del_undo_test { base_io ed clen crec dna } {
 	if {[check_contig [$w io] $crec $expected] != 0} {
 	    editor_save $ed
 	    $base_io flush
-	    exit 1
+	    return 1
 	}
 	update idletasks
     }
@@ -560,8 +560,9 @@ proc del_undo_test { base_io ed clen crec dna } {
     editor_save $ed
     $base_io flush
     if {[check_contig $base_io $crec $expected] != 0} {
-	exit 1
+	return 1
     }
+    return 0
 }
 
 proc close_editor { w } {
@@ -636,6 +637,84 @@ proc do_basic_test { clen } {
     return 0
 }
 
+proc do_cutoff_test { clean } {
+    puts stderr "Generating test data..."
+    set clen 32
+    set dna [gen_dna $clen]
+    set sam_name ""
+    set samfd [ make_tmp "deltest" sam_name ]
+    puts $samfd [ format "@SQ\tSN:c%04d\tLN:%d" 0 $clen ]
+    set reads [list [list 1 0 [expr {$clen / 2 - 2}] 0 0 0 [expr {$clen  / 2 + 2} ] 0]\
+		   [list 2 [expr {$clen / 2}] [expr {$clen / 2}] 0 0 [expr {$clen / 2}] 0 0]]
+    for { set p 0 } { $p < $clen } { incr p } {
+	lappend reads [list [expr { $p + 3 } ] $p 1 0 0 0 0 0]
+    }
+    write_sam_reads $samfd $dna $reads
+    close $samfd
+
+    if {[catch { exec tg_index -z 1 -o $sam_name $sam_name >@stdout 2>@stderr } msg]} {
+	puts stderr "Error running tg_index -o $sam_name $sam_name : $msg"
+	return 1
+    }
+    if {[catch \
+     	     {set io [g5::open_database -name $sam_name -access rw]} \
+     	     err]} {
+     	puts stderr "Couldn't open database '$sam_name': $err"
+     	return 1
+    }
+    $io debug_level 1
+
+    set cname "c0000"
+    set cnum [cname2crec $io $cname]
+
+    export_contigs -io $io -contigs "{=$cnum 1 $clen}" -format sam \
+	-outfile "$sam_name.before"
+    edit_contig -io $io -contig $cnum
+    set ed [get_curr_editor]
+
+    if {[del_undo_test $io $ed $clen $cnum $dna] != 0} {
+	tkwait window $ed
+	exit 1
+    }
+
+    export_contigs -io $io -contigs "{=$cnum 1 $clen}" -format sam \
+	-outfile "$sam_name.after"
+
+    if [catch {exec cmp "$sam_name.before" "$sam_name.after" } res] {
+	if {[lindex $::errorCode 0] eq "CHILDSTATUS"} {
+	    puts stderr "cmp failed."
+	} else {
+	    puts stderr "Error running cmp : $res"
+	}
+    }
+
+    close_editor $ed
+
+    complement_contig -io $io -contigs =$cnum
+    set dna [ string_reverse [ string map { A T C G G C T A } $dna ] ]
+
+    edit_contig -io $io -contig $cnum
+    set ed [get_curr_editor]
+
+    if {[del_undo_test $io $ed $clen $cnum $dna] != 0} {
+	tkwait window $ed
+	exit 1
+    }
+
+    close_editor $ed
+
+    $io close
+    unset io
+    if { $clean } {
+	puts stderr "Tidying up..."
+	file delete "$sam_name"
+	file delete "${sam_name}.g5d"
+	file delete "${sam_name}.g5x"
+	file delete "${sam_name}.log"
+    }
+    return 0
+}
+
 proc do_test { clean mode clen args } {
     puts stderr "Generating test data..."
     # set clen [ expr { 100 + [exprand 1000] } ]
@@ -676,13 +755,20 @@ proc do_test { clean mode clen args } {
 
     add_contig_tags $io $cnum $clen
 
+    if { $mode eq "pattern" } {
+	return 0
+    }
+
     export_contigs -io $io -contigs "{=$cnum 1 $clen}" -format sam \
 	-outfile "$sam_name.before"
 
     edit_contig -io $io -contig $cnum
     set ed [get_curr_editor]
 
-    del_undo_test $io $ed $clen $cnum $dna
+    if {[del_undo_test $io $ed $clen $cnum $dna] != 0} {
+	tkwait window $ed
+	exit 1
+    }
 
     export_contigs -io $io -contigs "{=$cnum 1 $clen}" -format sam \
 	-outfile "$sam_name.after"
@@ -693,6 +779,19 @@ proc do_test { clean mode clen args } {
 	} else {
 	    puts stderr "Error running cmp : $res"
 	}
+    }
+
+    close_editor $ed
+
+    complement_contig -io $io -contigs =$cnum
+    set dna [ string_reverse [ string map { A T C G G C T A } $dna ] ]
+
+    edit_contig -io $io -contig $cnum
+    set ed [get_curr_editor]
+
+    if {[del_undo_test $io $ed $clen $cnum $dna] != 0} {
+	tkwait window $ed
+	exit 1
     }
 
     close_editor $ed
@@ -724,6 +823,11 @@ proc run_child { seed clean } {
     if {[do_basic_test 80]} {
 	puts stderr "Basic test failed."
 	exit 1
+    }
+
+    if {[do_cutoff_test $clean]} {
+    	puts stderr "Cutoff test failed."
+    	exit 1
     }
 
     set patterns [list [list 100 1 1 0 1 1 1] \

@@ -1129,14 +1129,17 @@ int bin_remove_item_from_bin(GapIO *io, contig_t **c, bin_index_t **binp,
 	tg_rec bnum;
 
 	for (;;) {
+	    int tmp;
 	    if (bin->flags & BIN_COMPLEMENTED) {
 		if (seq_start != INT_MAX) {
-		    seq_start = bin->size-1 - seq_start;
-		    seq_end   = bin->size-1 - seq_end;
+		    tmp = bin->size-1 - seq_start;
+		    seq_start   = bin->size-1 - seq_end;
+		    seq_end = tmp;
 		}
 
-		item_start = bin->size-1 - item_start;
-		item_end   = bin->size-1 - item_end;
+		tmp = bin->size-1 - item_start;
+		item_start   = bin->size-1 - item_end;
+		item_end = tmp;
 		comp ^= 1;
 	    }
 	    if (seq_start != INT_MAX) {
