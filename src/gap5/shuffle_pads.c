@@ -2571,6 +2571,8 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 	    //vmessage("#%"PRIrec": Extend 5' end by %d\n",
 	    //	     s->rec, best_i - s->right);
 	    s = cache_rw(io, s);
+	    while (best_i > 1 && s->seq[best_i-1] == '*')
+		best_i--;
 	    s->right = best_i;
 	    updated = 1;
 	}
@@ -2623,6 +2625,8 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 	    //vmessage("#%"PRIrec": Extend 3' end by %d\n",
 	    //	     s->rec, s->left - best_i);
 	    s = cache_rw(io, s);
+	    while (best_i < s->right && s->seq[best_i-1] == '*')
+		best_i++;
 	    s->left = best_i;
 	    updated = 1;
 	}
