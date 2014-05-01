@@ -1047,6 +1047,9 @@ static void sam_export_seq(GapIO *io, scram_fd *bf,
 	    ll = (sorig->len >= 0) ? pos : pos - sorig->len - 1;
 	    rr = comp ? other_st-1 : other_en+1;
 	    isize = rr-ll;
+
+	    if (depad == 2)
+		iend = padded_to_reference_pos(io, crec, iend, NULL, NULL);
 	} else {
 	    contig_t *oc = cache_search(io, GT_Contig, other_c);
 	    mate_ref = oc->name;
