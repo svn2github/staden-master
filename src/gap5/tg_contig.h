@@ -74,6 +74,8 @@ rangec_t *contig_anno_in_range(GapIO *io, contig_t **c, int start, int end,
 			       int job, int *count);
 rangec_t *contig_cons_in_range(GapIO *io, contig_t **c, int start, int end,
 			       int job, int *count);
+rangec_t *contig_refpos_in_range(GapIO *io, contig_t **c, int start, int end,
+				 int job, int *count);
 			       
 void contig_set_default_sort(seq_sort_t *set, int primary, int secondary);
 void contig_set_base_sort_point(int pos);
@@ -311,13 +313,21 @@ int reference_to_padded_pos2(GapIO *io, tg_rec cnum, int ref_id, int ref_pos,
  *
  * ref_pos and ref_id should be allocated by the caller to be of
  * appropriate size (paddeed_end - padded_start + 1).
+ * Insertions get ref_id of -1 (if non NULL) and ref_pos[] element of INT_MIN.
+ *
+ * If non-NULL start_pos is the first reference coordinate used. Note that the
+ * read may start in an insertion, in which case nP (if non NULL) is the
+ * number of preceeding padding characters before the first base in order
+ * to keep the multiple sequence alignment.
  *
  * Returns 0 on success
  *        -1 on failure
  */
 int padded_to_reference_array(GapIO *io, tg_rec cnum,
 			      int padded_start, int padded_end,
-			      int *ref_pos, int *ref_id);
+			      int *ref_pos, int *ref_id,
+			      int *start_pos, int *nP);
+
 
 /* 
  * Moves an entire contig by a relative amount left (-ve) or right (+ve).

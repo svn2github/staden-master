@@ -2073,7 +2073,7 @@ static int sam_add_seq(void *cd, scram_fd *fp, pileup_t *p,
 	s = (bio_seq_t *)p->cd;
 
 	/* Extend sequence */
-	if (s->seq_len >= s->alloc_len) {
+	if (s->seq_len >= s->alloc_len || s->padded_pos >= s->alloc_len) {
 	    s->alloc_len = (s->alloc_len + 100)*1.5;
 	    if (NULL == (s->seq  = (char *)realloc(s->seq,  s->alloc_len)))
 		return -1;

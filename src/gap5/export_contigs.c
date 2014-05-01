@@ -302,7 +302,7 @@ static char *false_name(GapIO *io, seq_t *s, int suffix, int *name_len) {
 
 static int export_header_sam(GapIO *io, scram_fd *bf,
 			     int cc, contig_list_t *cv,
-			     int fixmates,
+			     int fixmates, int depad,
 			     char *ref_fn, int format) {
     int i;
     char len_buf[100];
@@ -325,9 +325,13 @@ static int export_header_sam(GapIO *io, scram_fd *bf,
 	    if (NULL == (c = cache_search(io, GT_Contig, cnum)))
 		return -1;
 	    
-	    len = c->end;
-	    if (c->start <= 0)
-		len += 1-c->start;
+	    if (depad == 2) {
+		len = padded_to_reference_pos(io, c->rec, c->end, NULL, NULL);
+	    } else {
+		len = c->end;
+		if (c->start <= 0)
+		    len += 1-c->start;
+	    }
 
 	    sprintf(len_buf, "%d", len);
 	    sam_hdr_add(scram_get_header(bf), "SQ", "SN",
@@ -341,9 +345,13 @@ static int export_header_sam(GapIO *io, scram_fd *bf,
 	    if (NULL == (c = cache_search(io, GT_Contig, cv[i].contig)))
 		return -1;
 
-	    len = c->end;
-	    if (c->start <= 0)
-		len += 1-c->start;
+	    if (depad == 2) {
+		len = padded_to_reference_pos(io, c->rec, c->end, NULL, NULL);
+	    } else {
+		len = c->end;
+		if (c->start <= 0)
+		    len += 1-c->start;
+	    }
 
 	    sprintf(len_buf, "%d", len);
 	    sam_hdr_add(scram_get_header(bf), "SQ", "SN",
@@ -459,6 +467,142 @@ static uint32_t *sam_padded_cigar(char *seq, int left, int right, int olen,
     assert(ncigar);
     if ((cigar[ncigar-1] & 15) == BAM_CDEL) {
 	ncigar--;
+    }
+
+    *ncigar_p = ncigar;
+    return cigar;
+}
+
+static uint32_t *sam_refbased_cigar(GapIO *io, contig_t *c, int cpos,
+				    char *seq, int left, int right, int olen,
+				    int *ncigar_p, int *ref_pos) {
+    static uint32_t *cigar = NULL;
+    static int cg_alloc = 0;
+    int i, j;
+    int oplen = 0, cglen = 0;
+    enum cigar_op op = BAM_CSOFT_CLIP, last_op = -1;
+    int ncigar = 0, last_ncigar = 0, last_oplen = 0;
+    int *rpos, last_rpos, np;
+
+    rpos = malloc(olen*sizeof(int));
+    padded_to_reference_array(io, c->rec, cpos, cpos+olen-1,
+			      rpos, NULL, ref_pos, &np);
+    last_rpos = *ref_pos-1;
+
+    //printf("Read %d..%d at %d..%d (ref %d)\n", left, right, cpos, cpos+olen-1, *ref_pos);
+
+    for (i = j = 0; i < olen; i++,j++) {
+	//printf("%2d %c, %d /  %d\n", i, seq[i], i+left+1, rpos[j]);
+	if (ncigar >= cg_alloc) {
+	    cg_alloc += 32;
+	    cigar = realloc(cigar, cg_alloc*4);
+	}
+
+	/*
+	 *  Seq   Ref-pos  Op
+	 *  A     >0       M
+	 *  A     0        I
+	 *  A     (D)      D+M?
+	 *  *     >0       D
+	 *  *     0        P
+	 *  *     (D)      D+D?
+	 */
+	if (seq[i] == '*') {
+	    if (i < left || i >= right) {
+		// remove gap in soft-clip as SAM cannot represent this
+		op = BAM_CSOFT_CLIP;
+		oplen = 0;
+		j--;
+	    } else if (rpos[j] == INT_MIN) {
+		// Insertion, but not in this seq
+		op = BAM_CPAD;
+		oplen = 1;
+	    } else if (rpos[j] - last_rpos > 1) {
+		// Deletion in seq matching deletion in consensus
+		op = BAM_CDEL;
+		oplen = rpos[j] - last_rpos;
+		last_rpos = rpos[j];
+	    } else {
+		// Deletion in seq vs match in consensus
+		op = BAM_CDEL;
+		oplen = 1;
+		last_rpos = rpos[j];
+	    }
+	} else {
+	    if (i < left || i >= right) {
+		op = BAM_CSOFT_CLIP;
+		oplen = 1;
+		j--;
+	    } else if (rpos[j] == INT_MIN) {
+		// Insertion of base
+		if (i == left && np) {
+		    // First visible base is an inserted one, add P if needed
+		    if (last_op != -1) {
+			if (ncigar >= cg_alloc) {
+			    cg_alloc += 32;
+			    cigar = realloc(cigar, cg_alloc*4);
+			}
+			cigar[ncigar++] = (last_oplen<<4) + last_op;
+			//printf("%d%c (%d%c)\n", last_oplen, "MIDNSHP=X"[last_op],
+			//       oplen, "MIDNSHP=X"[op]);
+		    }
+		    last_op = BAM_CPAD;
+		    last_oplen = np;
+		}
+		op = BAM_CINS;
+		oplen = 1;
+	    } else if (rpos[j] - last_rpos > 1) {
+		// Deletion in consensus + match
+		op = BAM_CDEL;
+		oplen = rpos[j] - (last_rpos+1);
+
+		if (last_op != -1) {
+		    if (ncigar >= cg_alloc) {
+			cg_alloc += 32;
+			cigar = realloc(cigar, cg_alloc*4);
+		    }
+		    cigar[ncigar++] = (last_oplen<<4) + last_op;
+		    //printf("%d%c (%d%c)\n", last_oplen, "MIDNSHP=X"[last_op],
+		    //	   oplen, "MIDNSHP=X"[op]);
+		}
+		last_op = op;
+		last_oplen = oplen;
+
+		op = BAM_CMATCH;
+		oplen = 1;
+		last_rpos = rpos[j];
+	    } else {
+		// Match
+		op = BAM_CMATCH;
+		oplen = 1;
+		last_rpos = rpos[j];
+	    }
+	}
+
+	if (op == last_op) {
+	    last_oplen += oplen;
+	} else {
+	    if (last_op != -1) {
+		if (ncigar >= cg_alloc) {
+		    cg_alloc += 32;
+		    cigar = realloc(cigar, cg_alloc*4);
+		}
+		cigar[ncigar++] = (last_oplen<<4) + last_op;
+		//printf("%d%c (%d%c)\n", last_oplen, "MIDNSHP=X"[last_op],
+		//       oplen, "MIDNSHP=X"[op]);
+	    }
+	    last_op = op;
+	    last_oplen = oplen;
+	}
+    }
+
+    if (last_oplen > 0) {
+	if (ncigar >= cg_alloc) {
+	    cg_alloc += 32;
+	    cigar = realloc(cigar, cg_alloc*4);
+	}
+	cigar[ncigar++] = (last_oplen<<4) + last_op;
+	//printf("%d%c\n", last_oplen, "MIDNSHP=X"[last_op]);
     }
 
     *ncigar_p = ncigar;
@@ -610,7 +754,11 @@ static void sam_export_cons_tag(GapIO *io, scram_fd *bf, fifo_t *fi,
     start = fi->r.start;
     end   = fi->r.end;
 
-    if (depad) {
+    switch (depad) {
+    case 0:
+	break;
+
+    case 1: {
 	int np2, i;
 
 	/* pos is currently padded */
@@ -628,6 +776,13 @@ static void sam_export_cons_tag(GapIO *io, scram_fd *bf, fifo_t *fi,
 		np2++;
 	}
 	end -= np2;
+	break;
+    }
+
+    case 2:
+	start = padded_to_reference_pos(io, c->rec, start, NULL, NULL);
+	end   = padded_to_reference_pos(io, c->rec, end,   NULL, NULL);
+	break;
     }
 
 
@@ -840,12 +995,22 @@ static void sam_export_seq(GapIO *io, scram_fd *bf,
     }
 
     /*--- Generate cigar string. */
-    if (depad)
+    switch (depad) {
+    case 0:
+	cigar = sam_padded_cigar(s->seq, left, right, olen, &ncigar);
+	break;
+
+    case 1:
 	cigar = sam_depadded_cigar(s->seq, left, right, olen,
 				   &cons[pos - c->start + *npad],
 				   &ncigar);
-    else
-	cigar = sam_padded_cigar(s->seq, left, right, olen, &ncigar);
+	break;
+
+    case 2:
+	cigar = sam_refbased_cigar(io, c, pos+*npad, s->seq, left, right, olen,
+				   &ncigar, &pos);
+	break;
+    }
     
     /*--- Compute start and end value for bin */
     start = end =  pos + offset;
@@ -984,12 +1149,38 @@ static void sam_export_seq(GapIO *io, scram_fd *bf,
 	    }
 
 	    depad_map[i] = j;
-	    if (d[i] != '*' || op == BAM_CPAD || (!depad && op == BAM_CDEL)) {
-		//printf("%2d %c/%c %2d  %d%c\n", i+1, d[i], S[j], j+1, op_len, op);
-		op_len--;
-		j++;
-	    } else {
-		//printf("%2d %c/- %2d  -\n", i+1, d[i], j+1);
+	    switch (depad) {
+	    case 0:
+		if (d[i] != '*' || op == BAM_CPAD) {
+		    op_len--;
+		    j++;
+		}
+		break;
+
+	    case 1:
+		if (d[i] != '*' || op == BAM_CPAD || op == BAM_CDEL) {
+		    op_len--;
+		    j++;
+		}
+		break;
+
+	    case 2:
+		if (op == BAM_CDEL && d[i] != '*') {
+		    j+=op_len;
+		    op_len=0;
+		    i--; // Don't consume this sequence base
+		    
+		} else if (op == BAM_CMATCH ||
+			   op == BAM_CINS ||
+			   op == BAM_CPAD ||
+			   op == BAM_CDEL ||
+			   op == BAM_CSOFT_CLIP ||
+			   op == BAM_CBASE_MATCH ||
+			   op == BAM_CBASE_MISMATCH) {
+		    op_len--;
+		    j++;
+		}
+		break;
 	    }
 	}
     }
@@ -1989,6 +2180,71 @@ static int export_contig_ace(GapIO *io, FILE *fp,
 }
 
 /*
+ * Converts a padded consensus sequence into a reference sequence using
+ * the refpos array markers.
+ *
+ * The existing seq is passed in with length end-start+1.
+ *
+ * Returns a new malloced sequence of length *len on success
+ *         NULL on failure
+ */
+static char *ref_pad_seq(GapIO *io, tg_rec crec, int start, int end,
+			 char *seq_in, int *len) {
+    char *seq_out;
+    int *rpos;
+    int min, max, last, i, j;
+
+    if (!(rpos = calloc(end - start + 1, sizeof(int))))
+	return NULL;
+
+    // Compute padded_pos to reference_pos mapping
+    if (padded_to_reference_array(io, crec, start, end, rpos, NULL,
+				  NULL, NULL) != 0) {
+	free(rpos);
+	return NULL;
+    }
+
+
+    // Determine if mapping is valid (low->high with no discontinuities.
+    // Also find min/max values
+    max = last = INT_MIN;
+    min = INT_MAX;
+    for (i = 0; i < end-start+1; i++) {
+	if (rpos[i] == INT_MIN)
+	    continue;
+	if (min > rpos[i])
+	    min = rpos[i];
+	if (max < rpos[i])
+	    max = rpos[i];
+
+	if (rpos[i] < last)
+	    return NULL;
+    }
+
+    *len = max-min+1;
+    seq_out = malloc(*len);
+    if (!seq_out) {
+	free(rpos);
+	return NULL;
+    }
+
+    // Transcribe consensus.
+    last = min-1;
+    for (i = j = 0; i < end-start+1; i++) {
+	if (rpos[i] == INT_MIN)
+	    continue;
+	while (rpos[i] - last > 1)
+	    seq_out[j++] = 'N', last++;
+	seq_out[j++] = seq_in[i] == '*' ? 'N' : seq_in[i];
+	last = rpos[i];
+    }
+    assert(j == *len);
+
+    free(rpos);
+    return seq_out;
+}
+
+/*
  * Saves the consensus to <fn>.fasta and creates a samtools style
  * <fn>.fasta.fai index.
  *
@@ -2013,7 +2269,7 @@ static char *create_ref_seq(GapIO *io, int cc, contig_list_t *cv, char *fn,
     for (i = 0; i < cc; i++) {
 	char *seq = NULL;
 	contig_t *c;
-	int len;
+	int len, len_N;
 
 	if (!(c = cache_search(io, GT_Contig, cv[i].contig)))
 	    goto err;
@@ -2030,54 +2286,75 @@ static char *create_ref_seq(GapIO *io, int cc, contig_list_t *cv, char *fn,
 	    free(seq);
 	}
 
-	if (depad)
+	switch (depad) {
+	case 0:
+	    break;
+
+	case 1:
 	    depad_seq(seq, &len, NULL);
+	    break;
+	    
+	case 2: {
+	    char *rseq;
+	    rseq = ref_pad_seq(io, cv[i].contig, cv[i].start, cv[i].end,
+			       seq, &len);
+	    free(seq);
+	    if (!rseq)
+		goto err;
+	    seq = rseq;
+	    break;
+	}
+	}
 
 	offset += fprintf(fp1, ">%s\n", contig_get_name(&c));
+	len_N = 0;
 	if (cv[i].start > 1) {
 	    int n = cv[i].start - 1;
 	    while (n > 0) {
 		int l = MIN(1024, n);
-		offset += fwrite("NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
-				 "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
-				 1, l, fp1);
+		int w;
+		w = fwrite("NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+			   "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+			   1, l, fp1);
+		len_N  += w;
 		n -= l;
 	    }
 	}
 
-	fprintf(fp2, "%s\t%d\t%"PRId64"\t%d\t%d\n",
-		contig_get_name(&c), len, offset, len, len+1);
+	fprintf(fp2, "%s\t%d\t%"PRId64"\t%d\t%d\n", contig_get_name(&c),
+		len+len_N, offset, len+len_N, len+len_N+1);
 
+	offset += len_N;
 	offset += fprintf(fp1, "%.*s\n", len, seq);
 	    
 	cache_decr(io, c);
@@ -2152,7 +2429,7 @@ static int export_contigs(GapIO *io, int cc, contig_list_t *cv, int format,
     case FORMAT_SAM:
     case FORMAT_BAM:
     case FORMAT_CRAM:
-	export_header_sam(io, bf, cc, cv, fixmates, ref_fn, format);
+	export_header_sam(io, bf, cc, cv, fixmates, depad, ref_fn, format);
 	break;
     }
 

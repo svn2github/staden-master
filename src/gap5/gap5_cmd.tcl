@@ -161,10 +161,12 @@ set ::cmd::export::opts {
     h|help  0 0    {}     {Shows this help.}
     {} {} {} {} {}
 
-    contigs 1 {*}  {list} {Output only specific contigs. 'list' is a space separated list of contig names.}
-    f|format  1 sam  {fmt}  {Controls the output format. 'fmt' should be one of sam, ace, baf, fasta or fastq.}
-    o|out     1 "out.*" {filename} {Where to write output. Suffix defaults to 'fmt'. Output "-" indicates stdout.}
-    fixmates 0 0   {}     {Attempts to fix up SAM mate pairing flags prior to output.}
+    contigs  1 {*} {list} {Output only specific contigs. 'list' is a space separated list of contig names.}
+    f|format 1 sam {fmt}  {Controls the output format. 'fmt' should be one of sam, bam, cram, ace, baf, fasta or fastq.}
+    o|out    1 "out.*" {filename} {Where to write output. Suffix defaults to 'fmt'. Output "-" indicates stdout.}
+    fixmates 0 0 {}       {Attempts to fix up SAM mate pairing flags prior to output.}
+    depad    0 0 {}       {Uses depadded consensus for coordinates (CRAM/SAM/BAM)}
+    refpos   0 0 {}       {Attempts to use original reference coordinates (CRAM/SAM/BAM)}
 }
 
 proc ::cmd::export::run {dbname _options} {
@@ -177,12 +179,21 @@ proc ::cmd::export::run {dbname _options} {
 
     set opt(out) [regsub {\*} $opt(out) $opt(format)]
     
+    if {$opt(refpos)} {
+	set depad 2
+    } elseif {$opt(depad)} {
+	set depad 1
+    } else {
+	set depad 0
+    }
+
     if {[catch {export_contigs \
 		    -io $io \
 		    -contigs $opt(contigs) \
 		    -format $opt(format) \
 		    -fixmates $opt(fixmates) \
-		    -outfile $opt(out)} err]} {
+		    -outfile $opt(out) \
+		    -depad $depad} err]} {
 	puts stderr "Failed in export_contigs call: $err"
     }
 

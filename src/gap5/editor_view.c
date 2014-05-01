@@ -1869,15 +1869,13 @@ static int generate_ruler(edview *xx, char *ruler, XawSheetInk *ink,
 
 	padded_to_reference_array(xx->io, xx->cnum, xx->displayPos,
 				  xx->displayPos+xx->displayWidth+10-1,
-				  rpos, rid);
+				  rpos, rid, NULL, NULL);
 
 	k += 10;
 	K += 10;
 	for (i = 0; i < xx->displayWidth+10; i++) {
-	    int len = log(ABS(rpos[i] ? rpos[i] : 1)) * 0.4342945;
-	    len++;
-
 	    if (rpos[i] % 10 == 0 && rid[i] != -1) {
+		int len = log(ABS(rpos[i] ? rpos[i] : 1)) * 0.4342945 + 1;
 		if (i - last_x > len) {
 		    sprintf(&k[i-(len-1)], "%.*d", len, rpos[i]);
 		    k[i+1+(rpos[i]<0)] = ' ';

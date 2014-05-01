@@ -748,6 +748,8 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
 	return -1;
     *c = n;
 
+    rpos = padded_to_reference_pos(io, (*c)->rec, pos, &dir, NULL);
+
     if (base == 0) {
 	/*
 	 * Shift rather than insert+shift. The difference between consensus
@@ -831,8 +833,8 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
     if (1 != ret)
 	return 0;
 
-    rpos = padded_to_reference_pos(io, (*c)->rec, pos, &dir, NULL);
     rpos -= dir; /* Compensate for complemented contigs */
+    rpos--;
 
     /* Add a pad marker too for reference adjustments */
     if (find_refpos_marker(io, (*c)->rec, pos + 1, // or pos + nbases?
@@ -900,11 +902,18 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
 	ref_id = rc.rec;
     }
 
+    if (dir == -1 && add_indel) {
+	/* No ref pos yet, so start it rolling */
+	dir = 0;
+	rpos-=1+nbases2;
+    }
+
     if (dir != -1 && add_indel) {
 	range_t r;
 	int i;
 
-	for (i = 0; i < nbases2; i++) {
+	rpos += dir ? 2 : 0;
+	for (i = 0; i < nbases2; i++, pos++) {
 	    //printf("Adding insertion REFPOS at %d/%d\n", pos, rpos);
 	    r.start    = pos;
 	    r.end      = pos;
@@ -5449,7 +5458,7 @@ int padded_to_reference_pos(GapIO *io, tg_rec cnum, int ppos, int *dir_p,
     contig_iterator *ci;
     rangec_t *r;
     int rpos;
-    int dir;
+    int dir, d;
 
     ci = contig_iter_new_by_type(io, cnum, 1, CITER_FIRST | CITER_ISTART, 
 				 ppos, CITER_CEND, GRANGE_FLAG_ISREFPOS);
@@ -5483,20 +5492,32 @@ int padded_to_reference_pos(GapIO *io, tg_rec cnum, int ppos, int *dir_p,
 	    if (ref_id) *ref_id = -1;
 	    return ppos;
 	}
-
-	dir = 0 ^ r->comp;
+	/*
+	 * d is the delta to add to our reference position while dir is the
+	 * direction (fwd/rev) for subsequent numbers.
+	 *
+	 * Mostly the two agree, but around indels there are some corner
+	 * cases.
+	 */
+	if ((r->flags & GRANGE_FLAG_REFPOS_INDEL) == GRANGE_FLAG_REFPOS_DEL)
+	    d = 1 ^ r->comp;
+	else
+	    d = 0 ^ r->comp;
     } else {
-	dir = 1 ^ r->comp;
+	d = 1 ^ r->comp;
     }
+    dir = 1 ^ r->comp;
 
     if (((r->flags & GRANGE_FLAG_REFPOS_DIR) == GRANGE_FLAG_REFPOS_FWD) ^ r->comp)
-	rpos = r->mqual + (ppos - r->start + dir);
+	rpos = r->mqual + (ppos - r->start + d);
     else
-	rpos = r->mqual - (ppos - r->start - dir);
+	rpos = r->mqual - (ppos - r->start - d);
 
     if ((r->flags & GRANGE_FLAG_REFPOS_INDEL) == GRANGE_FLAG_REFPOS_DEL) {
 	if (dir == 1) /* fwd */
 	    rpos -= (ppos < r->start) * r->pair_rec + 1;
+	else
+	    rpos -= (ppos >= r->start) * r->pair_rec;
     }
     
     if (dir_p)
@@ -5558,13 +5579,20 @@ int find_refpos_marker(GapIO *io, tg_rec cnum, int ppos,
  *
  * ref_pos and ref_id should be allocated by the caller to be of
  * appropriate size (paddeed_end - padded_start + 1).
+ * Insertions get ref_id of -1 (if non NULL) and ref_pos[] element of INT_MIN.
+ *
+ * If non-NULL start_pos is the first reference coordinate used. Note that the
+ * read may start in an insertion, in which case nP (if non NULL) is the
+ * number of preceeding padding characters before the first base in order
+ * to keep the multiple sequence alignment.
  *
  * Returns 0 on success
  *        -1 on failure
  */
 int padded_to_reference_array(GapIO *io, tg_rec cnum,
 			      int padded_start, int padded_end,
-			      int *ref_pos, int *ref_id) {
+			      int *ref_pos, int *ref_id,
+			      int *start_pos, int *nP) {
     int dir, rpos, i, rid;
     contig_iterator *ci;
     int len = padded_end - padded_start + 1;
@@ -5572,6 +5600,12 @@ int padded_to_reference_array(GapIO *io, tg_rec cnum,
 
     /* Starting point */
     rpos = padded_to_reference_pos(io, cnum, padded_start, &dir, &rid);
+    if (start_pos)
+	*start_pos = rpos;
+
+    if (nP)
+	*nP = 0;
+
     switch (dir) {
     case -1: dir = +1; break; /* guess */
     case  0: dir = +1; break;
@@ -5594,7 +5628,31 @@ int padded_to_reference_array(GapIO *io, tg_rec cnum,
 
     i = 0;
     while ((r = contig_iter_next(io, ci))) {
-	int fwd;
+	int fwd, d;
+
+	if (nP && i == 0 &&
+	    r->start == padded_start &&
+	    (r->flags & GRANGE_FLAG_REFPOS_INDEL) != GRANGE_FLAG_REFPOS_DEL) {
+	    /* Starts in an insertion, to compute leading pad count */
+	    contig_iterator *pi;
+	    rangec_t *pr;
+	    int ppos = padded_start-1;
+	    pi = contig_iter_new_by_type(io, cnum, 0,
+					 CITER_LAST | CITER_ISTART, 
+					 CITER_CSTART, padded_start-1,
+					 GRANGE_FLAG_ISREFPOS);
+	    *nP = 0;
+	    while ((pr = contig_iter_prev(io, pi))) {
+		if ((pr->flags & GRANGE_FLAG_REFPOS_INDEL) ==
+		    GRANGE_FLAG_REFPOS_DEL)
+		    break;
+		if (pr->start < ppos)
+		    break;
+		(*nP)++;
+		ppos--;
+	    }
+	    contig_iter_del(pi);
+	}
 
 	while (i < len && padded_start < r->start) {
 	    ref_pos[i] = rpos;
@@ -5606,19 +5664,23 @@ int padded_to_reference_array(GapIO *io, tg_rec cnum,
 	    padded_start++;
 	}
 
-	dir = 1 ^ r->comp;
+	dir = 1-2*r->comp; // 0=>1 1=>-1
+	d = 1 ^ r->comp;
 
 	fwd = ((r->flags & GRANGE_FLAG_REFPOS_DIR) == GRANGE_FLAG_REFPOS_FWD);
 	if (fwd ^ r->comp)
-	    rpos = r->mqual + (padded_start - r->start + dir);
+	    rpos = r->mqual + (padded_start - r->start + d);
 	else
-	    rpos = r->mqual - (padded_start - r->start - dir);
+	    rpos = r->mqual - (padded_start - r->start - d);
 
 	if ((r->flags & GRANGE_FLAG_REFPOS_INDEL) == GRANGE_FLAG_REFPOS_DEL) {
-	    if (dir == 1) /* fwd */
+	    if (d == 1) /* fwd */
 		rpos -= (padded_start < r->start) * r->pair_rec + 1;
+	    else
+		rpos -= r->pair_rec;
 	} else {
-	    ref_pos[i] = rpos;
+	    //ref_pos[i] = rpos;
+	    ref_pos[i] = INT_MIN;
 	    if (ref_id)
 		ref_id[i] = -1; /* indel */
 	    i++;

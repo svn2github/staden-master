@@ -36,7 +36,6 @@ proc ExportSequences {io} {
 	     [list fastq -command "ExportSequences_format $io $f"] \
 	     [list fasta -command "ExportSequences_format $io $f"]]
 	
-
     #--- Output options
     checkbutton $f.fixmates \
 	-text "Fix mate-pair information (CRAM/SAM/BAM only)" \
@@ -45,13 +44,24 @@ proc ExportSequences {io} {
     global $f.FixMates
     set $f.FixMates [keylget gap5_defs EXPORT.FIX_MATES] \
 
-    checkbutton $f.depad \
-	-text "Use depadded coordinates (CRAM/SAM/BAM only)" \
-	-variable $f.Depad \
-	-anchor w
-    global $f.Depad
-    set $f.Depad [keylget gap5_defs EXPORT.DEPAD] \
+#     radiolist $f.depad \
+# 	-title "CRAM/SAM/BAM padding variety" \
+# 	-default 2 \
+# 	-orient vertical \
+# 	-buttons [list \
+# 		      [list "Padded consensus coordinates"] \
+# 		      [list "Unpadded consensus coordinates (CRAM/SAM/BAM)"] \
+# 		      [list "Original reference coordinates (CRAM/SAM/BAM)"]]
 
+    xradiobox $f.depad \
+	-labeltext "CRAM/SAM/BAM padding variety:" \
+	-orient vertical \
+	-relief groove
+    $f.depad add 0 -text "Padded consensus coordinates"
+    $f.depad add 1 -text "Unpadded consensus coordinates"
+    $f.depad add 2 -text "Original reference coordinates"
+    $f.depad select [keylget gap5_defs EXPORT.DEPAD]
+			   
     #--- OK/cancel/help
     okcancelhelp $f.ok \
 	-ok_command "ExportSequences2 $io $f" \
@@ -102,7 +112,7 @@ proc ExportSequences2 {io f} {
     }
 
     export_contigs -io $io -contigs $list -format $format -outfile $fn \
-	-fixmates [set $f.FixMates] -depad [set $f.Depad]
+	-fixmates [set $f.FixMates] -depad [$f.depad get]
     destroy $f
 }
 
