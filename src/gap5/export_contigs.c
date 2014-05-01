@@ -1036,9 +1036,18 @@ static void sam_export_seq(GapIO *io, scram_fd *bf,
 	sequence_get_position2(io, fi->r.pair_rec, &other_c, &other_st,
 			       &other_en, &other_dir, NULL, &pair_r, &pair_s);
 
-	comp = (pair_s->len >= 0) ^ other_dir;
+	comp = (pair_s->len < 0) ^ other_dir;
+
+	if (comp) {
+	    other_st += ABS(pair_s->len) - pair_s->right;
+	    other_en -= pair_s->left-1;
+	} else {
+	    other_st += pair_s->left-1;
+	    other_en -= ABS(pair_s->len) - pair_s->right;
+	}
+
 	cache_decr(io, pair_s);
-	    
+
 	iend = other_st < other_en ? other_st : other_en;
 
 	if (crec == other_c) {
@@ -1046,18 +1055,22 @@ static void sam_export_seq(GapIO *io, scram_fd *bf,
 	    mate_ref = "=";
 	    ll = (sorig->len >= 0) ? pos : pos - sorig->len - 1;
 	    rr = comp ? other_st-1 : other_en+1;
-	    isize = rr-ll;
-
-	    if (depad == 2)
+	    if (depad == 2) {
+		ll   = padded_to_reference_pos(io, crec, ll,   NULL, NULL);
+		rr   = padded_to_reference_pos(io, crec, rr,   NULL, NULL);
 		iend = padded_to_reference_pos(io, crec, iend, NULL, NULL);
+	    }
+	    isize = rr-ll;
 	} else {
 	    contig_t *oc = cache_search(io, GT_Contig, other_c);
 	    mate_ref = oc->name;
 	    isize = 0;
 	}
 
-	if (!comp)
+	if (comp)
 	    flag |=  0x20; /* strand of mate */
+	else
+	    flag &= ~0x20;
 
 	/* FIXME: Can also check here if proper pair, based on
 	 * library type.
