@@ -1669,7 +1669,7 @@ static int validate_clip(GapIO *io, HashTable *h_clips, tg_rec trec,
     }
 
     if ((snp-expected_snp) >= 0.3 * (end - start + 1)) {
-	vmessage("Validation of coherent soft-clip =%"PRIrec
+	vmessage("Validation of concordant soft-clip =%"PRIrec
 		 " at %d..%d failed\n", crec, start, end);
 	free(cons);
 	return 0;
@@ -1773,10 +1773,10 @@ static int validate_clip(GapIO *io, HashTable *h_clips, tg_rec trec,
 	contig_t *c = cache_search(io, GT_Contig, crec);
 	
 	bin_remove_item(io, &c, GT_AnnoEle, trec);
-	vmessage("Validation of coherent soft-clip =%"PRIrec
+	vmessage("Validation of concordant soft-clip =%"PRIrec
 		 " at %d..%d passed\n", crec, start, end);
     } else {
-	vmessage("Validation of coherent soft-clip =%"PRIrec
+	vmessage("Validation of concordant soft-clip =%"PRIrec
 		 " at %d..%d failed\n", crec, start, end);
     }
 
@@ -1890,13 +1890,13 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 		     sub_start + c_shift, sub_end + c_shift);
 
 	    if (soft_clips)
-		h_clips = coherent_soft_clips(io,
-					      cl.contig,
-					      cl.start,
-					      cl.end,
-					      counts,
-					      0, 3, 5,
-					      &tag_arr);
+		h_clips = concordant_soft_clips(io,
+						cl.contig,
+						cl.start,
+						cl.end,
+						counts,
+						0, 3, 5,
+						&tag_arr);
 
 	    //printf("Shuffle #%"PRIrec" from %d..%d, shift %d\n",
 	    //       contigs[i].contig, contigs[i].start, contigs[i].end, c_shift);
@@ -2084,7 +2084,7 @@ int remove_pad_columns(GapIO *io, int ncontigs, contig_list_t *contigs,
  *
  * This algorithm hunts down the softclipped data and builds a
  * histogram of values per consensus column. Any regions of high depth
- * and high coherency are deemed to be worthy of unclipping and
+ * and high concordancy are deemed to be worthy of unclipping and
  * realigning.
  *
  * Almost always this ambiguity comes from misassemblies or collapsed
@@ -2136,7 +2136,7 @@ tg_rec tag_softclip(GapIO *io, tg_rec crec, int start, int end,
  *
  * Also, if non-NULL, fills out clips array holding the tag recs.
  * These can be used to identify regions of interest for further
- * study.  Tags are added for both the coherent soft clips themselves
+ * study.  Tags are added for both the concordant soft clips themselves
  * and also any Ns in consensus caused by contig gaps.  These are
  * important as we wish to preserve them unless the realignment is
  * good.
@@ -2144,10 +2144,10 @@ tg_rec tag_softclip(GapIO *io, tg_rec crec, int start, int end,
  * Returns NULL on failure.
  *         Hash of soft_clips* on success; caller to free().
  */
-HashTable *coherent_soft_clips(GapIO *io, tg_rec crec, int start, int end,
-			       int *counts, int tag_only,
-			       int min_depth, int min_tag_length,
-			       Array *tag_arr) {
+HashTable *concordant_soft_clips(GapIO *io, tg_rec crec, int start, int end,
+				 int *counts, int tag_only,
+				 int min_depth, int min_tag_length,
+				 Array *tag_arr) {
     seq_t *s;
     contig_iterator *citer;
     rangec_t *r;
@@ -2273,7 +2273,7 @@ HashTable *coherent_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 		    tag_depth/(i-1 - tag_start + 1.0) >= min_depth) {
 		    tg_rec rec;
 		    int snp = 0, x;
-		    vmessage("Coherent %s softclip, length %5d depth %5.1f, "
+		    vmessage("Concordant %s softclip, length %5d depth %5.1f, "
 			     "from %d to %d\n",
 			     j ? "right" : "left", i-1 - tag_start + 1,
 			     tag_depth/(i-1 - tag_start + 1.0),
@@ -2330,7 +2330,7 @@ HashTable *coherent_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 		    tag_depth/(i-1 - tag_start + 1.0) >= min_depth) {
 		    tg_rec rec;
 		    int snp = 0, x;
-		    vmessage("Coherent %s softclip, length %5d depth %5.1f, "
+		    vmessage("Concordant %s softclip, length %5d depth %5.1f, "
 			     "from %d to %d\n",
 			     j ? "right" : "left", i-1 - tag_start + 1,
 			     tag_depth/(i-1 - tag_start + 1.0),
@@ -2357,7 +2357,7 @@ HashTable *coherent_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 	    tag_depth/(i-1 - tag_start + 1.0) >= min_depth) {
 	    tg_rec rec;
 	    int snp = 0, x;
-	    vmessage("Coherent %s softclip, length %5d depth %5.1f, "
+	    vmessage("Concordant %s softclip, length %5d depth %5.1f, "
 		     "from %d to %d\n",
 		     j ? "right" : "left", i-1 - tag_start + 1,
 		     tag_depth/(i-1 - tag_start + 1.0),
@@ -2481,7 +2481,7 @@ HashTable *coherent_soft_clips(GapIO *io, tg_rec crec, int start, int end,
     contig_iter_del(citer);
 
     /*
-     * We may have neighbouring blocks of coherent soft-clips due to SNPs.
+     * We may have neighbouring blocks of concordant soft-clips due to SNPs.
      * This is easiest resolved with multiple passes.
      */
     if (++pass < 3 && changed)
@@ -2499,7 +2499,7 @@ HashTable *coherent_soft_clips(GapIO *io, tg_rec crec, int start, int end,
  * Scans through a contig paying particular attention to the known
  * soft-clips.  We can ether extend a sequence if the soft clipped
  * data matches the consensus, or if it was previously extended by
- * coherent_soft_clip then we can increase soft-clipping back to the
+ * concordant_soft_clip then we can increase soft-clipping back to the
  * former value if it disagrees with the new consensus.
  *
  * Returns 0 on success
