@@ -325,8 +325,9 @@ static int export_header_sam(GapIO *io, scram_fd *bf,
 	    if (NULL == (c = cache_search(io, GT_Contig, cnum)))
 		return -1;
 	    
+	    consensus_valid_range(io, c->rec, NULL, &len);
 	    if (depad == 2) {
-		len = padded_to_reference_pos(io, c->rec, c->end, NULL, NULL);
+		len = padded_to_reference_pos(io, c->rec, len, NULL, NULL);
 	    } else {
 		len = c->end;
 		if (c->start <= 0)
@@ -345,8 +346,9 @@ static int export_header_sam(GapIO *io, scram_fd *bf,
 	    if (NULL == (c = cache_search(io, GT_Contig, cv[i].contig)))
 		return -1;
 
+	    consensus_valid_range(io, c->rec, NULL, &len);
 	    if (depad == 2) {
-		len = padded_to_reference_pos(io, c->rec, c->end, NULL, NULL);
+		len = padded_to_reference_pos(io, c->rec, len, NULL, NULL);
 	    } else {
 		len = c->end;
 		if (c->start <= 0)
