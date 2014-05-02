@@ -1895,7 +1895,8 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 						cl.start,
 						cl.end,
 						counts,
-						0, 3, 5,
+						//0, 3, 5,
+						0, 2, 4,
 						&tag_arr);
 
 	    //printf("Shuffle #%"PRIrec" from %d..%d, shift %d\n",
@@ -1970,6 +1971,11 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 		ArrayDestroy(tag_arr);
 	    }
 
+	    /* Remove pad columns. Both before and after soft-clipping */
+	    if (soft_clips || new_score < orig_score) {
+		remove_pad_columns(io, 1, &cl, 100, 1);
+	    }
+
 	    if (h_clips) {
 		rewrite_soft_clips(io,
 				   cl.contig,
@@ -1979,7 +1985,6 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 		HashTableDestroy(h_clips, 1);
 	    }
 
-	    /* Remove pad columns */
 	    if (soft_clips || new_score < orig_score) {
 		remove_pad_columns(io, 1, &cl, 100, 1);
 	    }
@@ -2560,7 +2565,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 		    break;
 		p = r->end - i - start;
 		b = toupper(complement_base(s->seq[i]));
-		if ((cons[b].phred && b == "ACGT*"[cons[p].call]) ||
+		if ((cons[p].phred && b == "ACGT*"[cons[p].call]) ||
 		    (!cons[p].phred &&
 		     (b == "ACGT*"[cons[p].het_call/5] ||
 		      b == "ACGT*"[cons[p].het_call%5]))) {
@@ -2583,7 +2588,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 		    break;
 		p = r->start + i - start;
 		b = toupper(s->seq[i]);
-		if ((cons[b].phred && b == "ACGT*"[cons[p].call]) ||
+		if ((cons[p].phred && b == "ACGT*"[cons[p].call]) ||
 		    (!cons[p].phred &&
 		     (b == "ACGT*"[cons[p].het_call/5] ||
 		      b == "ACGT*"[cons[p].het_call%5]))) {
@@ -2623,7 +2628,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 		    break;
 		p = r->end - i - start;
 		b = toupper(complement_base(s->seq[i]));
-		if ((cons[b].phred && b == "ACGT*"[cons[p].call]) ||
+		if ((cons[p].phred && b == "ACGT*"[cons[p].call]) ||
 		    (!cons[p].phred &&
 		     (b == "ACGT*"[cons[p].het_call/5] ||
 		      b == "ACGT*"[cons[p].het_call%5]))) {
@@ -2646,7 +2651,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 		    break;
 		p = r->start + i - start;
 		b = toupper(s->seq[i]);
-		if ((cons[b].phred && b == "ACGT*"[cons[p].call]) ||
+		if ((cons[p].phred && b == "ACGT*"[cons[p].call]) ||
 		    (!cons[p].phred &&
 		     (b == "ACGT*"[cons[p].het_call/5] ||
 		      b == "ACGT*"[cons[p].het_call%5]))) {
