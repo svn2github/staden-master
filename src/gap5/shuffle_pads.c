@@ -761,6 +761,7 @@ void print_malign(MALIGN *malign) {
 		printf("%10d", j+10);
 	    printf("\n");
 	    for (j = 0; j < ndepth; j++) {
+		printf("%.*s\n", LLEN, depth[j].line);
 		if (!depth[j].seq) {
 		    memmove(&depth[j], &depth[j+1],
 			    (ndepth-(j+1)) * sizeof(depth[j]));
@@ -1694,14 +1695,20 @@ static int validate_clip(GapIO *io, HashTable *h_clips, tg_rec trec,
 
 	// Right end
 	if (right != s->right) {
+	    int p, b;
 	    if ((s->len<0) ^ r->comp) {
 		for (i = right; i < s->right; i++, tot++) {
 		    if (r->end -i -1 >= end)
 			continue;
 		    if (r->end -i -1 < start)
 			break;
-		    if (toupper(complement_base(s->seq[i])) !=
-			"ACGTN"[cons[r->end - i - start].call])
+		    p = r->end - i - start;
+		    b = toupper(complement_base(s->seq[i]));
+		    if ((cons[p].phred &&
+			 b != "ACGT*"[cons[p].call]) ||
+			(cons[p].phred == 0 &&
+			 b != "ACGT*"[cons[p].het_call/5] &&
+			 b != "ACGT*"[cons[p].het_call%5]))
 			mismatch++;
 		}
 	    } else {
@@ -1710,8 +1717,13 @@ static int validate_clip(GapIO *io, HashTable *h_clips, tg_rec trec,
 			continue;
 		    if (r->start + i >= end)
 			break;
-		    if (toupper(s->seq[i]) !=
-			"ACGTN"[cons[r->start + i - start].call])
+		    p = r->start + i - start;
+		    b = toupper(s->seq[i]);
+		    if ((cons[p].phred &&
+			 b != "ACGT*"[cons[p].call]) ||
+			(cons[p].phred == 0 &&
+			 b != "ACGT*"[cons[p].het_call/5] &&
+			 b != "ACGT*"[cons[p].het_call%5]))
 			mismatch++;
 		}
 	    }
@@ -1720,14 +1732,20 @@ static int validate_clip(GapIO *io, HashTable *h_clips, tg_rec trec,
 
 	// Left end
 	if (left != s->left) {
+	    int p, b;
 	    if ((s->len<0) ^ r->comp) {
 		for (i = s->left-1; i <= left; i++, tot++) {
 		    if (r->end -i -1 >= end)
 			continue;
 		    if (r->end -i -1 < start)
 			break;
-		    if (toupper(complement_base(s->seq[i])) !=
-			"ACGTN"[cons[r->end - i - start].call])
+		    p = r->end - i - start;
+		    b = toupper(complement_base(s->seq[i]));
+		    if ((cons[p].phred &&
+			 b != "ACGT*"[cons[p].call]) ||
+			(cons[p].phred == 0 &&
+			 b != "ACGT*"[cons[p].het_call/5] &&
+			 b != "ACGT*"[cons[p].het_call%5]))
 			mismatch++;
 		}
 	    } else {
@@ -1736,8 +1754,13 @@ static int validate_clip(GapIO *io, HashTable *h_clips, tg_rec trec,
 			continue;
 		    if (r->start + i >= end)
 			break;
-		    if (toupper(s->seq[i]) !=
-			"ACGTN"[cons[r->start + i - start].call])
+		    p = r->start + i - start;
+		    b = toupper(s->seq[i]);
+		    if ((cons[p].phred &&
+			 b != "ACGT*"[cons[p].call]) ||
+			(cons[p].phred == 0 &&
+			 b != "ACGT*"[cons[p].het_call/5] &&
+			 b != "ACGT*"[cons[p].het_call%5]))
 			mismatch++;
 		}
 	    }
@@ -2487,17 +2510,17 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
     contig_iterator *citer;
     rangec_t *r;
     int i;
-    char *cons;
+    consensus_t *cons;
     int updated = 0;
 
     vmessage("Extend soft-clips for contig =%"PRIrec" at %d..%d\n",
 	     crec, start, end);
 
     /* Compute consensus to align against */
-    if (!(cons = malloc(end - start + 1))) {
+    if (!(cons = calloc(end - start + 1, sizeof(*cons)))) {
 	return -1;
     }
-    calculate_consensus_simple(io, crec, start, end, cons, NULL);
+    calculate_consensus(io, crec, start, end, cons);
 
     citer = contig_iter_new(io, crec, 0, CITER_FIRST, start, end);
     while ((r = contig_iter_next(io, citer))) {
@@ -2507,6 +2530,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 	int score = 0, best_score = 0, best_i = 0;
 	int orig_right = s->right;
 	int orig_left  = s->left;
+	int p, b;
 
 	/*
 	 * If this is a read we previously unclipped, then back up to
@@ -2534,8 +2558,12 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 	    for (i = s->right; i < ABS(s->len); i++) {
 		if (r->end -i -1 < start)
 		    break;
-		if (toupper(complement_base(s->seq[i])) ==
-		    cons[r->end - i - start]) {
+		p = r->end - i - start;
+		b = toupper(complement_base(s->seq[i]));
+		if ((cons[b].phred && b == "ACGT*"[cons[p].call]) ||
+		    (!cons[p].phred &&
+		     (b == "ACGT*"[cons[p].het_call/5] ||
+		      b == "ACGT*"[cons[p].het_call%5]))) {
 		    if (best_score < ++score) {
 			best_score = score;
 			best_i = i+1;
@@ -2553,7 +2581,12 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 	    for (i = s->right; i < ABS(s->len); i++) {
 		if (r->start + i > end)
 		    break;
-		if (toupper(s->seq[i]) == cons[r->start + i - start]) {
+		p = r->start + i - start;
+		b = toupper(s->seq[i]);
+		if ((cons[b].phred && b == "ACGT*"[cons[p].call]) ||
+		    (!cons[p].phred &&
+		     (b == "ACGT*"[cons[p].het_call/5] ||
+		      b == "ACGT*"[cons[p].het_call%5]))) {
 		    if (best_score < ++score) {
 			best_score = score;
 			best_i = i+1;
@@ -2588,8 +2621,12 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 	    for (i = s->left-2; i >= 0; i--) {
 		if (r->end -i -1 > end)
 		    break;
-		if (toupper(complement_base(s->seq[i])) ==
-		    cons[r->end - i - start]) {
+		p = r->end - i - start;
+		b = toupper(complement_base(s->seq[i]));
+		if ((cons[b].phred && b == "ACGT*"[cons[p].call]) ||
+		    (!cons[p].phred &&
+		     (b == "ACGT*"[cons[p].het_call/5] ||
+		      b == "ACGT*"[cons[p].het_call%5]))) {
 		    if (best_score < ++score) {
 			best_score = score;
 			best_i = i+1;
@@ -2607,7 +2644,12 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 	    for (i = s->left-2; i >= 0; i--) {
 		if (r->start + i < start)
 		    break;
-		if (toupper(s->seq[i]) == cons[r->start + i - start]) {
+		p = r->start + i - start;
+		b = toupper(s->seq[i]);
+		if ((cons[b].phred && b == "ACGT*"[cons[p].call]) ||
+		    (!cons[p].phred &&
+		     (b == "ACGT*"[cons[p].het_call/5] ||
+		      b == "ACGT*"[cons[p].het_call%5]))) {
 		    if (best_score < ++score) {
 			best_score = score;
 			best_i = i+1;
