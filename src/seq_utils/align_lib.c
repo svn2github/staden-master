@@ -670,66 +670,74 @@ void scale_malign_scores(MALIGN *malign, int start, int end) {
    * to calculate the score j = seq2[row-1]
    */
 
-  /* An update on Rodger's where the score incorporates positive from match
-   * with negative from mismatches
-   */
-#if 0
-  int k = malign->matrix[0][1];
+#define LOG_SCORES
+#ifdef LOG_SCORES
+  // Works better on some examples. All?
+  // If so, normalise down to a discrete amount and then use a
+  // precomputed lookup table?
+  // sqrt works better in some cases, but not all
+#define N 128
   for(i=start;i<=end;i++) {
-      for (l=j=0;j<malign->charset_size;j++) {
-	  l += malign->counts[i][j];
+      double t = 0, cnt[30], n;
+      int it = 0;
+      /* log(x+1) */
+      static double ilog[N+2] = { 0 };
+      if (ilog[10] == 0) {
+	  for (it = 0; it <= N+1; it++)
+	      ilog[it] = log(it+1);
       }
-      for(j=0;j<malign->charset_size;j++) {
-	  if (malign->counts[i][j]) {
-	      malign->scores[i][j] =
-		  malign->counts[i][j] * malign->matrix[j][j] +
-		  k*(l - malign->counts[i][j]);
-	  } else {
-	      malign->scores[i][j] = k*l;
-	  }
-      }
-  }
-#endif
 
+      /* Normalise to 1 of N values */
+      for (j = 0; j < malign->charset_size; j++)
+	  it += malign->counts[i][j];
+      n = it ? (double)N / it : 0;
 
-  /* Simple unit based scores with 0 = perfect 1 = wrong. Based on ReAligner */
-  /* Scale by 100 to fit in integers */
-#if 1
+      for (j = 0; j < malign->charset_size; j++)
+	  t += (cnt[j] = ilog[(int)(malign->counts[i][j] * n + 0.5)]);
 
-//#define OLD_MODE
-#ifdef OLD_MODE
-  for(i=start;i<=end;i++) {
-      int t = 0;
-      double s = 0;
-      int max = 0;
-      for (j = 0; j < malign->charset_size; j++) {
-	  t += malign->counts[i][j];
-	  if (max < malign->counts[i][j])
-	      max = malign->counts[i][j];
-      }
       if (t) {
-	  for(j=0;j<malign->charset_size;j++) {
-	      s = 0.5 * (1 - malign->counts[i][j] / (double)t);
-	      if (malign->counts[i][j] != max)
-		  s += 0.5;
-	      malign->scores[i][j] = s * 100;
-	  }
+	  t = 128/t;
+	  for(j=0;j<malign->charset_size;j++)
+	      malign->scores[i][j] = 128 - cnt[j]*t;
+
 	  /* Penalty for gaps is marginally higher */
-	  malign->scores[i][5] *= 1.01;
+	  malign->scores[i][5]++;
       } else {
-	  for(j=0;j<malign->charset_size;j++) {
+	  for(j=0;j<malign->charset_size;j++)
 	      malign->scores[i][j] = 0;
-	  }
       }
   }
+
+// Unoptimised version for purposes of trying different functions.
+//
+//#define FN(a) (log((a)+1))
+////#define FN(a) (a)
+////#define FN(a) (sqrt((a)))
+//  for(i=start;i<=end;i++) {
+//      double t = 0;
+//
+//      for (j = 0; j < malign->charset_size; j++)
+//	  t += FN(malign->counts[i][j]);
+//      t = 128/t;
+//
+//      if (t) {
+//	  for(j=0;j<malign->charset_size;j++)
+//	      malign->scores[i][j] = 128 - FN(malign->counts[i][j]) * t;
+//
+//	  /* Penalty for gaps is marginally higher */
+//	  malign->scores[i][5]++;
+//      } else {
+//	  for(j=0;j<malign->charset_size;j++)
+//	      malign->scores[i][j] = 0;
+//      }
+//  }
+
 #else
   for(i=start;i<=end;i++) {
-      int t = 0, max = 0, s;
+      int t = 0;
 
       for (j = 0; j < malign->charset_size; j++) {
 	  t += malign->counts[i][j];
-	  if (max < malign->counts[i][j])
-	      max = malign->counts[i][j];
       }
       if (t) {
 	  for(j=0;j<malign->charset_size;j++) {
@@ -744,7 +752,6 @@ void scale_malign_scores(MALIGN *malign, int start, int end) {
 	  }
       }
   }
-#endif
 #endif
 }
 
