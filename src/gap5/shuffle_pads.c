@@ -1705,7 +1705,7 @@ static int validate_clip(GapIO *io, HashTable *h_clips, tg_rec trec,
 			break;
 		    p = r->end - i - start;
 		    b = toupper(complement_base(s->seq[i]));
-		    if (p < start || p > end)
+		    if (p < 0 || p > end-start)
 			continue;
 		    if ((cons[p].phred &&
 			 b != "ACGT*"[cons[p].call]) ||
@@ -1722,7 +1722,7 @@ static int validate_clip(GapIO *io, HashTable *h_clips, tg_rec trec,
 			break;
 		    p = r->start + i - start;
 		    b = toupper(s->seq[i]);
-		    if (p < start || p > end)
+		    if (p < 0 || p > end-start)
 			continue;
 		    if ((cons[p].phred &&
 			 b != "ACGT*"[cons[p].call]) ||
@@ -1746,7 +1746,7 @@ static int validate_clip(GapIO *io, HashTable *h_clips, tg_rec trec,
 			break;
 		    p = r->end - i - start;
 		    b = toupper(complement_base(s->seq[i]));
-		    if (p < start || p > end)
+		    if (p < 0 || p > end-start)
 			continue;
 		    if ((cons[p].phred &&
 			 b != "ACGT*"[cons[p].call]) ||
@@ -1763,7 +1763,7 @@ static int validate_clip(GapIO *io, HashTable *h_clips, tg_rec trec,
 			break;
 		    p = r->start + i - start;
 		    b = toupper(s->seq[i]);
-		    if (p < start || p > end)
+		    if (p < 0 || p > end-start)
 			continue;
 		    if ((cons[p].phred &&
 			 b != "ACGT*"[cons[p].call]) ||
@@ -2411,6 +2411,10 @@ HashTable *concordant_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 	    complement_seq_t(s);
 	}
 
+#define MIS_SCORE -1
+//#define MIS_SCORE 0
+#define MAT_SCORE 1
+
 	// Left clip
 	score = score_max = 0;
 	for (i_max = i = s->left-2; i >= 0; i--) {
@@ -2419,14 +2423,15 @@ HashTable *concordant_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 		break;
 
 	    if (s->seq[i] != Ldepth[r->start+i - start][6]) {
-		if ((score-=1) < -6)
+		if ((score+=MIS_SCORE) < -6)
 		    break;
 	    } else {
-		if (score_max < ++score)
+		if (score_max < (score+=MAT_SCORE))
 		    score_max = score, i_max = i;
 	    }
 	}
 	i = i_max;
+	//i_max = -1; // TEST: ALL
 	if (i < s->left-2) {
 	    if (s == sorig)
 		new_l = i+1;
@@ -2444,14 +2449,15 @@ HashTable *concordant_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 		break;
 
 	    if (s->seq[i] != Rdepth[r->start+i - start][6]) {
-		if ((score-=1) < -6)
+		if ((score+=MIS_SCORE) < -6)
 		    break;
 	    } else {
-		if (score_max < ++score)
+		if (score_max < (score+=MAT_SCORE))
 		    score_max = score, i_max = i+1;
 	    }
 	}
 	i = i_max;
+	//i_max = ABS(s->len); // TEST: ALL
 	if (i > s->right) {
 	    if (s == sorig)
 		new_r = i;
@@ -2574,7 +2580,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 		    break;
 		p = r->end - i - start;
 		b = toupper(complement_base(s->seq[i]));
-		if (p < start || p > end)
+		if (p < 0 || p > end-start)
 		    continue;
 		if ((cons[p].phred && b == "ACGT*"[cons[p].call]) ||
 		    (!cons[p].phred &&
@@ -2599,7 +2605,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 		    break;
 		p = r->start + i - start;
 		b = toupper(s->seq[i]);
-		if (p < start || p > end)
+		if (p < 0 || p > end-start)
 		    continue;
 		if ((cons[p].phred && b == "ACGT*"[cons[p].call]) ||
 		    (!cons[p].phred &&
@@ -2641,7 +2647,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 		    break;
 		p = r->end - i - start;
 		b = toupper(complement_base(s->seq[i]));
-		if (p < start || p > end)
+		if (p < 0 || p > end-start)
 		    continue;
 		if ((cons[p].phred && b == "ACGT*"[cons[p].call]) ||
 		    (!cons[p].phred &&
@@ -2666,7 +2672,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 		    break;
 		p = r->start + i - start;
 		b = toupper(s->seq[i]);
-		if (p < start || p > end)
+		if (p < 0 || p > end-start)
 		    continue;
 		if ((cons[p].phred && b == "ACGT*"[cons[p].call]) ||
 		    (!cons[p].phred &&
