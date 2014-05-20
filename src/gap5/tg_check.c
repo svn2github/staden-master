@@ -917,8 +917,10 @@ static int bin_walk(GapIO *io, int fix, tg_rec rec, int offset, int complement,
 
     /* Check count validity to ensure this + children are correct */
     if (bin->nseqs != bs->nseq) {
-	vmessage("bin %"PRIrec": nseqs does not match observed counts\n",
-		 bin->rec);
+	vmessage("bin %"PRIrec": nseqs does not match observed counts:\n"
+		 "  bin     : %d\n"
+		 "  observed: %d\n",
+		 bin->rec, bin->nseqs, bs->nseq);
 	if (fix) {
 	    bin = cache_rw(io, bin);
 	    bin->flags |= BIN_BIN_UPDATED;
@@ -928,8 +930,10 @@ static int bin_walk(GapIO *io, int fix, tg_rec rec, int offset, int complement,
 	err++;
     }
     if (db_vers > 1 && bin->nanno != bs->nanno) {
-	vmessage("bin %"PRIrec": nanno does not match observed counts\n",
-		 bin->rec);
+	vmessage("bin %"PRIrec": nanno does not match observed counts\n"
+		 "  bin     : %d\n"
+		 "  observed: %d\n",
+		 bin->rec, bin->nanno, bs->nanno);
 	if (fix) {
 	    bin = cache_rw(io, bin);
 	    bin->flags |= BIN_BIN_UPDATED;
@@ -945,8 +949,10 @@ static int bin_walk(GapIO *io, int fix, tg_rec rec, int offset, int complement,
 	if (fixed) (*fixed)++;
     }
     if (db_vers > 1 && bin->nrefpos != bs->nref) {
-	vmessage("bin %"PRIrec": nrefpos does not match observed counts\n",
-		 bin->rec);
+	vmessage("bin %"PRIrec": nrefpos does not match observed counts\n"
+		 "  bin     : %d\n"
+		 "  observed: %d\n",
+		 bin->rec, bin->nrefpos, bs->nref);
 	if (fix) {
 	    bin = cache_rw(io, bin);
 	    bin->flags |= BIN_BIN_UPDATED;

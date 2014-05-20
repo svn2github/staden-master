@@ -163,56 +163,11 @@ proc io_undo_exec {w crec cmdu} {
 
 	    C_INS {
 		set contig [$io get_contig $op1]
-		# puts stderr "1. $contig insert_base $op2"
-		$contig insert_base $op2
+		# puts stderr "1. $contig insert_column $op2"
+		$contig insert_column $op2 $op3
 		foreach seq $op3 {
 		    foreach {rec pos base val cut start} $seq break;
 		    set seq [$io get_sequence $rec]
-
-		    # Find right clip point in contig orientation
-		    foreach {l r} [$seq get_clips] break;
-		    if {[$seq get_orient]} {
-			set r [expr { abs([$seq get_length]) - $l + 1 }]
-		    }
-		    # puts "pos = $pos; r = $r"
-		    if {$pos >= $r} {
-			# Add to end as "$contig insert_base" hasn't
-			# puts stderr "2. $seq insert_base $pos $base $val"
-			$seq insert_base $pos $base $val
-
-			# Whether or not the insert also moved depends on
-			# orientation, so we may also need to fix this
-			set s_pos [$seq get_position]
-			if {$s_pos != $start} {
-			    # puts stderr "3. move_seq rec = $rec; s_pos = $s_pos; start = $start"
-			    $contig move_seq $rec [expr {$start-$s_pos}]
-			}
-		    } else {
-			set s_pos [$seq get_position]
-			# puts stderr "rec = $rec; start = $start; s_pos = $s_pos"
-			if {$start != $s_pos} {
-			    # $contig insert_base moved the sequence instead
-			    # of inserting to it, probably because we're
-			    # adding to the first base. Manually insert instead
-			    # puts stderr "4. $seq insert_base $pos $base $val"
-			    $seq insert_base $pos $base $val
-
-			    # Whether or not the insert also moved depends on
-			    # orientation, so we may also need to fix this
-			    set s_pos [$seq get_position]
-			    if {$s_pos != $start} {
-				# puts stderr "5. move_seq rec = $rec; s_pos = $s_pos; start = $start"
-				$contig move_seq $rec [expr {$start-$s_pos}]
-			    }
-			} else {
-			    # Otherwise it did insert a *, but it may not have
-			    # been the original base we removed and the quality
-			    # is almost certainly wrong. Replace it with the
-			    # correct value.
-			    # puts stderr "6. $seq replace_base $pos $base $val"
-			    $seq replace_base $pos $base $val
-			}
-		    }
 			
 		    foreach {b q c} [$seq get_base $pos] break
 		    if {$c != $cut} {
@@ -374,6 +329,18 @@ proc io_undo_exec {w crec cmdu} {
 	    S_ADD {
 		set c [$io get_contig $op1]
 		$c add_sequence $op2 $op3 $op4 $op5
+		$c delete
+	    }
+
+	    RP_SET {
+		set c [$io get_contig $op1]
+		eval $c set_refpos $op2 $op3
+		$c delete
+	    }
+
+	    RP_DEL {
+		set c [$io get_contig $op1]
+		$c delete_refpos $op2
 		$c delete
 	    }
 
@@ -2062,6 +2029,14 @@ proc editor_undo_info {top {clear 0}} {
 	    S_ADD {
 		lappend msg "Add read #$op2"
 	    }
+
+	    RP_SET {
+		lappend msg "Set reference position marker at $op2"
+	    }
+
+	    RP_DEL {
+		lappend msg "Delete reference position marker at $op2"
+	    }
 	    
 	    default {
 		lappend msg "Unknown undo command: $cmd"
@@ -2610,6 +2585,16 @@ proc editor_delete_cons_base { w io type rec pos powerup } {
 		    $a delete
 		}
 	    }
+	}
+    }
+
+    # Look for refpos markers
+    for { set i [expr $pos - 1] } { $i <= $pos + 1 } { incr i } {
+	set rp [$contig find_refpos $i]
+	if { [llength $rp] > 0 } {
+	    lprepend undo [list RP_SET $rec $i $rp]
+	} else {
+	    lprepend undo [list RP_DEL $rec $i]
 	}
     }
 

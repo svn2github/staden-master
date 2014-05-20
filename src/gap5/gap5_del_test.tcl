@@ -195,10 +195,13 @@ proc check_contig { io crec { expected "" } } {
     return 0
 }
 
-proc check_sequence { io srec expected } {
+proc check_sequence { io srec expected comp } {
     set s [$io get_sequence $srec]
     set dna [$s get_seq]
     $s delete
+    if { $comp } {
+	set dna [ string_reverse [ string map { A T C G G C T A } $dna ] ]
+    }
     if { $dna ne $expected } {
 	puts stderr "Sequence mismatch, quitting."
 	set el [string length $expected]
@@ -324,7 +327,7 @@ proc sim_undo { undo uip exp {tags {}} } {
     } 
 }
 
-proc basic_tests { base_io ed clen crec srec dna tags_array pos } {
+proc basic_tests { base_io ed clen crec srec dna tags_array pos comp } {
     global $ed
     upvar \#0 $ed opt
     upvar $tags_array tags
@@ -344,17 +347,17 @@ proc basic_tests { base_io ed clen crec srec dna tags_array pos } {
 	    # after 100
 	    sim_ctrl_delete u expected strpos etags
 	    if {[check_contig [$w io] $crec $expected] != 0
-		|| [check_sequence [$w io] $srec $expected] != 0
+		|| [check_sequence [$w io] $srec $expected $comp] != 0
 		|| [check_tags [$w io] $crec $clen etags] != 0} {
 		editor_save $ed
 		$base_io flush
-		exit 1
+		return 1
 	    }
 	}
 	editor_save $ed
 	$base_io flush
 	if {[check_contig $base_io $crec $expected] != 0} {
-	    exit 1
+	    return 1
 	}
 
 	set ui [expr {[llength $u] - 1}]
@@ -364,17 +367,17 @@ proc basic_tests { base_io ed clen crec srec dna tags_array pos } {
 	    # after 100
 	    sim_undo $u ui expected etags
 	    if {[check_contig [$w io] $crec $expected] != 0
-		|| [check_sequence [$w io] $srec $expected] != 0
+		|| [check_sequence [$w io] $srec $expected $comp] != 0
 		|| [check_tags [$w io] $crec $clen etags] != 0} {
 		editor_save $ed
 		$base_io flush
-		exit 1
+		return 1
 	    }
 	}
 	editor_save $ed
 	$base_io flush
 	if {[check_contig $base_io $crec $expected] != 0} {
-	    exit 1
+	    return 1
 	}
     }
 
@@ -389,17 +392,17 @@ proc basic_tests { base_io ed clen crec srec dna tags_array pos } {
 	    update idletasks
 	    sim_ctrl_backspace u expected strpos etags
 	    if {[check_contig [$w io] $crec $expected] != 0
-		|| [check_sequence [$w io] $srec $expected] != 0
+		|| [check_sequence [$w io] $srec $expected $comp] != 0
 		|| [check_tags [$w io] $crec $clen etags] != 0} {
 		editor_save $ed
 		$base_io flush
-		exit 1
+		return 1
 	    }
 	}
 	editor_save $ed
 	$base_io flush
 	if {[check_contig $base_io $crec $expected] != 0} {
-	    exit 1
+	    return 1
 	}
 	
 	set ui [expr {[llength $u] - 1}]
@@ -408,19 +411,20 @@ proc basic_tests { base_io ed clen crec srec dna tags_array pos } {
 	    update idletasks
 	    sim_undo $u ui expected etags
 	    if {[check_contig [$w io] $crec $expected] != 0
-		|| [check_sequence [$w io] $srec $expected] != 0
+		|| [check_sequence [$w io] $srec $expected $comp] != 0
 		|| [check_tags [$w io] $crec $clen etags] != 0} {
 		editor_save $ed
 		$base_io flush
-		exit 1
+		return 1
 	    }
 	}
 	editor_save $ed
 	$base_io flush
 	if {[check_contig $base_io $crec $expected] != 0} {
-	    exit 1
+	    return 1
 	}
     }
+    return 0
 }
 
 proc del_undo_test { base_io ed clen crec dna } {
@@ -589,7 +593,7 @@ proc get_curr_editor {} {
     return [lsearch -inline -regexp [winfo children .] {^\.e\d+$}]
 }
 
-proc do_basic_test { clen } {
+proc do_basic_test { clen comp } {
     puts stderr "Generating test data..."
     set dna [gen_dna $clen]
     set sam_name ""
@@ -612,6 +616,12 @@ proc do_basic_test { clen } {
     $io debug_level 1
 
     set cnum [cname2crec $io "c0000"]
+
+    if { $comp } {
+	complement_contig -io $io -contigs =$cnum
+	set dna [ string_reverse [ string map { A T C G G C T A } $dna ] ]
+    }
+
     set snum [$io seq_name2rec "r000001"]
     set half [expr { int($clen / 2) }]
     set quart [expr { int($clen / 4) }]
@@ -628,9 +638,18 @@ proc do_basic_test { clen } {
 	     [list $snum [expr { $clen - 2 }] $clen]]
     edit_contig -io $io -contig $cnum
     set ed [get_curr_editor]
-    basic_tests $io $ed $clen $cnum $snum $dna tags 1
-    basic_tests $io $ed $clen $cnum $snum $dna tags [expr { int($clen / 2) }]
-    basic_tests $io $ed $clen $cnum $snum $dna tags $clen
+    if {[basic_tests $io $ed $clen $cnum $snum $dna tags 1 $comp] != 0} {
+	tkwait window $ed
+	exit 1
+    }
+    if {[basic_tests $io $ed $clen $cnum $snum $dna tags [expr { int($clen / 2) }] $comp] != 0 } {
+	tkwait window $ed
+	exit 1
+    }
+    if {[basic_tests $io $ed $clen $cnum $snum $dna tags $clen $comp] != 0} {
+	tkwait window $ed
+	exit 1
+    }
     close_editor $ed
     $io close
     unset io
@@ -683,6 +702,8 @@ proc do_cutoff_test { clean } {
     if [catch {exec cmp "$sam_name.before" "$sam_name.after" } res] {
 	if {[lindex $::errorCode 0] eq "CHILDSTATUS"} {
 	    puts stderr "cmp failed."
+	    tkwait window $ed
+	    return 1
 	} else {
 	    puts stderr "Error running cmp : $res"
 	}
@@ -766,8 +787,8 @@ proc do_test { clean mode clen args } {
     set ed [get_curr_editor]
 
     if {[del_undo_test $io $ed $clen $cnum $dna] != 0} {
-	tkwait window $ed
-	exit 1
+    	tkwait window $ed
+    	exit 1
     }
 
     export_contigs -io $io -contigs "{=$cnum 1 $clen}" -format sam \
@@ -776,6 +797,8 @@ proc do_test { clean mode clen args } {
     if [catch {exec cmp "$sam_name.before" "$sam_name.after" } res] {
 	if {[lindex $::errorCode 0] eq "CHILDSTATUS"} {
 	    puts stderr "cmp failed."
+	    tkwait window $ed
+	    return 1
 	} else {
 	    puts stderr "Error running cmp : $res"
 	}
@@ -786,12 +809,28 @@ proc do_test { clean mode clen args } {
     complement_contig -io $io -contigs =$cnum
     set dna [ string_reverse [ string map { A T C G G C T A } $dna ] ]
 
+    export_contigs -io $io -contigs "{=$cnum 1 $clen}" -format sam \
+	-outfile "$sam_name.cbefore"
+
     edit_contig -io $io -contig $cnum
     set ed [get_curr_editor]
 
     if {[del_undo_test $io $ed $clen $cnum $dna] != 0} {
 	tkwait window $ed
 	exit 1
+    }
+
+    export_contigs -io $io -contigs "{=$cnum 1 $clen}" -format sam \
+	-outfile "$sam_name.cafter"
+
+    if [catch {exec cmp "$sam_name.cbefore" "$sam_name.cafter" } res] {
+	if {[lindex $::errorCode 0] eq "CHILDSTATUS"} {
+	    puts stderr "cmp failed."
+	    tkwait window $ed
+	    return 1
+	} else {
+	    puts stderr "Error running cmp : $res"
+	}
     }
 
     close_editor $ed
@@ -801,9 +840,13 @@ proc do_test { clean mode clen args } {
     if { $clean } {
 	puts stderr "Tidying up..."
 	file delete "$sam_name"
-	file delete "${sam_name}.g5d"
-	file delete "${sam_name}.g5x"
-	file delete "${sam_name}.log"
+	file delete "$sam_name.g5d"
+	file delete "$sam_name.g5x"
+	file delete "$sam_name.log"
+	file delete "$sam_name.before"
+	file delete "$sam_name.after"
+	file delete "$sam_name.cbefore"
+	file delete "$sam_name.cafter"
     }
 
     return 0
@@ -820,8 +863,12 @@ proc run_child { seed clean } {
     puts stderr "Using seed $seed"
     expr srand($seed)
 
-    if {[do_basic_test 80]} {
+    if {[do_basic_test 80 0]} {
 	puts stderr "Basic test failed."
+	exit 1
+    }
+    if {[do_basic_test 80 1]} {
+	puts stderr "Complement basic test failed."
 	exit 1
     }
 

@@ -1403,9 +1403,9 @@ int sequence_insert_base(GapIO *io, seq_t **s, int pos, char base, int8_t conf,
  */
 int sequence_insert_bases(GapIO *io, seq_t **s, int pos,
 			  char base, int8_t conf, int nbases,
-			  int contig_orient) {
+			  int contig_orient, int comp) {
     seq_t *n;
-    int comp = 0, i, b, o_len;
+    int i, b, o_len;
     size_t extra_len = sequence_extra_len(*s) + nbases +
 	nbases * sequence_conf_size(*s);
     int8_t *c_old;
@@ -1426,9 +1426,10 @@ int sequence_insert_bases(GapIO *io, seq_t **s, int pos,
 	if (comp)
 	    pos++;
     } else {
-	pos = n->len < 0
-	    ? -n->len - pos
-	    : pos;
+	if (n->len < 0) {
+	    pos = -n->len - pos;
+	    comp = !comp;
+	}
     }
 
     if (pos > ABS(n->len) || pos < 0) {

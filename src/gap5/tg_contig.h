@@ -48,6 +48,16 @@ int contig_insert_base(GapIO *io, contig_t **c, int pos, char base, int conf);
 int contig_insert_bases(GapIO *io, contig_t **c, int pos, char base, int conf,
 			int nbases);
 
+typedef struct {
+    tg_rec rec;
+    int    pos;
+    char   base;
+    int8_t conf;
+} col_inserted_base;
+
+int contig_insert_column(GapIO *io, contig_t **c, int pos,
+			 size_t count, col_inserted_base *bases);
+
 int contig_delete_base(GapIO *io, contig_t **c, int pos);
 
 int contig_delete_pad(GapIO *io, contig_t **c, int pos);
@@ -282,6 +292,39 @@ int padded_to_reference_pos(GapIO *io, tg_rec cnum, int ppos, int *dir_p,
  */
 int find_refpos_marker(GapIO *io, tg_rec cnum, int ppos,
 		       tg_rec *bin_r, int *bin_idx_r, rangec_t *rp);
+
+/*
+ * Remove refpos marker if present.
+ * 
+ * io   is the GapIO struct for the database.
+ * crec is the contig record number
+ * pos  is the padded position in the contig
+ *
+ * Returns  0 if marker removed or no marker found
+ *         -1 on failure 
+ */
+int delete_refpos_marker(GapIO *io, tg_rec crec, int pos);
+
+/*
+ * Set a refpos marker.  Will alter an existing one, or create a new one
+ * as necessary.
+ *
+ * io   is the GapIO struct for the database.
+ * c    is the contig_t struct ** for the contig
+ * pos  is the padded position on the contig
+ * type is the type of refpos (GRANGE_FLAG_REFPOS_INS or GRANGE_FLAG_REFPOS_DEL)
+ * dir  is the direction (GRANGE_FLAG_REFPOS_FWD or GRANGE_FLAG_REFPOS_REV)
+ * id   is the reference ID
+ * rpos is the reference position
+ * len  is the number of deleted bases (GRANGE_FLAG_REFPOS_DEL only)
+ *
+ * Returns  0 on success
+ *         -1 on failure
+ */
+
+int set_refpos_marker(GapIO *io, contig_t **c, int pos,
+		      int type, int dir, int id, int rpos, int len);
+
 
 /*
  * Given a contig record and a reference position, attempt to return

@@ -21,6 +21,7 @@
 #include "misc.h"
 #include "tg_gio.h"
 #include "tg_check.h"
+#include "tg_contig.h"
 #include "gap_cli_arg.h"
 #include "tg_struct.h"
 #include "consensus.h"
@@ -674,7 +675,8 @@ static int contig_cmd(ClientData clientData, Tcl_Interp *interp,
 	"set_visible_start", "invalidate_consensus",    "set_name",
 	"dump_graph",   "add_link",	"get_links",    "get_timestamp",
 	"get_scaffold", "add_to_scaffold", "remove_from_scaffold",
-	(char *)NULL,
+	"insert_column", "find_refpos_marker", "set_refpos_marker",
+	"delete_refpos_marker", (char *)NULL,
     };
 
     enum options {
@@ -688,7 +690,8 @@ static int contig_cmd(ClientData clientData, Tcl_Interp *interp,
 	GET_VISIBLE_START, GET_VISIBLE_END, GET_VISIBLE_LENGTH,
 	SET_VISIBLE_START, INVALIDATE_CONSENSUS,        SET_NAME,
 	DUMP_GRAPH,	ADD_LINK,	GET_LINKS,      GET_TIMESTAMP,
-	GET_SCAFFOLD,   ADD_TO_SCAFFOLD,REMOVE_FROM_SCAFFOLD,
+	GET_SCAFFOLD,   ADD_TO_SCAFFOLD,REMOVE_FROM_SCAFFOLD, INSERT_COLUMN,
+	FIND_REFPOS, SET_REFPOS, DELETE_REFPOS
     };
 
     if (objc < 2) {
@@ -945,6 +948,74 @@ static int contig_cmd(ClientData clientData, Tcl_Interp *interp,
 	break;
     }
 
+    case INSERT_COLUMN: {
+	int pos;
+	Tcl_Obj **pileup;
+	int      pileup_len;
+	int      i;
+	int      res;
+	col_inserted_base *bases;
+
+	if (objc != 4) {
+	    vTcl_SetResult(interp, "wrong # args: should be "
+			   "\"%s insert_column position pileup\"\n",
+			   Tcl_GetStringFromObj(objv[0], NULL));
+	    return TCL_ERROR;
+	}
+	Tcl_GetIntFromObj(interp, objv[2], &pos);
+	if (Tcl_ListObjGetElements(interp, objv[3],
+				   &pileup_len, &pileup) != TCL_OK
+	    || pileup_len < 0) {
+	    vTcl_SetResult(interp, "insert_column: pileup should be a list\n");
+	    return TCL_ERROR;
+	}
+
+	bases = calloc(pileup_len > 0 ? pileup_len : 1,
+		       sizeof(col_inserted_base));
+	if (NULL == bases) {
+	    vTcl_SetResult(interp, "Out of memory");
+	    return TCL_ERROR;
+	}
+
+	for (i = 0; i < pileup_len; i++) {
+	    Tcl_Obj **row;
+	    int row_len;
+	    Tcl_WideInt srec;
+	    int spos;
+	    char *base;
+	    int conf;
+	    
+	    if (Tcl_ListObjGetElements(interp, pileup[i],
+				       &row_len, &row) != TCL_OK
+		|| row_len < 4
+		|| TCL_OK != Tcl_GetWideIntFromObj(interp, row[0], &srec)
+		|| TCL_OK != Tcl_GetIntFromObj(interp, row[1], &spos)
+		|| NULL == (base = Tcl_GetStringFromObj(row[2], NULL))
+		|| '\0' == *base
+		|| TCL_OK != Tcl_GetIntFromObj(interp, row[3], &conf)) {
+		vTcl_SetResult(interp, "insert_column: pileup row"
+			       " should be { srec pos base conf }\n");
+		free(bases);
+		return TCL_ERROR;
+	    }
+
+	    bases[i].rec  = (tg_rec) srec;
+	    bases[i].pos  = spos;
+	    bases[i].base = base[0];
+	    bases[i].conf = conf;
+	}
+
+	res = contig_insert_column(tc->io, &tc->contig, pos,
+				   pileup_len, bases);
+	free(bases);
+	if (res) {
+	    vTcl_SetResult(interp, "insert_column failed");
+	    return TCL_ERROR;
+	}
+
+	break;
+    }
+
     case DELETE_BASE: {
 	int pos;
 	if (objc != 3) {
@@ -1093,6 +1164,8 @@ static int contig_cmd(ClientData clientData, Tcl_Interp *interp,
 	}
 
 	bin = bin_add_range(tc->io, &tc->contig, &r, &r_out, NULL, 0);
+	// fprintf(stderr, "seq %"PRIrec" to bin %"PRIrec"\n",
+	//	s->rec, bin->rec);
 	if ((s->flags & SEQ_UNMAPPED) || s->bin != bin->rec) {
 	    int old_comp = ((s->flags & SEQ_UNMAPPED)
 			    ? bin_get_orient(tc->io, s->bin) : 0);
@@ -1454,6 +1527,131 @@ static int contig_cmd(ClientData clientData, Tcl_Interp *interp,
 
 	break;
     }
+
+    case FIND_REFPOS: {
+	int      pos;
+	tg_rec   bin;
+	int      bin_idx;
+	rangec_t rc;
+
+	if (objc != 3) {
+	    vTcl_SetResult(interp, "wrong # args: should be \"%s "
+			   "find_refpos_marker pos\"\n",
+			   Tcl_GetStringFromObj(objv[0], NULL));
+	    return TCL_ERROR;
+	}
+
+	if (TCL_OK != Tcl_GetIntFromObj(interp, objv[2], &pos)) {
+	    return TCL_ERROR;
+	}
+
+	if (0 == find_refpos_marker(tc->io, tc->contig->rec, pos,
+				    &bin, &bin_idx, &rc)) {
+	    Tcl_Obj *ov[5];
+	    char type = ((rc.flags & GRANGE_FLAG_REFPOS_INDEL)
+			 == GRANGE_FLAG_REFPOS_DEL ? 'D' : 'I');
+	    char dir = ((rc.flags & GRANGE_FLAG_REFPOS_DIR)
+			== GRANGE_FLAG_REFPOS_FWD ? 'F' : 'R');
+	    Tcl_Obj *items;
+	    ov[0] = Tcl_NewStringObj(&type, 1);
+	    ov[1] = Tcl_NewStringObj(&dir,  1);
+	    ov[2] = Tcl_NewWideIntObj((rc.flags & GRANGE_FLAG_REFPOS_HAVE_ID)
+					? rc.rec : -1);
+	    ov[3] = Tcl_NewIntObj(rc.mqual);
+	    ov[4] = Tcl_NewIntObj(rc.pair_rec);
+	    if (NULL == ov[0] || NULL == ov[1] || NULL == ov[2]
+		|| NULL == ov[3] || NULL == ov[4]) return TCL_ERROR;
+
+	    items = Tcl_NewListObj(sizeof(ov)/sizeof(ov[0]), ov);
+	    if (NULL == items) return TCL_ERROR;
+	    Tcl_SetObjResult(interp, items);
+	} else {
+	    Tcl_FreeResult(interp);
+	}
+	break;
+    }
+
+    case SET_REFPOS: {
+	int pos, type, dir, id, rpos, len = 0;
+	char *stype, *sdir;
+	if (objc < 7 || objc > 8) {
+	    vTcl_SetResult(interp, "wrong # args: should be "
+			   "\"%s pos type dir ref_id ref_pos ?len?\"\n",
+			   Tcl_GetStringFromObj(objv[0], NULL));
+	}
+	if (TCL_OK != Tcl_GetIntFromObj(interp, objv[2], &pos)
+	    || TCL_OK != Tcl_GetIntFromObj(interp, objv[5], &id)
+	    || TCL_OK != Tcl_GetIntFromObj(interp, objv[6], &rpos)) {
+	    return TCL_ERROR;
+	}
+	stype = Tcl_GetString(objv[3]);
+	if (NULL == stype) return TCL_ERROR;
+	sdir  = Tcl_GetString(objv[4]);
+	if (NULL == sdir) return TCL_ERROR;
+	if (objc > 7 && TCL_OK != Tcl_GetIntFromObj(interp, objv[7], &len)) {
+	    return TCL_ERROR;
+	}
+
+	switch (*stype) {
+	case 'D':
+	    type = GRANGE_FLAG_REFPOS_DEL;
+	    break;
+	case 'I':
+	    type = GRANGE_FLAG_REFPOS_INS;
+	    break;
+	default:
+	    vTcl_SetResult(interp, "type should be 'D' or 'I'\n");
+	    return TCL_ERROR;
+	}
+
+	switch (*sdir) {
+	case 'F':
+	    dir = GRANGE_FLAG_REFPOS_FWD;
+	    break;
+	case 'R':
+	    dir = GRANGE_FLAG_REFPOS_REV;
+	    break;
+	default:
+	    vTcl_SetResult(interp, "dir should be 'F' or 'R'\n");
+	    return TCL_ERROR;
+	}
+
+	if (GRANGE_FLAG_REFPOS_DEL == type && objc < 8) {
+	    vTcl_SetResult(interp, "len is required for DEL markers\n");
+	    return TCL_ERROR;
+	}
+
+	if (0 != set_refpos_marker(tc->io, &tc->contig, pos, type, dir,
+				   id, rpos, len)) {
+	    vTcl_SetResult(interp, "set_refpos_marker failed");
+	    return TCL_ERROR;
+	}
+
+	break;
+    }
+
+    case DELETE_REFPOS: {
+	int pos;
+
+	if (objc != 3) {
+	    vTcl_SetResult(interp, "wrong # args: should be \"%s "
+			   "delete_refpos_marker pos\"\n",
+			   Tcl_GetStringFromObj(objv[0], NULL));
+	    return TCL_ERROR;
+	}
+
+	if (TCL_OK != Tcl_GetIntFromObj(interp, objv[2], &pos)) {
+	    return TCL_ERROR;
+	}
+
+	if (0 != delete_refpos_marker(tc->io, tc->contig->rec, pos)) {
+	    vTcl_SetResult(interp, "delete_refpos_marker failed");
+	    return TCL_ERROR;
+	}
+
+	break;
+    }
+
     }
 
     return TCL_OK;

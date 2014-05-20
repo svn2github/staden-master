@@ -14,6 +14,9 @@
 #include "tg_check.h"
 #include "list_proc.h"
 
+/* Uncomment to turn on debugging output for the insertion / deletion code */
+//#define DEBUG_INDEL
+
 #define NORM(x) (f_a * (x) + f_b)
 #define NMIN(x,y) (MIN(NORM((x)),NORM((y))))
 #define NMAX(x,y) (MAX(NORM((x)),NORM((y))))
@@ -27,6 +30,21 @@ typedef struct bin_list {
   int child_index;
   struct bin_list *next;
 } bin_list;
+
+#ifdef DEBUG_INDEL
+#include <stdarg.h>
+static inline void debug(char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+}
+#else
+static inline void debug(char *fmt, ...) {}
+#endif
+
+static inline int delete_refpos_marker2(GapIO *io, bin_index_t *bin,
+					int bin_idx, range_t *r);
 
 /*
  * Sets the contig start position
@@ -247,7 +265,7 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 			       int nbases, int comp, HacheTable *hash,
 			       int cstart, int cend,
 			       int *moved_left, int *moved_right,
-			       int *fixed_right) {
+			       int *fixed_right, HacheTable *pileup) {
     int i, ins = 0;
     bin_index_t *bin;
     HacheData hd;
@@ -259,7 +277,7 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
     /* Normalise pos for complemented bins */
     if (bin->flags & BIN_COMPLEMENTED) {
 	comp ^= 1;
-	pos = offset + bin->size - pos;
+	pos = offset + bin->size-1 - pos;
     } else {
 	pos -= offset;
     }
@@ -272,8 +290,8 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	f_b = aoffset;
     }
 
-    //printf("Raw used range bin %"PRIrec" %d..%d ",
-    //	   bnum, bin->start_used, bin->end_used);
+    debug("Raw used range bin %"PRIrec" %d..%d\n",
+    	   bnum, bin->start_used, bin->end_used);
 
     if (!(bin = cache_rw(io, bin)))
 	return -1;
@@ -286,21 +304,31 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
     /* Perform the insert into objects first */
     for (i = 0; bin->rng && i < ArrayMax(bin->rng); i++) {
 	range_t *r = arrp(range_t, bin->rng, i);
+	col_inserted_base *ins_base = NULL;
 
 	if (r->flags & GRANGE_FLAG_UNUSED)
 	    continue;
 
-	if ((start_of_contig &&
+	if (pileup && (r->flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISSEQ) {
+	    HacheItem *hi = HacheTableSearch(pileup,
+					     (char *) &r->rec, sizeof(r->rec));
+	    if (hi) {
+		ins_base = (col_inserted_base *) hi->data.p;
+		HacheTableDel(pileup, hi, 0);
+	    }
+	}
+
+	if (((start_of_contig || ins_base) &&
 	     pos <= MAX(r->start, r->end)+1 &&
-	     pos >= MIN(r->start, r->end))  ||
+	     pos >= MIN(r->start, r->end)-1)  ||
 	    (!start_of_contig &&
 	     pos <= MAX(r->start, r->end)   &&
-	     pos >  MIN(r->start, r->end))) {
-	    //printf("pos overlap obj #%"PRIrec" %d in %d..%d %d\n",
-	    //	   r->rec, pos,
-	    //	   MIN(r->start, r->end),
-	    //	   MAX(r->start, r->end),
-	    //	   start_of_contig);
+	     pos >= MIN(r->start, r->end))) {
+	    debug("pos overlap obj #%"PRIrec" %d in %d..%d %d\n",
+	    	   r->rec, pos,
+	    	   MIN(r->start, r->end),
+	    	   MAX(r->start, r->end),
+	    	   start_of_contig);
 	    /* Insert */
 	    if ((r->flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISREFPOS &&
 		(r->flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISANNO) {
@@ -330,26 +358,39 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		    v_end   = MAX(r->start + s->left-1, r->start + s->right-1);
 		}
 		if (base) {
-		    if (pos <= v_start || pos > v_end)
+		    if ((pos < v_start + (comp ? 0 : 1)
+			 || pos > v_end - (comp ? 1 : 0)) && !ins_base)
 			no_ins = 1;
 
-		    // printf("Rec %"PRIrec" visible %d..%d abs %d..%d\n",
-		    //	   r->rec, r_start, r_end,
-		    //	   NORM(r_start), NORM(r_end));
+		     debug("Rec %"PRIrec" visible %d..%d abs %d..%d\n",
+		    	   r->rec, v_start, v_end,
+		    	   NORM(v_start), NORM(v_end));
 
 		    if (!no_ins) {
-			//printf("INS %"PRIrec" at %d\n", r->rec,
-			//       pos - MIN(r->start, r->end));
-			sequence_insert_bases(io, &s,
-					      pos - MIN(r->start, r->end),
-					      base, conf, nbases, 0);
+			debug("INS %"PRIrec" at %d base %c\n", r->rec,
+			       pos - MIN(r->start, r->end) + (comp ? 1 : 0),
+			       ins_base ? ins_base->base : base);
+			if (ins_base) {
+			    sequence_insert_bases(io, &s,
+						  pos - MIN(r->start, r->end)
+						  + (comp ? 1 : 0),
+						  ins_base->base,
+						  ins_base->conf,
+						  nbases, 0, comp);
+			} else {
+			    sequence_insert_bases(io, &s,
+						  pos - MIN(r->start, r->end)
+						  + (comp ? 1 : 0),
+						  base, conf,
+						  nbases, 0, comp);
+			}
 			if (hash) {
-			    //printf("1 Mov %"PRIrec"\n", r->rec);
+			    debug("1 Mov %"PRIrec"\n", r->rec);
 			    hd.i = MAX(NMIN(v_start, v_end), apos);
 			    HacheTableAdd(hash, (char *)&r->rec,
 					  sizeof(r->rec), hd, NULL);
 			}
-			//printf("1 %"PRIrec"->end++\n", r->rec);
+			debug("1 %"PRIrec"->end++\n", r->rec);
 			r->end+=nbases;
 			ins = 1;
 			if ((r->flags & GRANGE_FLAG_ISMASK) ==
@@ -373,12 +414,12 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		     */
 		    if (comp ? (pos < v_end) : (v_start >= pos)) {
 			if (hash) {
-			    //printf("2 Mov %"PRIrec"\n", r->rec);
+			    debug("2 Mov %"PRIrec"\n", r->rec);
 			    hd.i = comp ? INT_MAX : INT_MIN;
 			    HacheTableAdd(hash, (char *)&r->rec,
 					  sizeof(r->rec), hd, NULL);
 			}
-			//printf("2 %"PRIrec"->start/end++\n", r->rec);
+			debug("2 %"PRIrec"->start/end += %d\n", r->rec, nbases);
 			r->start+=nbases;
 			r->end+=nbases;
 			ins = 1;
@@ -419,39 +460,44 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		}
 	    } else if ((r->flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISANNO) {
 		if (base && !(r->flags & GRANGE_FLAG_TAG_SEQ)) {
-		    //printf("anno %"PRIrec" before %d..%d\n",
-		    //	   r->rec, r->start, r->end);
-		    if (pos <= MIN(r->start, r->end)) {
+		    debug("anno %"PRIrec" before %d..%d\n",
+		    	   r->rec, r->start, r->end);
+		    if (comp ? (pos < r->end) : (pos <= r->start)) {
 			/* Shift instead of grow if inserting at the left end */
 			r->start += nbases;
 		    }
-		    if (pos < MAX(r->start, r->end)) {
+		    if (comp ? (pos < r->start) : (pos <= r->end)) {
 			/* Grow if inserting in middle. */
 			r->end+=nbases;
 		    }
-		    //printf("anno %"PRIrec" after  %d..%d\n",
-		    //	   r->rec, r->start, r->end);
+		    debug("anno %"PRIrec" after  %d..%d\n",
+		    	   r->rec, r->start, r->end);
 		    ins = 1;
+		}
+	    } else if ((r->flags & GRANGE_FLAG_ISMASK)== GRANGE_FLAG_ISREFPOS) {
+		/* Overlapping refpos. Move to right. */
+		if (!comp) { /* Complement will move with the bin */
+		    r->start += nbases;
+		    r->end   += nbases;
 		}
 	    }
 	    
 	    bin->flags |= BIN_RANGE_UPDATED;
 
-	} else if (MIN(r->start, r->end) >= pos) {
-	    //printf("pos to left of obj #%"PRIrec" %d %d..%d\n", 
-	    //	   r->rec, pos,
-	    //	   MIN(r->start, r->end),
-	    //	   MAX(r->start, r->end));
+	} else if (comp ? (pos < r->end) : (r->start >= pos)) {
+	    debug("update non-overlapping obj #%"PRIrec" %d %d..%d\n", 
+	    	   r->rec, pos,
+	    	   r->start, r->end);
 	    if ( (r->flags&GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISANNO) {
 		/* Move */
-		//printf("4 %"PRIrec"->start/end++\n", r->rec);
+		debug("4 %"PRIrec"->start/end += %d\n", r->rec, nbases);
 		r->start+=nbases;
 		r->end+=nbases;
 		ins = 1;
 		bin->flags |= BIN_RANGE_UPDATED;
 
 		if (hash) {
-		    //printf("4 Mov %"PRIrec"\n", r->rec);
+		    debug("4 Mov %"PRIrec"\n", r->rec);
 		    hd.i = comp ? INT_MAX : INT_MIN;
 		    HacheTableAdd(hash, (char *)&r->rec,
 				  sizeof(r->rec), hd, NULL);
@@ -523,11 +569,11 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		if (apos   >  NMAX(ch->pos, ch->pos + ch->size-1) && 
 		    cstart <= NMAX(ch->pos, ch->pos + ch->size-1)) {
 		    // Child entirely to left.
-		    //printf("BIN %"PRIrec" entirely left\n", bin->rec);
+		    debug("BIN %"PRIrec" entirely left\n", ch->rec);
 		} else if (apos <  NMIN(ch->pos, ch->pos + ch->size-1) &&
 			   cend >= NMIN(ch->pos, ch->pos + ch->size-1)) {
 		    // Child entirely to right
-		    //printf("BIN %"PRIrec" entirely right\n", bin->rec);
+		    debug("BIN %"PRIrec" entirely right\n", ch->rec);
 		    /* Assumption: at lease one of the seqs in the
 		       child bin has a visible base, so the rightmost
 		       visible base that has moved must be at least at 
@@ -546,7 +592,7 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 					   base, conf, nbases, comp, hash,
 					   cstart, cend,
 					   moved_left, moved_right,
-					   fixed_right);
+					   fixed_right, pileup);
 		/* Children to the right of this one need pos updating too */
 	    } else if (pos < MIN(ch->pos, ch->pos + ch->size-1)) {
 		ch = get_bin(io, bin->child[i]);
@@ -606,8 +652,8 @@ static int contig_insert_tag2(GapIO *io, tg_rec crec, tg_rec bnum,
 	f_b = aoffset;
     }
 
-    //printf("Bin %"PRIrec" => pos=%d, offset=%d, comp=%d\n",
-    //	   bin->rec, pos, offset, comp);
+    debug("Bin %"PRIrec" => pos=%d, offset=%d, comp=%d\n",
+	  bin->rec, pos, offset, comp);
 
     /*
      * Loop again through contents if hash is non-null and move tags. Seq
@@ -625,7 +671,7 @@ static int contig_insert_tag2(GapIO *io, tg_rec crec, tg_rec bnum,
      * We're safe provided the same logic is also applied to the tag, which
      * I believe it should be. Need to test.
      */
-    //printf("Pass 2\n");
+    debug("Pass 2\n");
     for (i = 0; bin->rng && i < ArrayMax(bin->rng); i++) {
 	range_t *r = arrp(range_t, bin->rng, i);
 	HacheItem *hi;
@@ -638,11 +684,11 @@ static int contig_insert_tag2(GapIO *io, tg_rec crec, tg_rec bnum,
 
 	hi = HacheTableSearch(hash, (char *)&r->pair_rec, sizeof(tg_rec));
 	if (hi) {
-	    //printf("Tag #%"PRIrec" in hash.  %d..%d (%d..%d) vs pos %d\n",
-	    //	   r->rec, r->start, r->end,
-	    //	   NMIN(r->start, r->end),
-	    //	   NMAX(r->start, r->end),
-	    //	   (int) hi->data.i);
+	    debug("Tag #%"PRIrec" in hash.  %d..%d (%d..%d) vs pos %d\n",
+		  r->rec, r->start, r->end,
+		  NMIN(r->start, r->end),
+		  NMAX(r->start, r->end),
+		  (int) hi->data.i);
 
 	    if (comp) {
 		if (NMAX(r->start, r->end) <= (int64_t)hi->data.i) {
@@ -724,7 +770,8 @@ static int contig_insert_tag2(GapIO *io, tg_rec crec, tg_rec bnum,
 }
 
 int contig_insert_base_common(GapIO *io, contig_t **c,
-			      int pos, char base, int conf, int nbases) {
+			      int pos, char base, int conf, int nbases,
+			      HacheTable *pileup) {
     contig_t *n;
     int rpos, add_indel = 1;
     bin_index_t *bin;
@@ -739,9 +786,9 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
     int cstart = (*c)->start, cend = (*c)->end;
     int moved_left, moved_right, fixed_right;
 
-    //printf("PRE %d..%d\n", (*c)->start, (*c)->end);
+    debug("PRE %d..%d\n", (*c)->start, (*c)->end);
 
-    if (pos < cstart || pos > cend)
+    if (pos < cstart || pos > cend + (pileup ? 1 : 0))
 	return 0;
     
     if (!(n = cache_rw(io, *c)))
@@ -769,7 +816,7 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
 			      contig_offset(io, c), contig_offset(io, c),
 			      base, conf, nbases, 0, hash,
 			      cstart, cend, &moved_left, &moved_right,
-			      &fixed_right);
+			      &fixed_right, pileup);
 
     ret |= contig_insert_tag2(io, n->rec, contig_get_bin(c), pos, pos,
 			      pos == n->start,
@@ -795,9 +842,9 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
      * otherwise we have to recalculate.
      */
 
-    //fprintf(stderr, "I moved_left = %d\nI cstart = %d\n"
-    //	    "I moved_right = %d\nI fixed_right = %d\n",
-    //	    moved_left, cstart, moved_right, fixed_right);
+    debug("I moved_left = %d\nI cstart = %d\n"
+	  "I moved_right = %d\nI fixed_right = %d\n",
+	  moved_left, cstart, moved_right, fixed_right);
 
     if (moved_left <= cstart + nbases)
 	consensus_unclipped_range(io, (*c)->rec, &cstart, NULL);
@@ -837,7 +884,7 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
     rpos--;
 
     /* Add a pad marker too for reference adjustments */
-    if (find_refpos_marker(io, (*c)->rec, pos + 1, // or pos + nbases?
+    if (find_refpos_marker(io, (*c)->rec, pos + nbases,
 			   &bin_rec, &bin_idx, &rc) == 0) {
 	assert((rc.flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISREFPOS);
 	if ((rc.flags & GRANGE_FLAG_REFPOS_INDEL) == GRANGE_FLAG_REFPOS_DEL) {
@@ -849,16 +896,11 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
 	    r = arrp(range_t, bin->rng, bin_idx);
 
 	    if (rc.pair_rec <= nbases) {
-		//printf("Remove DEL of size %d\n", rc.pair_rec);
-		r->flags |= GRANGE_FLAG_UNUSED;
-		r->rec = bin->rng_free;
-		bin->rng_free = bin_idx;
-		bin_incr_nrefpos(io, bin, -1);
-		if (bin->start_used == r->start || bin->end_used == r->end)
-		    bin_set_used_range(io, bin);
+		debug("Remove DEL of size %d\n", rc.pair_rec);
+		delete_refpos_marker2(io, bin, bin_idx, r);
 		nbases2 -= rc.pair_rec;
 	    } else {
-		//printf("Decrement DEL of size %d\n", rc.pair_rec);
+		debug("Decrement DEL of size %d\n", rc.pair_rec);
 		r->pair_rec -= nbases;
 		nbases2 = 0;
 	    }
@@ -882,16 +924,11 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
 	    r = arrp(range_t, bin->rng, bin_idx);
 
 	    if (rc.pair_rec <= nbases2) {
-		//printf("Remove DEL of size %d\n", rc.pair_rec);
-		r->flags |= GRANGE_FLAG_UNUSED;
-		r->rec = bin->rng_free;
-		bin->rng_free = bin_idx;
-		bin_incr_nrefpos(io, bin, -1);
-		if (bin->start_used == r->start || bin->end_used == r->end)
-		    bin_set_used_range(io, bin);
+		debug("Remove DEL of size %d\n", rc.pair_rec);
+		delete_refpos_marker2(io, bin, bin_idx, r);
 		nbases2 -= rc.pair_rec;
 	    } else {
-		//printf("Decrement DEL of size %d\n", rc.pair_rec);
+		debug("Decrement DEL of size %d\n", rc.pair_rec);
 		r->pair_rec -= nbases2;
 		nbases2 = 0;
 	    }
@@ -914,7 +951,7 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
 
 	rpos += dir ? 2 : 0;
 	for (i = 0; i < nbases2; i++, pos++) {
-	    //printf("Adding insertion REFPOS at %d/%d\n", pos, rpos);
+	    debug("Adding insertion REFPOS at %d/%d\n", pos, rpos);
 	    r.start    = pos;
 	    r.end      = pos;
 	    r.rec      = ref_id;
@@ -929,7 +966,7 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
 	}
     }
 
-    //printf("POST %d..%d\n", (*c)->start, (*c)->end);
+    debug("POST %d..%d\n", (*c)->start, (*c)->end);
 
     if (hash)
 	HacheTableDestroy(hash, 0);
@@ -938,14 +975,88 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
 }
 
 int contig_insert_base(GapIO *io, contig_t **c, int pos, char base, int conf) {
-    return contig_insert_base_common(io, c, pos, base, conf, 1) >= 0 ? 0 : -1;
+    return contig_insert_base_common(io, c, pos, base, conf, 1, NULL)
+	>= 0 ? 0 : -1;
 }
 
 int contig_insert_bases(GapIO *io, contig_t **c, int pos, char base, int conf,
 			int nbases) {
-    return contig_insert_base_common(io, c, pos, base, conf, nbases)
+    return contig_insert_base_common(io, c, pos, base, conf, nbases, NULL)
 	>= 0 ? 0 : -1;
     return 0;
+}
+
+int contig_insert_column(GapIO *io, contig_t **c, int pos,
+			 size_t count, col_inserted_base *bases) {
+    HacheTable *pileup = NULL;
+    size_t i;
+    int inserted;
+
+    pileup = HacheTableCreate(count, HASH_NONVOLATILE_KEYS | HASH_POOL_ITEMS);
+    if (NULL == pileup) return -1;
+
+    for (i = 0; i < count; i++) {
+	HacheData hd;
+	hd.p = &bases[i];
+	if (NULL == HacheTableAdd(pileup, (char *) &bases[i].rec,
+				  sizeof(bases[i].rec), hd, NULL)) {
+	    HacheTableDestroy(pileup, 0);
+	    return -1;
+	}
+    }
+
+    inserted = contig_insert_base_common(io, c, pos, '*', -1, 1, pileup);
+
+    if (pileup->nused > 0) {
+	/* Some reads have not been inserted into, probably as the insertions
+	   were to the ends of reads in bins that don't overlap the
+	   insertion position.  Fix them up now. */
+	HacheIter *iter = HacheTableIterCreate();
+	HacheItem *hi = NULL;
+
+	if (NULL != iter) {	    
+	    while (NULL != (hi = HacheTableIterNext(pileup, iter))) {
+		col_inserted_base *ins_base = (col_inserted_base *) hi->data.p;
+		seq_t *s;
+		tg_rec brec, crec;
+		int start, end, orient;
+		
+		if (0 != bin_get_item_position(io, GT_Seq, ins_base->rec,
+					       &crec, &start, &end, &orient,
+					       &brec, NULL, (void **) &s)) {
+		    break;
+		}
+		
+		assert(NULL != s);
+		assert(crec == (*c)->rec);
+		if (start < pos) {
+		    assert(pos == end + 1);
+		} else {
+		    /* Read will have already been shifted by 1 base */
+		    assert(pos == start - 2);
+		}
+		if (0 != sequence_insert_base(io, &s,
+					      start < pos ? pos - start : 0,
+					      ins_base->base,
+					      ins_base->conf, 1)) {
+		    cache_decr(io, s);
+		    break;
+		}
+		if (0 != sequence_move(io, &s, c, start < pos ? 0 : -2)) {
+		    cache_decr(io, s);
+		    break;
+		}
+		cache_decr(io, s);
+	    }
+	    if (NULL != hi) inserted = -1; /* Something went wrong... */
+	    HacheTableIterDestroy(iter);
+	} else {
+	    inserted = -1; /* Couldn't make iterator */
+	}
+    }
+
+    HacheTableDestroy(pileup, 0);
+    return inserted >= 0 ? 0 : -1;
 }
 
 /*
@@ -1108,10 +1219,10 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	if (MAX(r->start, r->end) >= pos && MIN(r->start, r->end) <= pos) {
 	    /* Range overlaps pos */
 
-	    //printf("pos overlap obj %d/#%"PRIrec" %d in %d..%d\n",
-	    //	   r->flags & GRANGE_FLAG_ISMASK, r->rec, pos,
-	    //	   MIN(r->start, r->end),
-	    //	   MAX(r->start, r->end));
+	    debug("pos overlap obj %d/#%"PRIrec" %d in %d..%d\n",
+	    	   r->flags & GRANGE_FLAG_ISMASK, r->rec, pos,
+	    	   MIN(r->start, r->end),
+	    	   MAX(r->start, r->end));
 
 	    if ((r->flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISREFPOS &&
 		(r->flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISANNO) {
@@ -1140,9 +1251,9 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		    if (pos < v_start || pos > v_end)
 			no_del = 1;
 
-		    //printf("Rec %"PRIrec" visible %d..%d abs %d..%d\n",
-		    //	   r->rec, v_start, v_end,
-		    //	   NORM(v_start), NORM(v_end));
+		    debug("Rec %"PRIrec" visible %d..%d abs %d..%d\n",
+			  r->rec, v_start, v_end,
+			  NORM(v_start), NORM(v_end));
 
 		    if (!no_del) {
 			/* In visible part, so delete */
@@ -1150,7 +1261,7 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 			if (r->start == r->end) {
 			    /* Remove completely */
 			    if (hash) {
-				//printf("1 Mov %"PRIrec"\n", r->rec);
+				debug("1 Mov %"PRIrec"\n", r->rec);
 				hd.i = MAX(NMIN(v_start, v_end), apos);
 				HacheTableAdd(hash, (char *)&r->rec,
 					      sizeof(r->rec), hd, NULL);
@@ -1161,7 +1272,11 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 
 			    bin->rng_free = i;
 			    bin->flags |= BIN_RANGE_UPDATED | BIN_BIN_UPDATED;
-			    bin_incr_nseq(io, bin, -1);
+
+			    if ((r->flags & GRANGE_FLAG_ISMASK)
+				== GRANGE_FLAG_ISSEQ) {
+				bin_incr_nseq(io, bin, -1);
+			    }
 
 			    if (bin->start_used == r->start ||
 				bin->end_used == r->end)
@@ -1169,8 +1284,8 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 			} else {
 			    /* delete the base */
 			    int bb;
-			    //printf("DEL %"PRIrec" at %d\n", r->rec,
-			    //     pos - MIN(r->start, r->end));
+			    debug("DEL %"PRIrec" at %d\n", r->rec,
+				  pos - MIN(r->start, r->end));
 
 			    bb = ((r->flags & GRANGE_FLAG_ISMASK) ==
 				  GRANGE_FLAG_ISCONS)
@@ -1179,12 +1294,12 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 						  pos - MIN(r->start, r->end),
 						  0, bb);
 			    if (hash) {
-				//printf("1 Mov %"PRIrec"\n", r->rec);
+				debug("1 Mov %"PRIrec"\n", r->rec);
 				hd.i = MAX(NMIN(v_start, v_end), apos);
 				HacheTableAdd(hash, (char *)&r->rec,
 					      sizeof(r->rec), hd, NULL);
 			    }
-			    //printf("1 %"PRIrec"->end--\n", r->rec);
+			    debug("1 %"PRIrec"->end--\n", r->rec);
 			    r->end--;
 			    del = 1;
 			    if ((r->flags & GRANGE_FLAG_ISMASK) ==
@@ -1209,13 +1324,13 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		     */
 		    if (comp ? (pos < v_end) : (v_start >= pos)) {
 			if (hash) {
-			    //printf("2 Mov %"PRIrec"\n", r->rec);
+			    debug("2 Mov %"PRIrec"\n", r->rec);
 			    hd.i = comp ? INT_MAX : INT_MIN;
 			    HacheTableAdd(hash, (char *)&r->rec,
 					  sizeof(r->rec), hd, NULL);
 			}
 
-			//printf("2 %"PRIrec"->start/end--\n", r->rec);
+			debug("2 %"PRIrec"->start/end--\n", r->rec);
 			r->start--;
 			r->end--;
 
@@ -1244,7 +1359,7 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 				   update *moved_left and *moved_right */
 				*moved_left = MIN(NMIN(r->start, r->end),
 						  *moved_left);
-				*moved_right = MAX(NMAX(v_start, v_end),
+				*moved_right = MAX(NMAX(r->start, r->end),
 						   *moved_right);
 			    } else {
 				/* This sequence did not move, so
@@ -1279,20 +1394,34 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	    bin->flags |= BIN_RANGE_UPDATED;
 
 	} else if (MIN(r->start, r->end) >= pos) {
-	    //printf("pos to left of obj #%"PRIrec" %d %d..%d\n", 
-	    //	   r->rec, pos,
-	    //	   MIN(r->start, r->end),
-	    //	   MAX(r->start, r->end));
+	    debug("pos to left of obj #%"PRIrec" %d %d..%d\n", 
+		  r->rec, pos,
+		  MIN(r->start, r->end),
+		  MAX(r->start, r->end));
 	    if ( (r->flags&GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISANNO) {
 		/* Move */
-		//printf("4 %"PRIrec"->start/end--\n", r->rec);
+		debug("4 %"PRIrec"->start/end--\n", r->rec);
 		r->start--;
 		r->end--;
+		if ((r->flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISSEQ) {
+		    if (comp) {
+			/* This sequence did not move, so
+			   update *fixed_right */
+			*fixed_right = MAX(NMAX(r->start, r->end),
+					   *fixed_right);
+		    } else {
+			/* This sequence moved to the left, so
+			   update *moved_left and *moved_right */
+			*moved_left = MIN(NMIN(r->start, r->end), *moved_left);
+			*moved_right = MAX(NMAX(r->start, r->end),
+					   *moved_right);
+		    }
+		}
 		del = 1;
 		bin->flags |= BIN_RANGE_UPDATED;
 
 		if (hash) {
-		    //printf("4 Mov %"PRIrec"\n", r->rec);
+		    debug("4 Mov %"PRIrec"\n", r->rec);
 		    hd.i = comp ? INT_MAX : INT_MIN;
 		    HacheTableAdd(hash, (char *)&r->rec,
 				  sizeof(r->rec), hd, NULL);
@@ -1323,9 +1452,9 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	if (!hi)
 	    continue;
 
-	//printf("Rec %"PRIrec" hd.i=%ld comp=%d NORM=%d,%d\n",
-	//       r->rec, (long)hd.i, comp,
-	//       NORM(r->start), NORM(r->end));
+	debug("Rec %"PRIrec" hd.i=%ld comp=%d NORM=%d,%d\n",
+	      r->rec, (long)hd.i, comp,
+	      NORM(r->start), NORM(r->end));
 
 	if (r->start == r->end && NORM(r->start) == (int64_t)hi->data.i) {
 	    //puts("del1/2");
@@ -1380,7 +1509,7 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
     {
 	if (bin->size != max_r+1) {
 	    if (--bin->size <= 0) {
-		//fprintf(stderr, "Delete bin bin-%"PRIrec"\n", bin->rec);
+		debug("Delete bin bin-%"PRIrec"\n", bin->rec);
 		bin->size = 0;
 		bin_delete(io, bin);
 	    } else {
@@ -1428,7 +1557,7 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		apos <  NMIN(ch->pos, ch->pos + ch->size-1) &&
 		cend >= NMIN(ch->pos, ch->pos + ch->size-1)) {
 		// Child entirely to right
-		//printf("BIN %"PRIrec" entirely right\n", bin->rec);
+		debug("BIN %"PRIrec" entirely right\n", bin->rec);
 		
 		/* Assumption: at lease one of the seqs in the
 		   child bin has a visible base, so the rightmost
@@ -1458,7 +1587,7 @@ static int contig_delete_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		    return -1;
 		}
 
-		//printf("Mov bin %"PRIrec"\n", ch->rec);
+		debug("Mov bin %"PRIrec"\n", ch->rec);
 
 		ch->pos--;
 		if (ch->nseqs)
@@ -1510,9 +1639,9 @@ static int contig_delete_base_fix(GapIO *io, tg_rec crec, tg_rec bnum,
 	if (r->start < 0) {
 	    bin_index_t *new_bin;
 
-	    //printf("Bin %"PRIrec" obj %"PRIrec" with start %d. Loc %d..%d\n",
-	    //	   bin->rec, r->rec, r->start,
-	    //	   NORM(r->start), NORM(r->end));
+	    debug("Bin %"PRIrec" obj %"PRIrec" with start %d. Loc %d..%d\n",
+		  bin->rec, r->rec, r->start,
+		  NORM(r->start), NORM(r->end));
 
 	    /* Convert range coords to absolute locations */
 	    r2 = *r;
@@ -1551,8 +1680,8 @@ static int contig_delete_base_fix(GapIO *io, tg_rec crec, tg_rec bnum,
 		s->bin = new_bin->rec;
 		s->bin_index = r_out - ArrayBase(range_t, new_bin->rng);
 
-		//printf("Old bin comp=%d new bin comp=%d\n",
-		//       old_comp, new_comp);
+		debug("Old bin comp=%d new bin comp=%d\n",
+		      old_comp, new_comp);
 
 		if (new_comp != old_comp) {
 		    s->len *= -1;
@@ -1606,7 +1735,7 @@ static int contig_delete_base_fix(GapIO *io, tg_rec crec, tg_rec bnum,
 int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
 			      int base) {
     contig_t *n;
-    int bin_idx;
+    int bin_idx, refpos_bin_idx;
     tg_rec bin_rec;
     rangec_t rc;
     int cur_del = 0;
@@ -1615,8 +1744,13 @@ int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
     int cstart = (*c)->start, cend = (*c)->end;
     int moved_left, moved_right;
     int fixed_right;
+    bin_index_t *refpos_bin = NULL;
 
-    if (pos < cstart || pos > cend)
+    debug("contig_delete_base_common contig =%"PRIrec
+	  " pos %d shift %d base %d\n",
+	  (*c)->rec, pos, shift, base);
+
+    if (pos < cstart - 1 || pos > cend)
 	return 0;
 
     if (!(n = cache_rw(io, *c)))
@@ -1629,34 +1763,31 @@ int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
      * If we do have one neighbouring, either increment it (if deletion) or
      * remove it (if insertion).
      */
-    if (find_refpos_marker(io, (*c)->rec, pos, &bin_rec, &bin_idx, &rc) == 0) {
+    if (find_refpos_marker(io, (*c)->rec, pos, &bin_rec,
+			   &refpos_bin_idx, &rc) == 0) {
 	range_t *r;
-	bin_index_t *bin;
 
 	assert((rc.flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISREFPOS);
 
-	bin = cache_search(io, GT_Bin, bin_rec);
-	bin = cache_rw(io, bin);
-	r = arrp(range_t, bin->rng, bin_idx);
+	refpos_bin = cache_search(io, GT_Bin, bin_rec);
+	refpos_bin = cache_rw(io, refpos_bin);
+	r = arrp(range_t, refpos_bin->rng, refpos_bin_idx);
 
 	if ((rc.flags & GRANGE_FLAG_REFPOS_INDEL) == GRANGE_FLAG_REFPOS_INS) {
-	    /* Existing insertion, so remove it */
-	    //printf("Remove insertion marker\n");
-	    r->flags |= GRANGE_FLAG_UNUSED;
-	    r->rec = bin->rng_free;
-	    bin->rng_free = bin_idx;
-	    bin_incr_nrefpos(io, bin, -1);
-
-	    if (bin->start_used == r->start || bin->end_used == r->end)
-		bin_set_used_range(io, bin);
+	    /* Existing insertion, so remove it.  Insertions are always
+	       1 long, so the deletion cancels it and there's nothing else
+	       left to do. */
+	    debug("Remove insertion marker\n");
 	    done = 1;
 	} else {
 	    /* Existing deletion, add it to neighbouring position */
-	    //printf("DEL %d marker to apply to right\n", r->pair_rec);
+	    debug("DEL %d marker to apply to right\n", r->pair_rec);
 	    cur_del = r->pair_rec;
 	}
 
-	bin->flags |= BIN_RANGE_UPDATED | BIN_BIN_UPDATED;
+	/* The base this marker on is about to disappear, so it needs
+	   to go too.  But we defer removal until later in case we
+	   need to call padded_to_reference_pos below. */
     }
 
     if (!done && find_refpos_marker(io, (*c)->rec, pos+1, &bin_rec,
@@ -1665,6 +1796,9 @@ int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
 	bin_index_t *bin;
 	int ins_type;
 
+	/* Found a marker to the right.  Work out the new indel length and
+	   update as necessary */
+
 	assert((rc.flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISREFPOS);
 
 	bin = cache_search(io, GT_Bin, bin_rec);
@@ -1672,59 +1806,67 @@ int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
 	r = arrp(range_t, bin->rng, bin_idx);
 
 	ins_type = (rc.flags & GRANGE_FLAG_REFPOS_INDEL);
-	cur_del++;
-
-	if (ins_type == GRANGE_FLAG_REFPOS_INS && cur_del == 1) {
-	    //printf("Remove INS marker\n");
-	    /* 1 del + 1 ins => remove marker */
-	    r->flags |= GRANGE_FLAG_UNUSED;
-	    r->rec = bin->rng_free;
-	    bin->rng_free = bin_idx;
-	    bin_incr_nrefpos(io, bin, -1);
-
-	    if (bin->start_used == r->start || bin->end_used == r->end)
-		bin_set_used_range(io, bin);
+	cur_del++; /* The deletion we are about to make */
+	if (ins_type == GRANGE_FLAG_REFPOS_INS) {
+	    cur_del--;               /* -1 for an insertion */
 	} else {
-	    /* Otherwise N del + 1 ins => N-1 del */
-	    if (ins_type == GRANGE_FLAG_REFPOS_INS) {
-		cur_del--;
-		r->flags &= ~GRANGE_FLAG_REFPOS_INDEL;
-		r->flags |= GRANGE_FLAG_REFPOS_DEL;
-		r->pair_rec = cur_del;
-		//printf("Replace INS with DEL %d\n", r->pair_rec);
-	    } else {
-		/* N del + M ndel => N+M del */
-		//printf("Inc DEL %d to DEL %d\n",
-		//       r->pair_rec, r->pair_rec + cur_del);
-		r->pair_rec += cur_del;
-	    }
+	    cur_del += r->pair_rec;  /* + the length of the deletion */
+	}
+
+	if (cur_del == 0) {
+	    debug("Remove INS marker\n");
+	    /* 1 del + 1 ins => remove marker */
+	    delete_refpos_marker2(io, bin, bin_idx, r);
+	} else {
+	    /* Ensure it's now a deletion */
+	    r->flags = ((r->flags & ~GRANGE_FLAG_REFPOS_INDEL)
+			| GRANGE_FLAG_REFPOS_DEL
+			| GRANGE_FLAG_REFPOS_HAVE_SIZE);
+	    r->pair_rec = cur_del;
+	    debug("Set refpos marker to %d base deletion\n", cur_del);
 	}
 	
 	bin->flags |= BIN_RANGE_UPDATED | BIN_BIN_UPDATED;
 
     } else if (!done) {
-	/* No existing marker at pos or pos+1 => a new +1 DEL marker */
-	range_t r;
+	/* No existing marker at pos+1 => a new +1 DEL marker */
+	range_t r = {0};
 	int dir;
-	int rpos = padded_to_reference_pos(io, (*c)->rec, pos+1, &dir, NULL);
+	int id;
+	int rpos = padded_to_reference_pos(io, (*c)->rec, pos+1, &dir, &id);
+
+	if (dir == -1) {
+	    /* No ref pos yet, so start it rolling */
+	    dir = 0;
+	}
 
 	if (dir != -1) {
 	    rpos += dir; /* Compensate for complemented contigs */
 
 	    /* Create a deletion marker */
-	    //printf("Adding deletion REFPOS at %d/%d\n", pos, rpos);
+	    debug("Adding deletion REFPOS at %d/%d\n", pos, rpos);
 	    r.start    = pos+1;
 	    r.end      = pos+1;
-	    r.rec      = 0;
+	    r.rec      = id;
 	    r.pair_rec = 1+cur_del;
 	    r.mqual    = rpos;
 
 	    /* Dir needs checking */
 	    r.flags    = GRANGE_FLAG_ISREFPOS
 		| GRANGE_FLAG_REFPOS_DEL
-		| GRANGE_FLAG_REFPOS_FWD;
+		| GRANGE_FLAG_REFPOS_FWD
+		| GRANGE_FLAG_REFPOS_HAVE_SIZE
+		| GRANGE_FLAG_REFPOS_HAVE_POS
+		| (id >= 0 ? GRANGE_FLAG_REFPOS_HAVE_ID : 0);
 	    bin_add_range(io, c, &r, NULL, NULL, 0);
 	} /* else no refpos data => don't keep tracking it */
+    }
+
+    if (NULL != refpos_bin) {
+	/* Remove the doomed refpos marker here */
+	delete_refpos_marker2(io, refpos_bin, refpos_bin_idx,
+			      arrp(range_t, refpos_bin->rng, refpos_bin_idx));	
+	refpos_bin->flags |= BIN_RANGE_UPDATED | BIN_BIN_UPDATED;
     }
 
     /*
@@ -1772,9 +1914,9 @@ int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
      * otherwise we have to recalculate.
      */
 
-    //fprintf(stderr, "D moved_left = %d\nD cstart = %d\n"
-    //	    "D moved_right = %d\nD fixed_right = %d\n",
-    //	    moved_left, cstart, moved_right, fixed_right);
+    debug("D moved_left = %d\nD cstart = %d\n"
+	  "D moved_right = %d\nD fixed_right = %d\n",
+	  moved_left, cstart, moved_right, fixed_right);
 
     if (moved_left <= cstart)
 	consensus_unclipped_range(io, (*c)->rec, &cstart, NULL);
@@ -1820,7 +1962,7 @@ int contig_delete_pad(GapIO *io, contig_t **c, int pos) {
  */
 int contig_shift_base(GapIO *io, contig_t **c, int pos, int dir) {
     if (dir > 0) {
-	return contig_insert_base_common(io, c, pos, 0, 0, dir);
+	return contig_insert_base_common(io, c, pos, 0, 0, dir, NULL);
     } else {
 	int i, r = 0;
 	while (dir++ < 0)
@@ -5572,6 +5714,113 @@ int find_refpos_marker(GapIO *io, tg_rec cnum, int ppos,
     return -1;
 }
 
+static inline int delete_refpos_marker2(GapIO *io, bin_index_t *bin,
+					int bin_idx, range_t *r) {
+    r->flags |= GRANGE_FLAG_UNUSED;
+    r->rec = bin->rng_free;
+    if (0 != bin_incr_nrefpos(io, bin, -1)) return -1;
+    if (bin->start_used == r->start || bin->end_used == r->end) {
+	if (0 != bin_set_used_range(io, bin)) return -1;
+    }
+    return 0;
+}
+
+/*
+ * Remove refpos marker if present.
+ * 
+ * io   is the GapIO struct for the database.
+ * crec is the contig record number
+ * pos  is the padded position in the contig
+ *
+ * Returns  0 if marker removed or no marker found
+ *         -1 on failure 
+ */
+int delete_refpos_marker(GapIO *io, tg_rec crec, int pos) {
+    tg_rec       bin_rec;
+    int          bin_idx;
+    rangec_t     rc;
+    bin_index_t *bin;
+    range_t     *r;
+
+    if (0 == find_refpos_marker(io, crec, pos, &bin_rec, &bin_idx, &rc)) {
+	assert((rc.flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISREFPOS);
+	bin = cache_search(io, GT_Bin, bin_rec);
+	if (NULL == bin) return -1;
+	bin = cache_rw(io, bin);
+	if (NULL == bin) return -1;
+	r = arrp(range_t, bin->rng, bin_idx);
+	if (0 != delete_refpos_marker2(io, bin, bin_idx, r)) return -1;
+	bin->flags |= BIN_RANGE_UPDATED | BIN_BIN_UPDATED;
+    }
+
+    return 0;
+}
+
+/*
+ * Set a refpos marker.  Will alter an existing one, or create a new one
+ * as necessary.
+ *
+ * io   is the GapIO struct for the database.
+ * c    is the contig_t struct ** for the contig
+ * pos  is the padded position on the contig
+ * type is the type of refpos (GRANGE_FLAG_REFPOS_INS or GRANGE_FLAG_REFPOS_DEL)
+ * dir  is the direction (GRANGE_FLAG_REFPOS_FWD or GRANGE_FLAG_REFPOS_REV)
+ * id   is the reference ID
+ * rpos is the reference position
+ * len  is the number of deleted bases (GRANGE_FLAG_REFPOS_DEL only)
+ *
+ * Returns  0 on success
+ *         -1 on failure
+ */
+
+int set_refpos_marker(GapIO *io, contig_t **c, int pos,
+		      int type, int dir, int id, int rpos, int len) {
+    tg_rec       bin_rec;
+    int          bin_idx;
+    rangec_t     rc;
+    bin_index_t *bin;
+    int          is_del = type & GRANGE_FLAG_REFPOS_DEL;
+
+    /* Check if a refpos marker is already present */
+    if (0 == find_refpos_marker(io, (*c)->rec, pos, &bin_rec, &bin_idx, &rc)) {
+	range_t *r;
+	assert((rc.flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISREFPOS);
+	bin = cache_search(io, GT_Bin, bin_rec);
+	if (NULL == bin) return -1;
+	bin = cache_rw(io, bin);
+	if (NULL == bin) return -1;
+	r = arrp(range_t, bin->rng, bin_idx);
+
+	r->mqual = rpos;
+	r->rec   = id;
+	if (is_del) r->pair_rec = len;
+	r->flags = (r->flags & ~GRANGE_FLAG_REFPOS_INDEL)
+	    | (type & GRANGE_FLAG_REFPOS_INDEL)
+	    | (dir & GRANGE_FLAG_REFPOS_DIR)
+	    | GRANGE_FLAG_REFPOS_HAVE_POS
+	    | (id >= 0 ? GRANGE_FLAG_REFPOS_HAVE_ID : 0)
+	    | (is_del ? GRANGE_FLAG_REFPOS_HAVE_SIZE : 0);
+
+	bin->flags |= BIN_RANGE_UPDATED | BIN_BIN_UPDATED;
+	
+    } else {
+	range_t r = {0};
+	r.start = r.end = pos;
+	r.rec = id;
+	if (is_del) r.pair_rec = len;
+	r.mqual = rpos;
+
+	r.flags = GRANGE_FLAG_ISREFPOS
+	    | (type & GRANGE_FLAG_REFPOS_INDEL)
+	    | (dir & GRANGE_FLAG_REFPOS_DIR)
+	    | GRANGE_FLAG_REFPOS_HAVE_POS
+	    | (id >= 0 ? GRANGE_FLAG_REFPOS_HAVE_ID : 0)
+	    | (is_del ? GRANGE_FLAG_REFPOS_HAVE_SIZE : 0);
+	if (NULL == bin_add_range(io, c, &r, NULL, NULL, 0)) return -1;
+    }
+
+    return 0;
+}
 
 /*
  * Converts a range of padded coordinates to reference coordinates.
