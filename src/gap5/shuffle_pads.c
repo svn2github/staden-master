@@ -303,7 +303,7 @@ static void remove_pads(GapIO *io, MALIGN *malign, contig_t *c,
     cl_list *head = NULL, *c2, *last, *next;
     int npads, depth;
 
-    for (i = 0; i < malign->length; i++) {
+    for (i = start; i <= end; i++) {
 	/* Add new seqs to the depth array as we meet them */
 	while (cl && cl->mseg->offset == i) {
 	    c2 = (cl_list *)xmalloc(sizeof(cl_list));
@@ -347,7 +347,7 @@ static void remove_pads(GapIO *io, MALIGN *malign, contig_t *c,
 	}
     }
 
-    malign_recalc_scores(malign, 0, malign->length-1);
+    malign_recalc_scores(malign, start, end);
 }
 
 /*
@@ -421,7 +421,7 @@ MALIGN *realign_seqs(int contig, MALIGN *malign, int band, Array indels) {
 			  8, /*gap_open*/
 			  8, /*gap_extend*/
 			  /* EDGE_GAPS_COUNT, */
-			  EDGE_GAPS_ZEROX | BEST_EDGE_TRACE,
+			  EDGE_GAPS_ZEROX | BEST_EDGE_TRACE | EDGE_GAPS_MAXY,
 			  RETURN_EDIT_BUFFERS | RETURN_SEQ |
 			  RETURN_NEW_PADS,
 			  0,  /*seq1_start*/
@@ -433,7 +433,7 @@ MALIGN *realign_seqs(int contig, MALIGN *malign, int band, Array indels) {
 	o = create_moverlap();
 	init_moverlap(o, malign, contigl->mseg->seq, malign->length, len);
 
-	cons_pos = contigl->mseg->offset;
+	cons_pos = contigl->mseg->offset - malign->start;
 	o->malign_len = malign->length - cons_pos;
 
 	/* 3 bases overhang to the right */
@@ -465,7 +465,7 @@ MALIGN *realign_seqs(int contig, MALIGN *malign, int band, Array indels) {
 
 	    /*
 	    printf("Score = %f\n", o->score);
-	    
+
 	    if (!r)
 		print_moverlap(malign, o, cons_pos);
 	    else
@@ -475,6 +475,7 @@ MALIGN *realign_seqs(int contig, MALIGN *malign, int band, Array indels) {
 	    malign->consensus = old_cons;
 	    malign->counts    = old_counts;
 	    malign->scores    = old_scores;
+	    cons_pos += malign->start;
 	}
 
 	/* Edit the sequence with the alignment */
@@ -712,7 +713,6 @@ MALIGN *build_malign(GapIO *io, tg_rec cnum, int start, int end) {
     }
     contig_iter_del(citer);
 
-    /* for 454 data -6 to -10 seem to work fine */
     return contigl_to_malign(first_contig, -7, -7);
 }
 
@@ -808,7 +808,7 @@ void print_moverlap(MALIGN *malign, MOVERLAP *o, int offset) {
 		continue;
 	    ndepth++;
 	    /* runaway loops completely kills deskpros */
-	    if (ndepth > 1000)
+	    if (ndepth > 5000)
 		abort();
 	    depth = (struct clist *)realloc(depth, ndepth * sizeof(*depth));
 	    depth[ndepth-1].seq = cl->mseg->seq + i-(cl->mseg->offset+cins);
@@ -866,6 +866,7 @@ void print_moverlap(MALIGN *malign, MOVERLAP *o, int offset) {
 int64_t malign_diffs(MALIGN *malign, int64_t *tot) {
     CONTIGL *cl;
     int64_t diff_count = 0, tot_count = 0;
+    int st;
 
     for (cl = malign->contigl; cl; cl = cl->next) {
 	int i;
@@ -913,11 +914,12 @@ int64_t malign_diffs(MALIGN *malign, int64_t *tot) {
 	    5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
 	    5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5  /* 255 */
 	};
+	st = malign->start;
 	for (i = 0; i < cl->mseg->length; i++) {
 	    unsigned char s = l[(uint8_t) cl->mseg->seq[i]];
 
 	    /*printf("%c", c==s ? '.' : s);*/
-	    diff_count += malign->scores[i+cl->mseg->offset][s];
+	    diff_count += malign->scores[i-st + cl->mseg->offset][s];
 	}
 	tot_count  += 128 * cl->mseg->length;
 #endif
@@ -1822,6 +1824,7 @@ static void validate_clip_regions(GapIO *io, HashTable *h_clips,
 
 
 #define CHUNK_SIZE 32768
+//#define CHUNK_SIZE 1000
 
 int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 		       int band, int soft_clips, int flush) {
@@ -1861,21 +1864,6 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 	}
 
 	/*
-	 * The shuffle pads code (malign) comes from gap4 and has lots of
-	 * assumptions that the contig goes from base 1 to base N.
-	 * Fixing these assumptions is a lot of work, so for now we will take
-	 * the cheat route of moving the contig to ensure the assumption
-	 * is valid.
-	 */
-	c = cache_search(io, GT_Contig, cnum);
-	c_shift = 1-c->start;
-
-	if (c_shift != 0) {
-	    if (move_contig(io, cnum, c_shift) != 0)
-		return -1;
-	}
-
-	/*
 	 * Iterate over 33k chunks from end going backwards. Decrement
 	 * our sub-range by 32k each time. This reduces the maximum
 	 * memory capacity and also prevents our multi-pass method
@@ -1891,12 +1879,12 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 		sub_start = contigs[i].start;
 
 	    cl.contig = contigs[i].contig;
-	    cl.start  = sub_start + c_shift;
-	    cl.end    = sub_end   + c_shift;
+	    cl.start  = sub_start;
+	    cl.end    = sub_end;
 
 	    vmessage("Shuffling pads for contig %s %d..%d\n",
 		     get_contig_name(io, cnum),
-		     sub_start + c_shift, sub_end + c_shift);
+		     sub_start, sub_end);
 
 	    if (soft_clips)
 		h_clips = concordant_soft_clips(io,
@@ -1923,12 +1911,25 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 
 	    ArrayMax(indels) = 0;
 	    orig_score = new_score = malign_diffs(malign, &tot_score);
-	    vmessage("Initial score %.2f%% mismatches (%"PRId64
-		     " mismatches)\n",
-		     (100.0 * orig_score)/tot_score, orig_score/128);
+	    vmessage("Initial score %"PRId64"\n", orig_score);
 	    if (flush)
 		UpdateTextOutput();
 	    //print_malign(malign);
+	    do {
+		old_score = new_score;
+		malign = realign_seqs(cnum, malign, band, indels);
+		//print_malign(malign);
+		new_score = malign_diffs(malign, &tot_score);
+		vmessage("  Consensus difference score: %"PRId64"\n",
+			 new_score);
+		if (flush)
+		    UpdateTextOutput();
+	    } while (new_score < old_score);
+
+	    // HACK! Try with an alternative pad scoring algorithm.
+	    malign->gap_extend = 0;
+	    scale_malign_scores(malign, malign->start, malign->end);
+
 	    do {
 		old_score = new_score;
 		malign = realign_seqs(cnum, malign, band, indels);
@@ -2004,12 +2005,6 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 	    sub_start -= CHUNK_SIZE;
 	    sub_end   -= CHUNK_SIZE;
 	} while (sub_end > contigs[i].start);
-
-	/* Shift contig back */
-	if (c_shift != 0) {
-	    if (move_contig(io, contigs[i].contig, -c_shift) != 0)
-		return -1;
-	}
     }
 
     ArrayDestroy(indels);
@@ -2413,57 +2408,62 @@ HashTable *concordant_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 
 #define MIS_SCORE -1
 //#define MIS_SCORE 0
-#define MAT_SCORE 1
-
-	// Left clip
-	score = score_max = 0;
-	for (i_max = i = s->left-2; i >= 0; i--) {
-	    if (!(r->start + i >= start &&
-		  r->start + i <= end))
-		break;
-
-	    if (s->seq[i] != Ldepth[r->start+i - start][6]) {
-		if ((score+=MIS_SCORE) < -6)
-		    break;
-	    } else {
-		if (score_max < (score+=MAT_SCORE))
-		    score_max = score, i_max = i;
-	    }
-	}
-	i = i_max;
-	//i_max = -1; // TEST: ALL
-	if (i < s->left-2) {
-	    if (s == sorig)
-		new_l = i+1;
-	    else
-		new_r = ABS(s->len) - i + 1;
+#define MAT_SCORE 2
 	    
-	    //printf("%"PRIrec"<%.*s\n", s->rec, s->left-2 -i, &s->seq[i+1]);
+	// Left clip
+	if (!common_word_L(counts, &s->seq[MAX(s->left-13,0)],
+			   MIN(12, s->left-1))) {
+	    score = score_max = 0;
+	    for (i_max = i = s->left-2; i >= 0; i--) {
+		if (!(r->start + i >= start &&
+		      r->start + i <= end))
+		    break;
+
+		if (s->seq[i] != Ldepth[r->start+i - start][6]) {
+		    if ((score+=MIS_SCORE) < -6)
+			break;
+		} else {
+		    if (score_max < (score+=MAT_SCORE))
+			score_max = score, i_max = i;
+		}
+	    }
+	    //i_max = -1; // TEST: ALL
+	    i = i_max;
+	    if (i < s->left-2) {
+		if (s == sorig)
+		    new_l = i+1;
+		else
+		    new_r = ABS(s->len) - i + 1;
+	    
+		//printf("%"PRIrec"<%.*s\n", s->rec, s->left-2 -i, &s->seq[i+1]);
+	    }
 	}
 
 	// Right clip
-	score = score_max = 0;
-	for (i_max = i = s->right; i < ABS(s->len); i++) {
-	    if (!(r->start + i >= start &&
-		  r->start + i <= end))
-		break;
-
-	    if (s->seq[i] != Rdepth[r->start+i - start][6]) {
-		if ((score+=MIS_SCORE) < -6)
+	if (!common_word_R(counts, &s->seq[s->right], ABS(s->len)-s->right)) {
+	    score = score_max = 0;
+	    for (i_max = i = s->right; i < ABS(s->len); i++) {
+		if (!(r->start + i >= start &&
+		      r->start + i <= end))
 		    break;
-	    } else {
-		if (score_max < (score+=MAT_SCORE))
-		    score_max = score, i_max = i+1;
+
+		if (s->seq[i] != Rdepth[r->start+i - start][6]) {
+		    if ((score+=MIS_SCORE) < -6)
+			break;
+		} else {
+		    if (score_max < (score+=MAT_SCORE))
+			score_max = score, i_max = i+1;
+		}
 	    }
-	}
-	i = i_max;
-	//i_max = ABS(s->len); // TEST: ALL
-	if (i > s->right) {
-	    if (s == sorig)
-		new_r = i;
-	    else
-		new_l = ABS(s->len) - i + 1;
-	    //printf("%"PRIrec">%.*s\n", s->rec, i - s->right, &s->seq[s->right]);
+	    //i_max = ABS(s->len); // TEST: ALL
+	    i = i_max;
+	    if (i > s->right) {
+		if (s == sorig)
+		    new_r = i;
+		else
+		    new_l = ABS(s->len) - i + 1;
+		//printf("%"PRIrec">%.*s\n", s->rec, i - s->right, &s->seq[s->right]);
+	    }
 	}
 
 	if (s != sorig)
@@ -2540,8 +2540,17 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
     if (!(cons = calloc(end - start + 1, sizeof(*cons)))) {
 	return -1;
     }
-    calculate_consensus(io, crec, start, end, cons);
 
+
+    /*
+     * Firstly retrim reads back to their original clip positions so we
+     * can compute the newly aligned consensus based on the original bases,
+     * albeit in potentially different positions.
+     *
+     * This is so we can tell which bases were formerly heterozygous and
+     * not include places that have only become heterozygous due to adjusting
+     * the soft-clips.
+     */
     citer = contig_iter_new(io, crec, 0, CITER_FIRST, start, end);
     while ((r = contig_iter_next(io, citer))) {
 	seq_t *sorig;
@@ -2555,11 +2564,6 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 	/*
 	 * If this is a read we previously unclipped, then back up to
 	 * that point and verify it from there.
-	 *
-	 * NOTE: We should perhaps remember the unpadded clip position
-	 * and recompute the equivalent original s->right again as the
-	 * read has been realigned since then with possibly fewer or
-	 * more pads added. I think for now this is "good enough" though.
 	 */
 	if ((hi = HashTableSearch(h_clips, (char *)&r->rec, sizeof(r->rec)))) {
 	    soft_clips *c = (soft_clips *)hi->data.p;
@@ -2572,6 +2576,21 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 		s->right = p_r;
 	    updated = 1;
 	}
+    }
+    contig_iter_del(citer);
+
+    /* Now compute the consensus and rescan */
+    calculate_consensus(io, crec, start, end, cons);
+
+    citer = contig_iter_new(io, crec, 0, CITER_FIRST, start, end);
+    while ((r = contig_iter_next(io, citer))) {
+	seq_t *sorig;
+	HashItem *hi;
+	seq_t *s = cache_search(io, GT_Seq, r->rec);
+	int score = 0, best_score = 0, best_i = 0;
+	int orig_right = s->right;
+	int orig_left  = s->left;
+	int p, b;
 
 	// Right end
 	if ((s->len<0) ^ r->comp) {
@@ -2591,7 +2610,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 			best_i = i+1;
 		    }
 		} else {
-		    if ((score -= 3) <= -6)
+		    if ((score -= 5) <= -6)
 			break;
 		}
 		//printf("-%4d %7d: %c %c\n",
@@ -2616,7 +2635,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 			best_i = i+1;
 		    }
 		} else {
-		    if ((score -= 3) <= -6)
+		    if ((score -= 5) <= -6)
 			break;
 		}
 		//printf("+%4d %7d: %c %c\n", i, r->start + i,

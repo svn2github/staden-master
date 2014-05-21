@@ -37,8 +37,9 @@ void print_contig_links(CONTIGL *contigl);
 typedef struct Malign {
     char *charset;
     int charset_size;
-    int  length;
-    int  **matrix;
+    int length;
+    int start, end;
+    int **matrix;
     CONTIGL *contigl;
     CONTIGR *region;
     int nregion;
@@ -355,6 +356,12 @@ typedef struct Overlap {
 
 /* Penalise in Y, but not in X */
 #define EDGE_GAPS_ZEROX   16
+
+/* Force no edge overlap at all for Y. */
+/* Ie      OK:                             DENY:            */
+/* Y-seq  -------*--------               ---------------    */
+/* X-seq     ---------               -----------            */
+#define EDGE_GAPS_MAXY    32
 
 typedef struct Align_params {
     int gap_open;
