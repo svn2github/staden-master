@@ -48,7 +48,7 @@
 
 
 void usage(void) {
-    fprintf(stderr, "Usage: g_index [options] data_file ...\n");
+    fprintf(stderr, "Usage: tg_index [options] data_file ...\n");
     fprintf(stderr, "      -o output            Specify ouput filename (g_db)\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "      -m                   Input is MAQ format\n");
@@ -136,7 +136,7 @@ int main(int argc, char **argv) {
     a.version        = DB_VERSION;
     a.link_pairs     = 1;
 
-    printf("\n\tg_index:\tShort Read Alignment Indexer, version 1.2.13"SVN_VERS"\n");
+    printf("\n\ttg_index:\tGap5 database builder, version 1.2.13"SVN_VERS"\n");
     printf("\n\tAuthor: \tJames Bonfield (jkb@sanger.ac.uk)\n");
     printf("\t        \t2007-2013, Wellcome Trust Sanger Institute\n\n");
 
