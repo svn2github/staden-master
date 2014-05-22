@@ -266,13 +266,19 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 			       int cstart, int cend,
 			       int *moved_left, int *moved_right,
 			       int *fixed_right, HacheTable *pileup) {
-    int i, ins = 0;
     bin_index_t *bin;
-    HacheData hd;
-    int f_a, f_b;
+    int bin_start = INT_MAX;
+    int bin_end   = INT_MIN;
+    int ins       = 0;
+    int i, f_a, f_b;
 
     bin = get_bin(io, bnum);
-    cache_incr(io, bin);
+    if (!bin) return -1;
+    if (!(bin = cache_rw(io, bin)))
+	return -1;
+
+    debug("Raw used range bin %"PRIrec" %d..%d\n",
+    	   bnum, bin->start_used, bin->end_used);
 
     /* Normalise pos for complemented bins */
     if (bin->flags & BIN_COMPLEMENTED) {
@@ -290,327 +296,215 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	f_b = aoffset;
     }
 
-    debug("Raw used range bin %"PRIrec" %d..%d\n",
-    	   bnum, bin->start_used, bin->end_used);
-
-    if (!(bin = cache_rw(io, bin)))
-	return -1;
-
-    /* FIXME: add end_used (or start_used if complemented?) check here,
-     * so we can shortcut looping through the bin if we're inserting beyond
-     * any of the bin contents.
-     */
+    assert(NORM(pos) == apos);
+    debug("Bin %"PRIrec" pos = %d apos = %d\n", bnum, pos, apos);
 
     /* Perform the insert into objects first */
     for (i = 0; bin->rng && i < ArrayMax(bin->rng); i++) {
 	range_t *r = arrp(range_t, bin->rng, i);
-	col_inserted_base *ins_base = NULL;
+	seq_t *s = NULL;
+	int rtype, astart, aend, grow = 0;
 
 	if (r->flags & GRANGE_FLAG_UNUSED)
 	    continue;
 
-	if (pileup && (r->flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISSEQ) {
-	    HacheItem *hi = HacheTableSearch(pileup,
-					     (char *) &r->rec, sizeof(r->rec));
-	    if (hi) {
-		ins_base = (col_inserted_base *) hi->data.p;
-		HacheTableDel(pileup, hi, 0);
+	rtype = r->flags & GRANGE_FLAG_ISMASK;
+
+	debug("Item type %d rec %"PRIrec" %d..%d\n",
+	      rtype, r->rec, r->start, r->end);
+
+	switch (rtype) {
+	case GRANGE_FLAG_ISSEQ: 
+	case GRANGE_FLAG_ISCONS:
+	case GRANGE_FLAG_ISREF: {
+	    col_inserted_base *ins_base = NULL;
+
+	    /* sequences use visible start/end */
+	    s = cache_search(io, GT_Seq, r->rec);
+	    if (!s) {
+		verror(ERR_WARN, "contig_insert_base2",
+		       "failed to load seq #%"PRIrec, r->rec);
+		return -1;
 	    }
-	}
+	    if (ABS(r->end - r->start) + 1 != ABS(s->len)) {
+		verror(ERR_WARN, "contig_insert_base2", 
+		       "Range start/end are inconsistent with seq length "
+		       "for #%"PRIrec, r->rec);
+		return -1;
+	    }
+	    if (s->len < 0) {
+		astart = NMIN(r->end - (s->right-1), r->end - (s->left-1));
+		aend   = NMAX(r->end - (s->right-1), r->end - (s->left-1));
+	    } else {
+		astart = NMIN(r->start + s->left-1, r->start + s->right-1);
+		aend   = NMAX(r->start + s->left-1, r->start + s->right-1);
+	    }
 
-	if (((start_of_contig || ins_base) &&
-	     pos <= MAX(r->start, r->end)+1 &&
-	     pos >= MIN(r->start, r->end)-1)  ||
-	    (!start_of_contig &&
-	     pos <= MAX(r->start, r->end)   &&
-	     pos >= MIN(r->start, r->end))) {
-	    debug("pos overlap obj #%"PRIrec" %d in %d..%d %d\n",
-	    	   r->rec, pos,
-	    	   MIN(r->start, r->end),
-	    	   MAX(r->start, r->end),
-	    	   start_of_contig);
-	    /* Insert */
-	    if ((r->flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISREFPOS &&
-		(r->flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISANNO) {
-		/* ISCONS? skip perhaps as we invalidate them anyway */
-		seq_t *s = cache_search(io, GT_Seq, r->rec);
-		int v_start, v_end; /* Visible start/end wrt. bin */
-		int no_ins;
+	    debug("Seq %"PRIrec" visible abs %d..%d\n", s->rec, astart, aend);
 
-		if (!s) {
-		    verror(ERR_WARN, "contig_insert_base2",
-			   "failed to load seq #%"PRIrec, r->rec);
-		    continue;
-		}
-
-		if (ABS(r->end - r->start) + 1 != ABS(s->len)) {
-		    verror(ERR_WARN, "contig_insert_base2", 
-			   "Range start/end are inconsistent with seq len. ");
-		}
-
-		no_ins = 0;
-		/* Find visible start/end of seq in bin */
-		if (s->len < 0) {
-		    v_start = MIN(r->end - (s->right-1), r->end - (s->left-1));
-		    v_end   = MAX(r->end - (s->right-1), r->end - (s->left-1));
-		} else {
-		    v_start = MIN(r->start + s->left-1, r->start + s->right-1);
-		    v_end   = MAX(r->start + s->left-1, r->start + s->right-1);
-		}
-		if (base) {
-		    if ((pos < v_start + (comp ? 0 : 1)
-			 || pos > v_end - (comp ? 1 : 0)) && !ins_base)
-			no_ins = 1;
-
-		     debug("Rec %"PRIrec" visible %d..%d abs %d..%d\n",
-		    	   r->rec, v_start, v_end,
-		    	   NORM(v_start), NORM(v_end));
-
-		    if (!no_ins) {
-			debug("INS %"PRIrec" at %d base %c\n", r->rec,
-			       pos - MIN(r->start, r->end) + (comp ? 1 : 0),
-			       ins_base ? ins_base->base : base);
-			if (ins_base) {
-			    sequence_insert_bases(io, &s,
-						  pos - MIN(r->start, r->end)
-						  + (comp ? 1 : 0),
-						  ins_base->base,
-						  ins_base->conf,
-						  nbases, 0, comp);
-			} else {
-			    sequence_insert_bases(io, &s,
-						  pos - MIN(r->start, r->end)
-						  + (comp ? 1 : 0),
-						  base, conf,
-						  nbases, 0, comp);
-			}
-			if (hash) {
-			    debug("1 Mov %"PRIrec"\n", r->rec);
-			    hd.i = MAX(NMIN(v_start, v_end), apos);
-			    HacheTableAdd(hash, (char *)&r->rec,
-					  sizeof(r->rec), hd, NULL);
-			}
-			debug("1 %"PRIrec"->end++\n", r->rec);
-			r->end+=nbases;
-			ins = 1;
-			if ((r->flags & GRANGE_FLAG_ISMASK) ==
-			    GRANGE_FLAG_ISSEQ) {
-			    /* The sequence has got nbases longer,
-			       so the right end will have moved */
-			    *moved_right = MAX(NMAX(r->start, r->end),
-					       *moved_right);
-			}
-		    }
-		}
-
-		if (!base || no_ins) {
-		    /* Shift instead.
-		       For uncomplemented bins, need to shift if
-		       v_start >= pos.
-		       For complemented bins, the entire bin will shift
-		       as the parent gets nbases longer.  To keep the
-		       reads to the right in the correct place we need to
-		       shift them if pos < visible end.
-		     */
-		    if (comp ? (pos < v_end) : (v_start >= pos)) {
-			if (hash) {
-			    debug("2 Mov %"PRIrec"\n", r->rec);
-			    hd.i = comp ? INT_MAX : INT_MIN;
-			    HacheTableAdd(hash, (char *)&r->rec,
-					  sizeof(r->rec), hd, NULL);
-			}
-			debug("2 %"PRIrec"->start/end += %d\n", r->rec, nbases);
-			r->start+=nbases;
-			r->end+=nbases;
-			ins = 1;
-			if ((r->flags & GRANGE_FLAG_ISMASK) ==
-			    GRANGE_FLAG_ISSEQ) {
-			    if (comp) {
-				/* The sequence did not move, so
-				   update *fixed_right */
-				*fixed_right = MAX(NMAX(r->start, r->end),
-						   *fixed_right);
-			    } else {
-				/* The sequence moved to the right so
-				   update *moved_left and *moved_right */
-				*moved_left = MIN(NMIN(r->start, r->end),
-						  *moved_left);
-				*moved_right = MAX(NMAX(r->start, r->end),
-						   *moved_right);
-			    }
-			}
-		    } else {
-			if ((r->flags & GRANGE_FLAG_ISMASK) ==
-			    GRANGE_FLAG_ISSEQ) {
-			    if (comp) {
-				/* The sequence moved to the right so
-				   update *moved_left and *moved_right */
-				*moved_left = MIN(NMIN(r->start, r->end),
-						  *moved_left);
-				*moved_right = MAX(NMAX(r->start, r->end),
-						   *moved_right);
-			    } else {
-				/* The sequence did not move, so
-				   update *fixed_right */
-				*fixed_right = MAX(NMAX(r->start, r->end),
-						   *fixed_right);
-			    }
-			}
-		    }
-		}
-	    } else if ((r->flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISANNO) {
-		if (base && !(r->flags & GRANGE_FLAG_TAG_SEQ)) {
-		    debug("anno %"PRIrec" before %d..%d\n",
-		    	   r->rec, r->start, r->end);
-		    if (comp ? (pos < r->end) : (pos <= r->start)) {
-			/* Shift instead of grow if inserting at the left end */
-			r->start += nbases;
-		    }
-		    if (comp ? (pos < r->start) : (pos <= r->end)) {
-			/* Grow if inserting in middle. */
-			r->end+=nbases;
-		    }
-		    debug("anno %"PRIrec" after  %d..%d\n",
-		    	   r->rec, r->start, r->end);
-		    ins = 1;
-		}
-	    } else if ((r->flags & GRANGE_FLAG_ISMASK)== GRANGE_FLAG_ISREFPOS) {
-		/* Overlapping refpos. Move to right. */
-		if (!comp) { /* Complement will move with the bin */
-		    r->start += nbases;
-		    r->end   += nbases;
+	    /* Look for seq record in pileup */
+	    if (pileup && rtype == GRANGE_FLAG_ISSEQ) {
+		HacheItem *hi = HacheTableSearch(pileup, (char *) &r->rec,
+						 sizeof(r->rec));
+		if (hi) {
+		    ins_base = (col_inserted_base *) hi->data.p;
+		    HacheTableDel(pileup, hi, 0);
 		}
 	    }
 	    
-	    bin->flags |= BIN_RANGE_UPDATED;
-
-	} else if (comp ? (pos < r->end) : (r->start >= pos)) {
-	    debug("update non-overlapping obj #%"PRIrec" %d %d..%d\n", 
-	    	   r->rec, pos,
-	    	   r->start, r->end);
-	    if ( (r->flags&GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISANNO) {
-		/* Move */
-		debug("4 %"PRIrec"->start/end += %d\n", r->rec, nbases);
-		r->start+=nbases;
-		r->end+=nbases;
-		ins = 1;
-		bin->flags |= BIN_RANGE_UPDATED;
-
-		if (hash) {
-		    debug("4 Mov %"PRIrec"\n", r->rec);
-		    hd.i = comp ? INT_MAX : INT_MIN;
-		    HacheTableAdd(hash, (char *)&r->rec,
-				  sizeof(r->rec), hd, NULL);
+	    /* Do the insert */
+	    if ((ins_base && apos >= astart && apos <= aend + 1)
+		|| (base && apos > astart && apos <= aend)) {
+		int res;
+		if (ins_base) {
+		    debug("Insert pileup base %c at %d\n",
+			  ins_base->base, pos - r->start + (comp ? 1 : 0));
+		    res = sequence_insert_bases(io, &s,
+						pos - r->start + (comp ? 1 : 0),
+						ins_base->base,
+						ins_base->conf,
+						nbases, 0, comp);
+		} else {
+		    debug("Insert base %c at %d\n",
+			  base, pos - r->start + (comp ? 1 : 0));
+		    res = sequence_insert_bases(io, &s,
+						pos - r->start + (comp ? 1 : 0),
+						base, conf,
+						nbases, 0, comp);
 		}
-	    } else if (!(r->flags & GRANGE_FLAG_TAG_SEQ)) {
-		/* Consensus tag */
-		r->start+=nbases;
-		r->end+=nbases;
-		ins = 1;
-		bin->flags |= BIN_RANGE_UPDATED;
+		if (0 != res) return -1;
+		grow = 1;
 	    }
-	} /* else pos to right of object */
+	    break;
+	}
+	case GRANGE_FLAG_ISANNO:
+	    /* Defer seq annotations to contig_insert_tag2
+	       This is because seqs that move instead of grow need
+	       tags to move along the whole length, not just
+	       the ones to the right of apos. */
+	    if (0 != (r->flags & GRANGE_FLAG_TAG_SEQ)) continue;
+	    /* Fall through */
+	case GRANGE_FLAG_ISUMSEQ:
+	case GRANGE_FLAG_ISREFPOS: {
+	    astart = NMIN(r->start, r->end);
+	    aend   = NMAX(r->start, r->end);
+	    grow   = (GRANGE_FLAG_ISANNO
+		      ? (base && apos > astart && apos <= aend) : 0);
+	    debug("abs %d..%d grow = %d\n", astart, aend, grow);
+	    break;
+	}
+	default:
+	    verror(ERR_WARN, "contig_insert_base2",
+		   "Unknown record type %d found\n", rtype);
+	    continue;
+	}
+
+	/* Update range */
+	if (grow) {
+	    debug("r->end += %d\n", nbases);
+	    r->end += nbases;
+	} else {
+	    if (comp ? (apos > astart) : (apos <= astart)) {
+		debug("r->start += %d; r->end += %d\n", nbases, nbases);
+		r->start += nbases;
+		r->end   += nbases;
+	    }
+	}
+
+	if (rtype == GRANGE_FLAG_ISSEQ) {
+	    /* Update moved_left/right, fixed_right */
+	    if (grow || apos <= astart) { /* Seq moved */
+		if (!grow) {
+		    *moved_left  = MIN(NMIN(r->start, r->end), *moved_left);
+		}
+		*moved_right = MAX(NMAX(r->start, r->end), *moved_right);
+		debug("moved_left = %d moved_right = %d\n",
+		      *moved_left, *moved_right);
+	    } else { /* stayed put */
+		*fixed_right = MAX(NMAX(r->start, r->end), *fixed_right);
+		debug("fixed_right = %d\n", *fixed_right);
+	    }
+
+	    /* Add to hash so contig_insert_tag2 knows which tags to move */
+	    if (hash && (grow || (comp ? (apos > astart) : (apos <= astart)))) {
+		HacheData hd;
+		hd.i = grow ? apos : (comp ? INT_MAX : INT_MIN);
+		if (NULL == HacheTableAdd(hash, (char *)&r->rec,
+					  sizeof(r->rec), hd, NULL)) {
+		    return -1;
+		}
+	    }
+	}
+
+	/* Keep track of bin start / end */
+	if (bin_start > r->start) bin_start = r->start;
+	if (bin_end   < r->end)   bin_end   = r->end;
     }
 
     /* Adjust the bin dimensions */
-    {
-	bin->size+=nbases;
+    bin->size += nbases;
+    if (bin_start != INT_MAX) {
+	debug("Update bin used range to %d..%d\n", bin_start, bin_end);
+	bin->start_used = bin_start;
+	bin->end_used   = bin_end;
 	ins = 1;
-	if (bin->rng && ArrayMax(bin->rng)) {
-	    int start = INT_MAX;
-	    int end   = INT_MIN;
-	    int seq_end   = INT_MIN;
-	    for (i = 0; i < ArrayMax(bin->rng); i++) {
-		range_t *r = arrp(range_t, bin->rng, i);
-	    
-		if (r->flags & GRANGE_FLAG_UNUSED)
-		    continue;
-
-		if (start > r->start)
-		    start = r->start;
-		if (end   < r->end)
-		    end   = r->end;
-
-		if ((r->flags & GRANGE_FLAG_ISMASK) != GRANGE_FLAG_ISSEQ)
-		    continue;
-
-		if (seq_end   < r->end)
-		    seq_end   = r->end;
-	    }
-	    if (start != INT_MAX) {
-		if (seq_end != INT_MIN && NORM(seq_end) > cend) {
-		    // *end_delta = nbases;
-		}
-		bin->start_used = start;
-		bin->end_used = end;
-	    } else {
-		bin->start_used = 0;
-		bin->end_used = 0;
-	    }
-	}
-	bin->flags |= BIN_BIN_UPDATED;
+    } else {
+	debug("Bin empty, set ued range to 0..0\n");
+	bin->start_used = bin->end_used = 0;
     }
+    bin->flags |= BIN_BIN_UPDATED;
 
     /* Recurse */
-    if (bin->child[0] || bin->child[1]) {
+    for (i = 0; i < 2; i++) {
 	bin_index_t *ch = NULL;
+	int astart, aend;
 
-	/* Find the correct child node */
-       	for (i = 0; i < 2; i++) {
-	    if (!bin->child[i])
-		continue;
+	if (!bin->child[i]) continue;
 
-	    ch = get_bin(io, bin->child[i]);
+	ch = get_bin(io, bin->child[i]);
+	if (NULL == ch) {
+	    verror(ERR_WARN, "contig_insert_base2",
+		   "Failed to load bin %"PRIrec, bin->child[i]);
+	    continue;
+	}
+	astart = NMIN(ch->pos, ch->pos + ch->size-1);
+	aend   = NMAX(ch->pos, ch->pos + ch->size-1);
 
-	    /* Using absolute coordinates, measure the impact on contig
-	     * start and end locations.
-	     */
-	    if (ch->nseqs) {
-		if (apos   >  NMAX(ch->pos, ch->pos + ch->size-1) && 
-		    cstart <= NMAX(ch->pos, ch->pos + ch->size-1)) {
-		    // Child entirely to left.
-		    debug("BIN %"PRIrec" entirely left\n", ch->rec);
-		} else if (apos <  NMIN(ch->pos, ch->pos + ch->size-1) &&
-			   cend >= NMIN(ch->pos, ch->pos + ch->size-1)) {
-		    // Child entirely to right
-		    debug("BIN %"PRIrec" entirely right\n", ch->rec);
-		    /* Assumption: at lease one of the seqs in the
-		       child bin has a visible base, so the rightmost
-		       visible base that has moved must be at least at 
-		       NMIN(ch->pos, ch->pos + ch->size-1) */
-		    *moved_right = MAX(NMIN(ch->pos, ch->pos + ch->size-1),
-				       *moved_right);
-		}
-	    }
+	debug("Child bin %"PRIrec" abs %d..%d\n", ch->rec, astart, aend);
 
-	    if (pos >= MIN(ch->pos, ch->pos + ch->size-1) &&
-		pos <= MAX(ch->pos, ch->pos + ch->size-1)) {
-		ins |= contig_insert_base2(io, crec, bin->child[i], pos, apos,
-					   start_of_contig,
-					   MIN(ch->pos, ch->pos + ch->size-1),
-					   NMIN(ch->pos, ch->pos + ch->size-1),
-					   base, conf, nbases, comp, hash,
-					   cstart, cend,
-					   moved_left, moved_right,
-					   fixed_right, pileup);
-		/* Children to the right of this one need pos updating too */
-	    } else if (pos < MIN(ch->pos, ch->pos + ch->size-1)) {
-		ch = get_bin(io, bin->child[i]);
-		if (!(ch = cache_rw(io, ch))) {
-		    cache_decr(io, bin);
-		    return -1;
-		}
+	/* Using absolute coordinates, measure the impact on contig
+	 * start and end locations.
+	 */
 
-		ch->pos+=nbases;
-		if (ch->nseqs)
-		    ins=1;
-		ch->flags |= BIN_BIN_UPDATED;
-	    }
+	if (ch->nseqs && apos < astart && cend >= astart) {
+	    // Child entirely to right
+	    debug("BIN %"PRIrec" entirely right\n", ch->rec);
+	    /* The rightmost seq that has moved must be
+	       at least at astart */
+	    *moved_right = MAX(astart, *moved_right);
+	}
+
+	if (apos >= astart && apos <= aend) {
+	    /* Go into overlapping child bin */
+	    ins |= contig_insert_base2(io, crec, bin->child[i], pos, apos,
+				       start_of_contig,
+				       MIN(ch->pos, ch->pos + ch->size-1),
+				       astart,
+				       base, conf, nbases, comp, hash,
+				       cstart, cend,
+				       moved_left, moved_right,
+				       fixed_right, pileup);
+	    if (ins < 0) return -1;
+	} else if (pos < MIN(ch->pos, ch->pos + ch->size-1)) {
+	    /* Child is to the right (parent uncomplemented), or
+	       left (parent complemented) so need to update pos */
+	    if (NULL == (ch = cache_rw(io, ch))) return -1;
+	    debug("Child bin %"PRIrec" ch->pos += %d\n", ch->rec, nbases);
+	    ch->pos += nbases;
+	    if (ch->nseqs) ins = 1;
+	    ch->flags |= BIN_BIN_UPDATED;
 	}
     }
-
-    cache_decr(io, bin);
-
     return ins;
 }
 
