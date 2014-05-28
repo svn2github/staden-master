@@ -1906,7 +1906,7 @@ proc editor_undo_info {top {clear 0}} {
 
     upvar \#0 contigIO_$crec cio
 
-    if {$clear || ![info exists cio(Undo)] || $cio(Undo) == ""} {
+    if {$clear || ![info exists cio(Undo)] || [llength [set cio(Undo)]] == 0} {
 	set opt(Status) ""
 	return
     }
