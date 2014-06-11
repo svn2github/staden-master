@@ -157,7 +157,6 @@ GAP5=\
 
 GAP5_LIBS=\
 	$(IOLIB_LIB) \
-	$(SEQUTILS_LIB) \
 	$(TKUTILS_LIB) \
 	$(ZLIB_LIB) \
 	$(LZMA_LIB) \
@@ -184,14 +183,7 @@ TG_IND_OBJ = \
 
 TGILIBS = \
 	$(GAP5_LIB) \
-	$(P3_LIB) \
-	$(ZLIB_LIB) \
-	$(LZMA_LIB) \
-	$(TKUTILS_LIB) \
-	$(SEQUTILS_LIB) \
-	$(TK_LIB) \
-	$(MISC_LIB) \
-	$(IOLIB_LIB)
+	$(GAP5_LIBS)
 
 tg_index.bin: $(TG_IND_OBJ) $(L)/$(SHLIB_PREFIX)$(LIBS)$(SHLIB_SUFFIX)
 	$(CLD) $(LDEXEFLAG)$@$(EXE_SUFFIX) $(TG_IND_OBJ) $(TGILIBS) $(LIBSC)
