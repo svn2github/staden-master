@@ -120,9 +120,7 @@ int init_globals(Tcl_Interp *interp) {
     set_char_set(1);    /* 1 == DNA */
     set_dna_lookup(); 	/* general lookup and complementing */
     set_iubc_lookup();	/* iubc codes for restriction enzymes */
-#if 0
     set_mask_lookup();  /* used to mask/mark consensus */
-#endif
     init_genetic_code();
 #if 0
     inits_();		/* fortran stuff */

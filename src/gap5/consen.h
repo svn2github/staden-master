@@ -141,7 +141,7 @@ void maskc_ (char *seq, f_int *seq_len, f_int *jobin, f_implicit seq_l);
        covered by several tags that appear on the list, but it is the
        simplest thing to do.
        */
-int mask_consensus(GapIO *io, char *consensus, int contig, int lreg, int rreg, 
+int mask_consensus(GapIO *io, char *consensus, tg_rec crec, int lreg, int rreg, 
 		   int job);
 
 

@@ -562,6 +562,87 @@ proc Strip_Pads {cons qual new_cons_var new_qual_var} {
     }
 }
 
+# Applies map to $str over the (start,end) tuples in $pos.
+# Assumes the positions are sorted by start coordinate.
+#
+# This has linear complexity, unlike simply modifying and returning the
+# full str every time.
+proc map_str {str map pos} {
+    set last 0
+    set new_str ""
+    foreach {start end} $pos {
+	if {$end < $last} continue
+	if {$start > $last} {
+	    append new_str [string range $str $last [expr {$start-1}]]
+	} else {
+	    set start $last
+	}
+	set sub [string range $str $start $end]
+	append new_str [string map $map $sub]
+	set last [expr {$end+1}]
+    }
+    append new_str [string range $str $last [string length $str]]
+    return $new_str
+}
+
+# Masks (defi) or marks (acgt) consensus using the tags array
+proc mask_consensus {io crec start end cons tags mask} {
+    if {$tags != "*"} {
+	foreach t $tags {
+	    if {[scan $t "%c%c%c%c" a b c d] != 4} {
+		puts stderr "Badly formatted tag type '$t'"
+		continue
+	    }
+	    set id [expr {($a<<24)+($b<<16)+($c<<8)+$d}]
+	    set filter($id) 1
+	}
+    }
+
+    set c [$io get_contig $crec]
+
+    if {$mask == "mask"} {
+	set map {A d C e G f T i N n}
+    } elseif {$mask == "mark"} {
+	set map {A a C c G g T t N n}
+    } elseif {$mask == "" || $mask == "none"} {
+	return $cons
+    } else {
+	if {[string length $mask] == 1} {
+	    set m $mask$mask$mask$mask$mask
+	} else {
+	    set m ${mask}nnnnn
+	}
+	set map [list \
+		     A [string index $m 0] \
+		     C [string index $m 1] \
+		     G [string index $m 2] \
+		     T [string index $m 3] \
+		     N [string index $m 4]]
+    }
+
+    set pos_list {}
+    foreach anno [$c anno_in_range $start $end] {	
+	set t [lindex $anno 3]
+	set t [format "%c%c%c%c" \
+		   [expr {($t>>24)&0xff}] \
+		   [expr {($t>>16)&0xff}] \
+		   [expr {($t>> 8)&0xff}] \
+		   [expr {($t>> 0)&0xff}]]
+	if {$tags != "*" && ![info exists filter([lindex $anno 3])]} continue
+
+	foreach {tag_st tag_en} $anno break
+	if {$tag_st < $start} {set tag_st $start}
+	if {$tag_en > $end}   {set tag_en $end}
+	incr tag_st [expr {-($start)}]
+	incr tag_en [expr {-($start)}]
+	lappend pos_list $tag_st $tag_en
+    }
+
+    $c delete
+
+    return [map_str $cons $map $pos_list]
+}
+
 proc get_consensus {args} {
     foreach {key value} $args {
 	set opt($key) $value
@@ -591,6 +672,12 @@ proc get_consensus {args} {
 	    $c delete
 
 	    set cons [calc_consensus -io $io -contigs "{=$crec $start $end}"]
+	    if {[info exists opt(-mask)] && $opt(-mask) != "none" && \
+		    $opt(-mask) != "" && [info exists opt(-tag_types)] && \
+		    $opt(-tag_types) != ""} {
+		set cons [mask_consensus $io $crec $start $end \
+			      $cons $opt(-tag_types) $opt(-mask)]
+	    }
 	    switch $opt(-format) {
 		1 {
 		    # Fastq

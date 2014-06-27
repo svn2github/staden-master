@@ -35,6 +35,7 @@
 #include <unistd.h>
 #include "io_utils.h"
 #include <io_lib/expFileIO.h>
+#include <io_lib/hash_table.h>
 #include "misc.h"
 #include "consen.h"
 #include "consensus.h"
@@ -307,138 +308,54 @@ void maskit ( char *seq, int seq_length, int job) {
 }
 
 /****************************************************************************/
-#if 0
-int mask_consensus(GapIO *io, char *consensus, int contig, int lreg, int rreg, 
+int mask_consensus(GapIO *io, char *consensus, tg_rec crec, int lreg, int rreg, 
 		   int job) {
-    GAnnotations *ap;
-    GContigs c;
-    GReadings r;
-    int gel;
     extern char **active_tag_types;
     extern int number_of_active_tags;
-
-    /* Routine to mask regions of a consensus	*/
-
-    /* *consensus		the consensus
-       *active_tag_types	the list of tag types
-       number_of_active_tags	the number of tag types in the list
-       lreg, rreg		the start and end points for the consensus
-                                note consensus[0] corresponds to lreg
-                                and  consensus[rreg-lreg] to rreg
-
-       Deal with tags on the consensus (send -contig to vtagget) and on
-       the individual reads. Mask_job = 1, mark_job = 2;
-       Masking and marking are done by changing the bases to new character sets.
-       The algorithm may mask the same bases several times if they are
-       covered by several tags that appear on the list, but it is the
-       simplest thing to do.
-       */
+    contig_iterator *ci;
+    rangec_t *r;
+    HashTable *h;
+    int i;
 
     /* Is there anything to do ? */
-
     if ( number_of_active_tags == 0 )
 	return 0;
 
-    /* init */
-
-    if (0 != contig_read(io, contig, c))
-	return -1;
-
-    if (!lreg)
-	lreg = 1;
-    if (!rreg)
-	rreg= c.length;
-    
-    /* do the tags on readings first	*/
-
-    gel = c.left;
-
-    while (gel) {
-	gel_read(io, gel, r);
-
-	if ( r.position <= rreg ) {
-	    /* init vtagget() */
-	    ap = vtagget(io, gel, number_of_active_tags, active_tag_types);
-
-
-	    while (ap && ap != (GAnnotations *)-1) {
-		int e;
-
-		/* Normalise tags if necessary */
-		if (r.sense)
-		    ap->position = r.length - ap->position - ap->length + 2;
-
-		/* 100% cutoff data - reject tag */
-		if (ap->position + ap->length - 1 <= r.start ||
-		    ap->position >= r.end)
-		    goto next;
-
-		/* overlap cutoff with used - clip appropriately */
-		if (ap->position <= r.start) {
-		    ap->length   -= r.start - ap->position + 1;
-		    ap->position += r.start - ap->position + 1;
-		}
-
-		e = r.position - r.start + ap->position - 1;
-
-		if ((e + ap->length > lreg) && ( e <= rreg ) ) {
-		    if (e < lreg) {
-			ap->length -= lreg-e;
-			e = lreg;
-		    }
-
-		    if (e <= rreg && e + ap->length - 1 > rreg) {
-			ap->length = rreg - e + 1;
-		    }
-
-		    e = e - lreg + 1;
-		    (void) maskit ( &consensus[e-1], ap->length, job);
-
-		}
-
-	    next:
-		ap = vtagget(io, 0, number_of_active_tags, active_tag_types);
-	    }
-	}
-	gel = r.right;
+    h = HashTableCreate(16, HASH_DYNAMIC_SIZE);
+    for (i = 0; i < number_of_active_tags; i++) {
+	HashData hd = {0};
+	uint32_t type = str2type(active_tag_types[i]);
+	HashTableAdd(h, (char *)&type, 4, hd, NULL);
     }
 
+    ci = contig_iter_new_by_type(io, crec, 0, CITER_FIRST | CITER_ISTART,
+                                 lreg, rreg, GRANGE_FLAG_ISANNO);
+    if (!ci)
+        return -1;
 
-    /* now do the tags on the consensus	*/
+    while ((r = contig_iter_next(io, ci))) {
+	int st, en;
 
+	/* FIXME: deal with consensus vs reading tags, cons only to start with? */
+	if (r->flags & GRANGE_FLAG_TAG_SEQ)
+	    continue;
 
-	/* init vtagget() */
+	/* FIXME: deal with cutoff data, but only needed for seq tags. */
 
-    gel = -contig;
+	/* Check type, disgustingly it's r->mqual for tags */
+	if (!HashTableSearch(h, (char *)&r->mqual, 4))
+	    continue;
 
-    ap = vtagget(io, gel, number_of_active_tags, active_tag_types);
-
-    while (ap && ap != (GAnnotations *)-1 && ap->position <= rreg) {
-	int e;
-
-	e = ap->position;
-	    
-	if (e + ap->length >= lreg) {
-	    if (e < lreg) {
-		ap->length -= lreg-e;
-		e = lreg;
-	    }
-
-	    if (e <= rreg && e + ap->length - 1 > rreg) {
-		ap->length = e + ap->length - 1 - rreg;
-	    }
-	    
-	    (void) maskit ( &consensus[e-1], ap->length, job);
-
-	}
-
-	ap = vtagget(io, 0, number_of_active_tags, active_tag_types);
-
+	st = MAX(0, r->start-lreg);
+	en = MIN(rreg-lreg, r->end-lreg);
+	maskit(&consensus[st], en-st+1, job);
     }
+
+    contig_iter_del(ci);
+    HashTableDestroy(h, 0);
+
     return 0;
-
 }
-#endif
 
 /****************************************************************************/
 
@@ -1619,7 +1536,7 @@ int make_consensus( int task_mask, GapIO *io,
 	    contig_list[i].contig_right_extension = right_extension;
 
 	}
-#if 0
+
 	if ( task_mask & MASKING ) {
 /*	    printf("do masking\n");*/
             if ( mask_consensus(io, 
@@ -1645,7 +1562,7 @@ int make_consensus( int task_mask, GapIO *io,
 		return -2;
 	    }
 	}
-#endif
+
 	/* note the element number of the last base each contig */
 
 	contig_list[i].contig_end_offset = *consensus_length - consensus_start - 1;

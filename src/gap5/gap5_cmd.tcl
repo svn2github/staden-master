@@ -214,6 +214,8 @@ set ::cmd::consensus::opts {
     contigs    1 {*}      list     {Output only specific contigs. 'list' is a space separated list of contig names}
     f|format     1 fastq    {fmt}    {Controls the output format. 'fmt' should fasta or fastq.}
     strip_pads 0 0        {}       {Removes padding characters.}
+    mask       1 {}       mode     {Apply 'mode' "mask" (ACGTN->'mask') on 'tag_types'. E.g. -mask acgtn or -mask N}
+    tag_types  1 {REPT}   list     {Consensus tags types to mask out.}
     o|out        1 "cons.*" filename {Where to write output. Suffix defaults to 'fmt'.}
 }
 
@@ -230,6 +232,8 @@ proc ::cmd::consensus::run {dbname _options} {
 
     if {[catch {get_consensus \
 		    -io $io \
+		    -tag_types $opt(tag_types) \
+		    -mask $opt(mask) \
 		    -contigs $opt(contigs) \
 		    -format $format \
 		    -strip_pads $opt(strip_pads) \
