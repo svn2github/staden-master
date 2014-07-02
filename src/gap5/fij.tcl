@@ -143,6 +143,31 @@ proc FIJDialog { w io } {
     pack $f.hidden.options -side top -anchor w
 
 
+    #--- select mode
+    SetDefaultTags FIJ.TAGS
+
+    labelframe $f.sel_mode -text "Consensus masking"
+    button $f.sel_mode.but \
+	    -text "Select tags" \
+	    -command "TagDialog FIJ.TAGS $f[keylget gap5_defs SELECT_TAGS.WIN] {}"
+
+    radiolist $f.sel_mode.l \
+	    -bd 0 \
+            -title "Remove tagged sequence" \
+	    -orient horizontal \
+	    -default [keylget gap5_defs FIJ.SELMODE.VALUE]\
+	    -buttons [format {
+		{None -command { %s configure -state disabled}} \
+		{Mark -command { %s configure -state normal; \
+		                SetDefaultTags %s } } \
+		{Mask -command { %s configure -state normal; \
+				SetDefaultTags %s } } } \
+	    [list $f.sel_mode.but] \
+	    [list $f.sel_mode.but] FIJ.TAGS \
+	    [list $f.sel_mode.but] FIJ.TAGS ]
+    pack $f.sel_mode.l -side top -fill x
+    pack $f.sel_mode.but -side top -anchor w
+
     #---- select word length
     set st [keylget gap5_defs FIJ.WORDLENGTH]
     set b1 [keylget st BUTTON.1]
@@ -255,6 +280,7 @@ proc FIJDialog { w io } {
     pack $f.blocks -fill x
     pack $f.location -fill x
     pack $f.hidden -fill x
+    pack $f.sel_mode -fill x
     pack $f.padding1
     pack $f.s -fill x
     pack $f.padding2
@@ -399,41 +425,13 @@ proc FIJDialog { w io } {
     pack $f.rp -fill x
 
 
-#    ###########################################################################
-#    #select mode
-#    SetDefaultTags FIJ.TAGS
-#
-#    set sm [keylget gap5_defs FIJ.SELMODE]
-#    set b1 [keylget sm BUTTON.1]
-#    set b2 [keylget sm BUTTON.2]
-#    set b3 [keylget sm BUTTON.3]
-#    frame $f.sel_mode -bd 2 -relief groove
-#    button $f.sel_mode.but \
-#	    -text "Select tags" \
-#	    -command "TagDialog FIJ.TAGS $f[keylget gap5_defs SELECT_TAGS.WIN] \
-#			{}"
-#
-#    radiolist $f.sel_mode.rl \
-#	    -title [keylget sm NAME] \
-#	    -default [keylget sm VALUE]\
-#	    -buttons [format { \
-#	    {%s -command { %s configure -state disabled}} \
-#	    { %s -command { %s configure -state normal; \
-#	    SetDefaultTags %s }} \
-#	    { %s -command { %s configure -state normal; \
-#	    SetDefaultTags %s } } } \
-#	    [list $b1] [list $f.sel_mode.but] \
-#	    [list $b2] [list $f.sel_mode.but] FIJ.TAGS \
-#	    [list $b3] [list $f.sel_mode.but] FIJ.TAGS ]
-#    pack $f.sel_mode.rl -side left
-#    pack $f.sel_mode.but -side right
-
     ###########################################################################
     #OK and Cancel buttons
     okcancelhelp $w.ok_cancel \
 	-ok_command "FIJ_OK_Pressed $w $io $w.ops \
                     $f_i.l1.infile1 $f_i.l1.id1 $f_i.l2.infile2 $f_i.l2.id2 \
-                    $f_s.word_length $f_s.blocks $f_s.location $f_f.rp.mode" \
+                    $f_s.word_length $f_s.blocks $f_s.location $f_s.sel_mode.l\
+                    $f_f.rp.mode" \
 	-cancel_command "destroy $w" \
 	-help_command "show_help gap5 {FIJ-Dialogue}" \
 	-bd 2 \
@@ -476,7 +474,7 @@ proc FIJ_config_contig_ids { f id { state unchanged } } {
 
 ###########################################################################
 proc FIJ_OK_Pressed { f io aname infile1 id1 infile2 id2 
-		      word_length blocks location rp_mode } {
+		      word_length blocks location sel_mode rp_mode } {
     
     global CurContig
     global LREG
@@ -540,6 +538,12 @@ proc FIJ_OK_Pressed { f io aname infile1 id1 infile2 id2
 
     set ends         [expr {[radiolist_get $location]&1}]
     set containments [expr {([radiolist_get $location]&2)==2}]
+    set masking      [radiolist_get $sel_mode]
+    if {($masking == 2) || ($masking == 3)} {
+        set active_tags [GetDefaultTags FIJ.TAGS]
+    } else {
+	set active_tags {}
+    }
 
     if {$data(use_filter) == 0} {
 	set filter_words 0
@@ -558,6 +562,8 @@ proc FIJ_OK_Pressed { f io aname infile1 id1 infile2 id2
 
     SetBusy
     set id [log_call find_internal_joins \
+		-mask [lindex {"" none mark mask} $masking] \
+		-tag_types $active_tags \
 		-io            $io \
 		-min_overlap   $data(min_overlap) \
 		-max_overlap   $data(max_overlap) \
