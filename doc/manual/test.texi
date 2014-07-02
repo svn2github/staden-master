@@ -1,0 +1,119 @@
+\input epsf     % -*-texinfo-*-
+\input texinfo
+
+include(header.m4)
+
+@node Top
+@chapter Top
+
+@display
+display
+example
+ with multiple
+  spaced @image{gap5_template_by_stacking,2in}
+    text
+@end display
+
+
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+
+@table @asis
+@item By size: _picture(gap5_template_by_size,2in)
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+
+@item @image{gap5_template_by_stacking,2in}
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+@end table
+
+
+@multitable @columnfractions .2 .4 .4
+@item By template size By template size By template size By template size
+@tab @image{gap5_template_by_size,2in}
+@tab blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+
+@item By stacking By stacking By stacking By stacking
+@tab @image{gap5_template_by_stacking,2in}
+@tab Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+Text text text text
+@end multitable
+
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+blah blah blah blah
+
+@bye

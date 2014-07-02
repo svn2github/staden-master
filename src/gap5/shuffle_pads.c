@@ -95,7 +95,7 @@ static int common_word_L(int *counts, char *seq, int len);
 static int common_word_R(int *counts, char *seq, int len);
 int *find_adapter(GapIO *io, int ncontigs, contig_list_t *contigs);
 int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
-		       HashTable *h_clips);
+		       HashTable *h_clips, int set_to_old);
 
 /* Returns depadded 'pos' in s */
 static int depad_clip(seq_t *s, int pos) {
@@ -1914,6 +1914,16 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 	    vmessage("Initial score %"PRId64"\n", orig_score);
 	    if (flush)
 		UpdateTextOutput();
+
+	    // HACK! Try with an alternative pad scoring algorithm.
+	    //
+	    // gap_extend is abused as a flag in scale_malign_scores to
+	    // switch between sinh and log based scoring transforms.
+	    //
+	    //FIXME: evaluate which order is best.
+	    malign->gap_extend = 0;
+	    scale_malign_scores(malign, malign->start, malign->end);
+
 	    //print_malign(malign);
 	    do {
 		old_score = new_score;
@@ -1926,8 +1936,8 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 		    UpdateTextOutput();
 	    } while (new_score < old_score);
 
-	    // HACK! Try with an alternative pad scoring algorithm.
-	    malign->gap_extend = 0;
+	    // Second try; this time with sinh table.
+	    malign->gap_extend = -7;
 	    scale_malign_scores(malign, malign->start, malign->end);
 
 	    do {
@@ -1991,7 +2001,14 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 				   cl.contig,
 				   cl.start,
 				   cl.end,
-				   h_clips);
+				   h_clips,
+				   1);
+		rewrite_soft_clips(io,
+				   cl.contig,
+				   cl.start,
+				   cl.end,
+				   h_clips,
+				   0);
 		HashTableDestroy(h_clips, 1);
 	    }
 
@@ -2526,7 +2543,7 @@ HashTable *concordant_soft_clips(GapIO *io, tg_rec crec, int start, int end,
  *        -1 on failure
  */
 int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
-		       HashTable *h_clips) {
+		       HashTable *h_clips, int set_to_old) {
     contig_iterator *citer;
     rangec_t *r;
     int i;
@@ -2551,6 +2568,9 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
      * not include places that have only become heterozygous due to adjusting
      * the soft-clips.
      */
+    if (!set_to_old)
+	goto skip_reset;
+
     citer = contig_iter_new(io, crec, 0, CITER_FIRST, start, end);
     while ((r = contig_iter_next(io, citer))) {
 	seq_t *sorig;
@@ -2580,6 +2600,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
     contig_iter_del(citer);
 
     /* Now compute the consensus and rescan */
+ skip_reset:
     calculate_consensus(io, crec, start, end, cons);
 
     citer = contig_iter_new(io, crec, 0, CITER_FIRST, start, end);
@@ -2610,7 +2631,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 			best_i = i+1;
 		    }
 		} else {
-		    if ((score -= 5) <= -6)
+		    if ((score -= 5) <= -20)
 			break;
 		}
 		//printf("-%4d %7d: %c %c\n",
@@ -2635,7 +2656,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 			best_i = i+1;
 		    }
 		} else {
-		    if ((score -= 5) <= -6)
+		    if ((score -= 5) <= -20)
 			break;
 		}
 		//printf("+%4d %7d: %c %c\n", i, r->start + i,
@@ -2677,7 +2698,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 			best_i = i+1;
 		    }
 		} else {
-		    if ((score -= 3) <= -6)
+		    if ((score -= 5) <= -20)
 			break;
 		}
 		//printf("-%4d %7d: %c %c %d\n",
@@ -2702,7 +2723,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 			best_i = i+1;
 		    }
 		} else {
-		    if ((score -= 3) <= -6)
+		    if ((score -= 5) <= -20)
 			break;
 		}
 		//printf("+%4d %7d: %c %c %d\n", i, r->start + i,

@@ -701,93 +701,53 @@ void scale_malign_scores(MALIGN *malign, int start, int end) {
 #define OFF 32
 
   // Our cached non-linear transformation
-  static int T1[129] = {0}, T2[129] = {0};
+  static int T1[130] = {0}, T2[130] = {0};
+  int *t2;
   if (T1[10] == 0) {
       for (i = 0; i <= 128; i++) {
 	  T1[i] = 128*(sinh(6*(128-i)/128.0-3)/10.02+1)/2;
-	  T2[i] = 28*(4.853-log(i+1));
+	  T2[i] = 28*(4.853-log(i));
       }
   }
 
-  if (malign->gap_extend) {
-      for(i=start;i<=end;i++) {
-	  double t = 0;
+  t2 = malign->gap_extend ? T1 : T2;
+  for(i=start;i<=end;i++) {
+      double t = 0;
 
-	  t += malign->counts[i-st][0];
-	  t += malign->counts[i-st][1];
-	  t += malign->counts[i-st][2];
-	  t += malign->counts[i-st][3];
-	  t += malign->counts[i-st][4];
-	  t += malign->counts[i-st][6];
+      t += malign->counts[i-st][0];
+      t += malign->counts[i-st][1];
+      t += malign->counts[i-st][2];
+      t += malign->counts[i-st][3];
+      t += malign->counts[i-st][4];
+      t += malign->counts[i-st][5];
 
-	  if (t > 0) {
-	      t = 128/t;
-	      malign->scores[i-st][0] =
-		  T1[(int)(malign->counts[i-st][0]*t)] - OFF;
-	      malign->scores[i-st][1] =
-		  T1[(int)(malign->counts[i-st][1]*t)] - OFF;
-	      malign->scores[i-st][2] =
-		  T1[(int)(malign->counts[i-st][2]*t)] - OFF;
-	      malign->scores[i-st][3] =
-		  T1[(int)(malign->counts[i-st][3]*t)] - OFF;
-	      malign->scores[i-st][4] =
-		  T1[(int)(malign->counts[i-st][4]*t)] - OFF;
-	      malign->scores[i-st][5] =
-		  T1[(int)(malign->counts[i-st][5]*t)] - OFF;
+      if (t > 0) {
+	  t = 128/t;
+	  malign->scores[i-st][0] =
+	      T1[(int)(malign->counts[i-st][0]*t)+1] - OFF;
+	  malign->scores[i-st][1] =
+	      T1[(int)(malign->counts[i-st][1]*t)+1] - OFF;
+	  malign->scores[i-st][2] =
+	      T1[(int)(malign->counts[i-st][2]*t)+1] - OFF;
+	  malign->scores[i-st][3] =
+	      T1[(int)(malign->counts[i-st][3]*t)+1] - OFF;
+	  malign->scores[i-st][4] =
+	      t2[(int)(malign->counts[i-st][4]*t)+1] - OFF;
+	  malign->scores[i-st][5] =
+	      T1[(int)(malign->counts[i-st][5]*t)+1] - OFF;
 
-	      /* Penalty for gaps is marginally higher */
-	      malign->scores[i-st][4]+=OFF+1;
+	  /* Penalty for gaps is marginally higher */
+	  malign->scores[i-st][4]+=OFF+1;
 
-	      /* Seq against N in cons is to be deterred */
-	      malign->scores[i-st][5]=GAPM-1;
-	  } else {
-	      malign->scores[i-st][0] = 0;
-	      malign->scores[i-st][1] = 0;
-	      malign->scores[i-st][2] = 0;
-	      malign->scores[i-st][3] = 0;
-	      malign->scores[i-st][4] = GAPM;
-	      malign->scores[i-st][5] = GAPM-1;
-	  }
-      }
-  } else {
-      for(i=start;i<=end;i++) {
-	  double t = 0;
-
-	  t += malign->counts[i-st][0];
-	  t += malign->counts[i-st][1];
-	  t += malign->counts[i-st][2];
-	  t += malign->counts[i-st][3];
-	  t += malign->counts[i-st][4];
-	  t += malign->counts[i-st][6];
-
-	  if (t > 0) {
-	      t = 128/t;
-	      malign->scores[i-st][0] =
-		  T1[(int)(malign->counts[i-st][0]*t)] - OFF;
-	      malign->scores[i-st][1] =
-		  T1[(int)(malign->counts[i-st][1]*t)] - OFF;
-	      malign->scores[i-st][2] =
-		  T1[(int)(malign->counts[i-st][2]*t)] - OFF;
-	      malign->scores[i-st][3] =
-		  T1[(int)(malign->counts[i-st][3]*t)] - OFF;
-	      malign->scores[i-st][4] =
-		  T2[(int)(malign->counts[i-st][4]*t)] - OFF;
-	      malign->scores[i-st][5] =
-		  T1[(int)(malign->counts[i-st][5]*t)] - OFF;
-
-	      /* Penalty for gaps is marginally higher */
-	      malign->scores[i-st][4]+=OFF+1;
-
-	      /* Seq against N in cons is to be deterred */
-	      malign->scores[i-st][5]=GAPM-1;
-	  } else {
-	      malign->scores[i-st][0] = 0;
-	      malign->scores[i-st][1] = 0;
-	      malign->scores[i-st][2] = 0;
-	      malign->scores[i-st][3] = 0;
-	      malign->scores[i-st][4] = GAPM;
-	      malign->scores[i-st][5] = GAPM-1;
-	  }
+	  /* Seq against N in cons is to be deterred */
+	  malign->scores[i-st][5]=GAPM-1;
+      } else {
+	  malign->scores[i-st][0] = 0;
+	  malign->scores[i-st][1] = 0;
+	  malign->scores[i-st][2] = 0;
+	  malign->scores[i-st][3] = 0;
+	  malign->scores[i-st][4] = GAPM;
+	  malign->scores[i-st][5] = GAPM-1;
       }
   }
 

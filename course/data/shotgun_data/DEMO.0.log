@@ -29,3 +29,218 @@ Tue 07 Aug 10:11:01 2001 [5776] > Deregister id=1 cnum=1: Contig selector
 Tue 07 Aug 10:11:01 2001 [5776] close database
 Tue 07 Aug 10:11:01 2001 [5776] closing...
 Tue 07 Aug 10:11:02 2001 [5776] ...closed
+Wed 10 Mar 11:17:45 2010 [5250@seq1l] opening ro... by jkb(205)
+Wed 10 Mar 11:17:45 2010 [5250@seq1l] ...opened
+Wed 10 Mar 11:17:46 2010 [5250@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc70090 :Contig selector
+Wed 10 Mar 11:17:46 2010 [5250@seq1l] Database information
+Wed 10 Mar 11:18:09 2010 [5250@seq1l] edit contig
+Wed 10 Mar 11:18:09 2010 [5250@seq1l] > Register id=2 cnum=1 func=0x2aaaad0e26ef data=0xcda860 :Contig editor @ =1
+Wed 10 Mar 11:18:15 2010 [5250@seq1l] Program terminated unexpectedly with signal 5249584.
+Wed 10 Mar 11:18:57 2010 [5277@seq1l] opening rw... by jkb(205)
+Wed 10 Mar 11:18:57 2010 [5277@seq1l] ...opened
+Wed 10 Mar 11:18:57 2010 [5277@seq1l] check database
+Wed 10 Mar 11:18:57 2010 [5277@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc7fef0 :Contig selector
+Wed 10 Mar 11:18:57 2010 [5277@seq1l] Database information
+Wed 10 Mar 11:18:59 2010 [5277@seq1l] edit contig
+Wed 10 Mar 11:19:00 2010 [5277@seq1l] > Register id=2 cnum=5 func=0x2aaaad0e26ef data=0xd74f40 :Contig editor @ =5
+Wed 10 Mar 11:22:36 2010 [5277@seq1l] > Deregister id=2 cnum=5 func=0x2aaaad0e26ef data=0xd74f40 :Contig editor @ 73
+Wed 10 Mar 11:22:38 2010 [5277@seq1l] > Deregister id=1 cnum=1 func=0x2aaaad080a18 data=0xc7fef0 :Contig selector
+Wed 10 Mar 11:22:38 2010 [5277@seq1l] close database
+Wed 10 Mar 11:22:38 2010 [5277@seq1l] closing...
+Wed 10 Mar 11:22:38 2010 [5277@seq1l] ...closed
+Wed 10 Mar 11:26:46 2010 [5320@seq1l] opening rw... by jkb(205)
+Wed 10 Mar 11:26:46 2010 [5320@seq1l] ...opened
+Wed 10 Mar 11:26:47 2010 [5320@seq1l] check database
+Wed 10 Mar 11:26:47 2010 [5320@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc7bff0 :Contig selector
+Wed 10 Mar 11:26:47 2010 [5320@seq1l] Database information
+Wed 10 Mar 11:26:51 2010 [5320@seq1l] Program terminated unexpectedly with signal 5249584.
+Wed 10 Mar 11:26:56 2010 [5333@seq1l] opening rw... by jkb(205)
+Wed 10 Mar 11:26:56 2010 [5333@seq1l] ...opened
+Wed 10 Mar 11:26:56 2010 [5333@seq1l] check database
+Wed 10 Mar 11:26:56 2010 [5333@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc80020 :Contig selector
+Wed 10 Mar 11:26:56 2010 [5333@seq1l] Database information
+Wed 10 Mar 11:26:59 2010 [5333@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:23:39 2010 [20021@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:23:39 2010 [20021@seq1l] ...opened
+Thu 11 Mar 09:23:41 2010 [20021@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc73e50 :Contig selector
+Thu 11 Mar 09:23:41 2010 [20021@seq1l] Database information
+Thu 11 Mar 09:23:43 2010 [20021@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:23:56 2010 [20038@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:23:56 2010 [20038@seq1l] ...opened
+Thu 11 Mar 09:23:57 2010 [20038@seq1l] > Register id=1 cnum=1 func=0x2aaaad4da260 data=0x97a880 :Contig selector
+Thu 11 Mar 09:23:57 2010 [20038@seq1l] Database information
+Thu 11 Mar 09:24:00 2010 [20038@seq1l] > Register id=2 cnum=0 func=0x2aaaad4aaff0 data=0xa9b480 :
+Thu 11 Mar 09:25:30 2010 [20068@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:25:30 2010 [20068@seq1l] ...opened
+Thu 11 Mar 09:25:30 2010 [20068@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc77c90 :Contig selector
+Thu 11 Mar 09:25:30 2010 [20068@seq1l] Database information
+Thu 11 Mar 09:25:33 2010 [20068@seq1l] > Register id=2 cnum=0 func=0x2aaaad03c6f0 data=0x55a6a0 :
+Thu 11 Mar 09:29:56 2010 [20038@seq1l] > Deregister id=2 cnum=0 func=0x2aaaad4aaff0 data=0xa9b480 :
+Thu 11 Mar 09:30:11 2010 [20068@seq1l] > Deregister id=2 cnum=0 func=0x2aaaad03c6f0 data=0x55a6a0 :
+Thu 11 Mar 09:30:12 2010 [20068@seq1l] > Deregister id=1 cnum=1 func=0x2aaaad080a18 data=0xc77c90 :Contig selector
+Thu 11 Mar 09:30:12 2010 [20068@seq1l] close database
+Thu 11 Mar 09:30:12 2010 [20068@seq1l] closing...
+Thu 11 Mar 09:30:12 2010 [20068@seq1l] ...closed
+Thu 11 Mar 09:30:14 2010 [20038@seq1l] > Deregister id=1 cnum=1 func=0x2aaaad4da260 data=0x97a880 :Contig selector
+Thu 11 Mar 09:30:14 2010 [20038@seq1l] close database
+Thu 11 Mar 09:30:14 2010 [20038@seq1l] closing...
+Thu 11 Mar 09:30:14 2010 [20038@seq1l] ...closed
+Thu 11 Mar 09:30:20 2010 [20126@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:30:20 2010 [20126@seq1l] ...opened
+Thu 11 Mar 09:30:21 2010 [20126@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc73f30 :Contig selector
+Thu 11 Mar 09:30:21 2010 [20126@seq1l] Database information
+Thu 11 Mar 09:34:24 2010 [20126@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:34:55 2010 [20150@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:34:55 2010 [20150@seq1l] ...opened
+Thu 11 Mar 09:34:56 2010 [20150@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc77e20 :Contig selector
+Thu 11 Mar 09:34:56 2010 [20150@seq1l] Database information
+Thu 11 Mar 09:35:03 2010 [20150@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:35:18 2010 [20174@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:35:18 2010 [20174@seq1l] ...opened
+Thu 11 Mar 09:35:19 2010 [20174@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc77e40 :Contig selector
+Thu 11 Mar 09:35:19 2010 [20174@seq1l] Database information
+Thu 11 Mar 09:35:22 2010 [20174@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:35:59 2010 [20188@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:35:59 2010 [20188@seq1l] ...opened
+Thu 11 Mar 09:35:59 2010 [20188@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc73e10 :Contig selector
+Thu 11 Mar 09:35:59 2010 [20188@seq1l] Database information
+Thu 11 Mar 09:36:06 2010 [20188@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:36:17 2010 [20201@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:36:17 2010 [20201@seq1l] ...opened
+Thu 11 Mar 09:36:17 2010 [20201@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc73ef0 :Contig selector
+Thu 11 Mar 09:36:17 2010 [20201@seq1l] Database information
+Thu 11 Mar 09:36:27 2010 [20201@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:36:28 2010 [20215@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:36:28 2010 [20215@seq1l] ...opened
+Thu 11 Mar 09:36:28 2010 [20215@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc73e10 :Contig selector
+Thu 11 Mar 09:36:28 2010 [20215@seq1l] Database information
+Thu 11 Mar 09:37:28 2010 [20215@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:39:39 2010 [20269@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:39:39 2010 [20269@seq1l] ...opened
+Thu 11 Mar 09:39:39 2010 [20269@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc7beb0 :Contig selector
+Thu 11 Mar 09:39:39 2010 [20269@seq1l] Database information
+Thu 11 Mar 09:39:50 2010 [20269@seq1l] > Register id=2 cnum=0 func=0x2aaaad03c6f0 data=0xcd5710 :
+Thu 11 Mar 09:40:16 2010 [20269@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:40:55 2010 [20291@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:40:55 2010 [20291@seq1l] ...opened
+Thu 11 Mar 09:40:55 2010 [20291@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc77ed0 :Contig selector
+Thu 11 Mar 09:40:55 2010 [20291@seq1l] Database information
+Thu 11 Mar 09:40:57 2010 [20291@seq1l] > Register id=2 cnum=0 func=0x2aaaad03c6f0 data=0xcc9600 :
+Thu 11 Mar 09:41:00 2010 [20291@seq1l] > Deregister id=2 cnum=0 func=0x2aaaad03c6f0 data=0xcc9600 :
+Thu 11 Mar 09:41:04 2010 [20291@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:41:27 2010 [20309@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:41:27 2010 [20309@seq1l] ...opened
+Thu 11 Mar 09:41:28 2010 [20309@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc7fda0 :Contig selector
+Thu 11 Mar 09:41:28 2010 [20309@seq1l] Database information
+Thu 11 Mar 09:41:37 2010 [20309@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:42:03 2010 [20328@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:42:03 2010 [20328@seq1l] ...opened
+Thu 11 Mar 09:42:03 2010 [20328@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc73e80 :Contig selector
+Thu 11 Mar 09:42:03 2010 [20328@seq1l] Database information
+Thu 11 Mar 09:42:05 2010 [20328@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:42:31 2010 [20345@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:42:31 2010 [20345@seq1l] ...opened
+Thu 11 Mar 09:42:31 2010 [20345@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc6ffb0 :Contig selector
+Thu 11 Mar 09:42:31 2010 [20345@seq1l] Database information
+Thu 11 Mar 09:42:41 2010 [20345@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:43:11 2010 [20367@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:43:11 2010 [20367@seq1l] ...opened
+Thu 11 Mar 09:43:11 2010 [20367@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc6fe90 :Contig selector
+Thu 11 Mar 09:43:11 2010 [20367@seq1l] Database information
+Thu 11 Mar 09:43:15 2010 [20367@seq1l] > Register id=2 cnum=0 func=0x2aaaad03c6f0 data=0xccd4d0 :
+Thu 11 Mar 09:43:17 2010 [20367@seq1l] > Deregister id=2 cnum=0 func=0x2aaaad03c6f0 data=0xccd4d0 :
+Thu 11 Mar 09:43:23 2010 [20367@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:43:43 2010 [20380@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:43:43 2010 [20380@seq1l] ...opened
+Thu 11 Mar 09:43:44 2010 [20380@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc7be30 :Contig selector
+Thu 11 Mar 09:43:44 2010 [20380@seq1l] Database information
+Thu 11 Mar 09:43:55 2010 [20380@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:44:04 2010 [20390@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:44:04 2010 [20390@seq1l] ...opened
+Thu 11 Mar 09:44:05 2010 [20390@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc80030 :Contig selector
+Thu 11 Mar 09:44:05 2010 [20390@seq1l] Database information
+Thu 11 Mar 09:44:12 2010 [20390@seq1l] > Deregister id=1 cnum=1 func=0x2aaaad080a18 data=0xc80030 :Contig selector
+Thu 11 Mar 09:44:12 2010 [20390@seq1l] close database
+Thu 11 Mar 09:44:12 2010 [20390@seq1l] closing...
+Thu 11 Mar 09:44:12 2010 [20390@seq1l] ...closed
+Thu 11 Mar 09:44:46 2010 [20403@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:44:46 2010 [20403@seq1l] ...opened
+Thu 11 Mar 09:44:47 2010 [20403@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc6fcc0 :Contig selector
+Thu 11 Mar 09:44:47 2010 [20403@seq1l] Database information
+Thu 11 Mar 09:44:53 2010 [20403@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:45:42 2010 [20426@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:45:42 2010 [20426@seq1l] ...opened
+Thu 11 Mar 09:45:43 2010 [20426@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc73da0 :Contig selector
+Thu 11 Mar 09:45:43 2010 [20426@seq1l] Database information
+Thu 11 Mar 09:45:46 2010 [20426@seq1l] > Deregister id=1 cnum=1 func=0x2aaaad080a18 data=0xc73da0 :Contig selector
+Thu 11 Mar 09:45:46 2010 [20426@seq1l] close database
+Thu 11 Mar 09:45:46 2010 [20426@seq1l] closing...
+Thu 11 Mar 09:45:46 2010 [20426@seq1l] ...closed
+Thu 11 Mar 09:46:06 2010 [20434@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:46:06 2010 [20434@seq1l] ...opened
+Thu 11 Mar 09:46:07 2010 [20434@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc6fec0 :Contig selector
+Thu 11 Mar 09:46:07 2010 [20434@seq1l] Database information
+Thu 11 Mar 09:46:09 2010 [20434@seq1l] > Deregister id=1 cnum=1 func=0x2aaaad080a18 data=0xc6fec0 :Contig selector
+Thu 11 Mar 09:46:09 2010 [20434@seq1l] close database
+Thu 11 Mar 09:46:09 2010 [20434@seq1l] closing...
+Thu 11 Mar 09:46:09 2010 [20434@seq1l] ...closed
+Thu 11 Mar 09:46:43 2010 [20443@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:46:43 2010 [20443@seq1l] ...opened
+Thu 11 Mar 09:46:44 2010 [20443@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc77e30 :Contig selector
+Thu 11 Mar 09:46:44 2010 [20443@seq1l] Database information
+Thu 11 Mar 09:46:49 2010 [20443@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:47:18 2010 [20450@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:47:18 2010 [20450@seq1l] ...opened
+Thu 11 Mar 09:47:18 2010 [20450@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc73c30 :Contig selector
+Thu 11 Mar 09:47:18 2010 [20450@seq1l] Database information
+Thu 11 Mar 09:47:23 2010 [20450@seq1l] > Deregister id=1 cnum=1 func=0x2aaaad080a18 data=0xc73c30 :Contig selector
+Thu 11 Mar 09:47:23 2010 [20450@seq1l] close database
+Thu 11 Mar 09:47:23 2010 [20450@seq1l] closing...
+Thu 11 Mar 09:47:23 2010 [20450@seq1l] ...closed
+Thu 11 Mar 09:48:07 2010 [20464@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:48:07 2010 [20464@seq1l] ...opened
+Thu 11 Mar 09:48:07 2010 [20464@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc73de0 :Contig selector
+Thu 11 Mar 09:48:07 2010 [20464@seq1l] Database information
+Thu 11 Mar 09:48:08 2010 [20464@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:50:55 2010 [20561@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:50:55 2010 [20561@seq1l] ...opened
+Thu 11 Mar 09:50:56 2010 [20561@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc7bb60 :Contig selector
+Thu 11 Mar 09:50:56 2010 [20561@seq1l] Database information
+Thu 11 Mar 09:50:58 2010 [20561@seq1l] > Deregister id=1 cnum=1 func=0x2aaaad080a18 data=0xc7bb60 :Contig selector
+Thu 11 Mar 09:50:58 2010 [20561@seq1l] close database
+Thu 11 Mar 09:50:58 2010 [20561@seq1l] closing...
+Thu 11 Mar 09:50:58 2010 [20561@seq1l] ...closed
+Thu 11 Mar 09:52:25 2010 [20577@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:52:25 2010 [20577@seq1l] ...opened
+Thu 11 Mar 09:52:25 2010 [20577@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc7c320 :Contig selector
+Thu 11 Mar 09:52:25 2010 [20577@seq1l] Database information
+Thu 11 Mar 09:52:27 2010 [20577@seq1l] > Deregister id=1 cnum=1 func=0x2aaaad080a18 data=0xc7c320 :Contig selector
+Thu 11 Mar 09:52:27 2010 [20577@seq1l] close database
+Thu 11 Mar 09:52:27 2010 [20577@seq1l] closing...
+Thu 11 Mar 09:52:27 2010 [20577@seq1l] ...closed
+Thu 11 Mar 09:52:47 2010 [20586@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:52:47 2010 [20586@seq1l] ...opened
+Thu 11 Mar 09:52:47 2010 [20586@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc7bb40 :Contig selector
+Thu 11 Mar 09:52:47 2010 [20586@seq1l] Database information
+Thu 11 Mar 09:52:48 2010 [20586@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:53:16 2010 [20605@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:53:16 2010 [20605@seq1l] ...opened
+Thu 11 Mar 09:53:17 2010 [20605@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc7fd00 :Contig selector
+Thu 11 Mar 09:53:17 2010 [20605@seq1l] Database information
+Thu 11 Mar 09:53:25 2010 [20605@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:53:59 2010 [20612@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:53:59 2010 [20612@seq1l] ...opened
+Thu 11 Mar 09:54:00 2010 [20612@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc77e30 :Contig selector
+Thu 11 Mar 09:54:00 2010 [20612@seq1l] Database information
+Thu 11 Mar 09:54:04 2010 [20612@seq1l] > Register id=2 cnum=0 func=0x2aaaad03c6f0 data=0xccd510 :
+Thu 11 Mar 09:56:00 2010 [20612@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:57:37 2010 [20643@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:57:37 2010 [20643@seq1l] ...opened
+Thu 11 Mar 09:57:38 2010 [20643@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc74550 :Contig selector
+Thu 11 Mar 09:57:38 2010 [20643@seq1l] Database information
+Thu 11 Mar 09:57:59 2010 [20643@seq1l] Program terminated unexpectedly with signal 5249584.
+Thu 11 Mar 09:58:18 2010 [20667@seq1l] opening ro... by jkb(205)
+Thu 11 Mar 09:58:18 2010 [20667@seq1l] ...opened
+Thu 11 Mar 09:58:18 2010 [20667@seq1l] > Register id=1 cnum=1 func=0x2aaaad080a18 data=0xc7fea0 :Contig selector
+Thu 11 Mar 09:58:18 2010 [20667@seq1l] Database information
+Thu 11 Mar 09:58:24 2010 [20667@seq1l] Program terminated unexpectedly with signal 5249584.
