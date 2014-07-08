@@ -403,11 +403,13 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	if (grow) {
 	    debug("r->end += %d\n", nbases);
 	    r->end += nbases;
+	    bin->flags |= BIN_RANGE_UPDATED;
 	} else {
 	    if (comp ? (apos > astart) : (apos <= astart)) {
 		debug("r->start += %d; r->end += %d\n", nbases, nbases);
 		r->start += nbases;
 		r->end   += nbases;
+		bin->flags |= BIN_RANGE_UPDATED;
 	    }
 	}
 
