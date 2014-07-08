@@ -131,6 +131,9 @@ typedef struct {
 #define GRANGE_FLAG_REFPOS_REV (1<<2)
 #define GRANGE_FLAG_REFPOS_DIR (1<<2)
 
+/* These three are used in tg_iface_g.c to optimise storage size. */
+/* Do not attempt to set or query these yourself as this will cause */
+/* false warnings from Check Database, as well as being pointless to do. */
 #define GRANGE_FLAG_REFPOS_HAVE_ID   (1<<3)
 #define GRANGE_FLAG_REFPOS_HAVE_POS  (1<<4)
 #define GRANGE_FLAG_REFPOS_HAVE_SIZE (1<<5)
