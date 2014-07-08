@@ -65,6 +65,11 @@ proc NormalDialog { io } {
 	    -relief groove -bd 2 -orient horizontal\
 	    -default [keylget gap5_defs CONSENSUS.NORMAL.STRIP_PADS]
 
+    yes_no $f.ambig \
+	    -title "Output ambiguity codes" \
+	    -relief groove -bd 2 -orient horizontal\
+	    -default [keylget gap5_defs CONSENSUS.NORMAL.AMBIGUITY_CODES]
+
     ###########################################################################
     #Reading annotations
     radiolist $f.annos \
@@ -126,7 +131,7 @@ proc NormalDialog { io } {
     #OK and Cancel buttons
     okcancelhelp $f.ok_cancel \
 	    -ok_command "Normal_OK_Pressed $f $io $f.infile $f.id \
-	    $f.sel_mask.rl $f.pads $f.notes $f.template $f.annos \
+	    $f.sel_mask.rl $f.pads $f.ambig $f.notes $f.template $f.annos \
 	    $f.format.main $f.output" \
 	    -cancel_command "destroy $f" \
 	    -help_command "show_help gap5 {Con-Normal}" \
@@ -137,6 +142,7 @@ proc NormalDialog { io } {
     pack $f.id -fill x
     pack $f.sel_mask -fill x
     pack $f.pads -fill x
+    pack $f.ambig -fill x
     pack $f.template -fill x
     pack $f.format -fill x
     pack $f.annos -fill x
@@ -146,7 +152,7 @@ proc NormalDialog { io } {
 
 }
 
-proc Normal_OK_Pressed {f io infile id sel_mask strippads notes template annos format output} {
+proc Normal_OK_Pressed {f io infile id sel_mask strippads ambig notes template annos format output} {
     global gap5_defs
 
     set gel_anno 0; #no gel annotations with expt file
@@ -181,6 +187,7 @@ proc Normal_OK_Pressed {f io infile id sel_mask strippads notes template annos f
     set out_format [radiolist_get $format]
 
     set strip [yes_no_get $strippads]
+    set ambig [yes_no_get $ambig]
 
     #expt format chosen
     if { $out_format == 3 } {
@@ -211,6 +218,7 @@ proc Normal_OK_Pressed {f io infile id sel_mask strippads notes template annos f
 	    -outfile $out_file \
 	    -tag_types $active_tags \
 	    -strip_pads $strip \
+	    -hets $ambig \
 	    -name_format [radiolist_get $template]
     ClearBusy
     destroy $f
@@ -671,7 +679,9 @@ proc get_consensus {args} {
 	    if {$end   == ""} {set end   [$c get_visible_end]}
 	    $c delete
 
-	    set cons [calc_consensus -io $io -contigs "{=$crec $start $end}"]
+	    set cons [calc_consensus -io $io \
+			  -contigs "{=$crec $start $end}" \
+			  -hets $opt(-hets)]
 	    if {[info exists opt(-mask)] && $opt(-mask) != "none" && \
 		    $opt(-mask) != "" && [info exists opt(-tag_types)] && \
 		    $opt(-tag_types) != ""} {
@@ -681,7 +691,9 @@ proc get_consensus {args} {
 	    switch $opt(-format) {
 		1 {
 		    # Fastq
-		    set qual [calc_quality -io $io -contigs "{=$crec $start $end}"]
+		    set qual [calc_quality -io $io \
+				  -contigs "{=$crec $start $end}" \
+				  -hets $opt(-hets)]
 		    if {$opt(-strip_pads)} {
 			Strip_Pads $cons $qual new_cons new_qual
 			set cons $new_cons; unset new_cons

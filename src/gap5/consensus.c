@@ -517,6 +517,87 @@ int calculate_consensus_simple(GapIO *io, tg_rec contig, int start, int end,
 }
 
 /*
+ * As per calculate_consensus_simple2 but producing heterozygous bases
+ * in the consensus.
+ *
+ * Note that there is no ambiguity code for base/gap so we use lowercase
+ * letters to represent that code. The quality value represents the
+ * likelihood of the heterozygous base being a real het rather than
+ * a single base type.
+ */
+int calculate_consensus_simple_het(GapIO *io, tg_rec contig,
+				   int start, int end,
+				   char *con, float *qual) {
+    
+    int i, j;
+    consensus_t q[CONS_BLOCK_SIZE];
+    contig_t *c = (contig_t *)cache_search(io, GT_Contig, contig);
+
+    if (NULL == c) return -1;
+    cache_incr(io, c);
+    
+    /* Compute in small ranges */
+    for (i = start; i <= end; i += CONS_BLOCK_SIZE) {
+	rangec_t *r = NULL;
+	int nr;
+	int st = i;
+	int en = st + CONS_BLOCK_SIZE-1; /* inclusive range */
+	if (en > end)
+	    en = end;
+
+	/* Find sequences visible */
+	r = contig_seqs_in_range(io, &c, st, en, CSIR_SORT_BY_X, &nr);
+
+	if (NULL == r ||
+	    0 != calculate_consensus_bit_het(io, contig, st, en,
+					     qual ? CONS_SCORES : 0,
+					     r, nr, q)){
+	    for (j = 0; j < en-st; j++) {
+		if (con)
+		    con[i-start+j] = 'N';
+		if (qual)
+		    qual[i-start+j] = 0;
+	    }
+	    if (NULL != r) free(r);
+	    cache_decr(io, c);
+	    return -1;
+	}
+
+	free(r);
+
+	for (j = 0; j < en-st+1; j++) {
+	    if (q[j].call == 6) {
+		if (con)
+		    con[i-start+j] = ' ';
+		if (qual)
+		    qual[i-start+j] = 0;
+	    } else {
+		if (q[j].scores[6] > 0) {
+		    static char *map = 
+			"AMRWa" // A
+			"MCSYc" // C
+			"RSGKg" // G
+			"WYKTt" // T
+			"acgt*";// *
+		    if (con)
+			con[i-start+j] = map[q[j].het_call];
+		    if (qual)
+			qual[i-start+j] = q[j].scores[6];
+		} else {
+		    if (con)
+			con[i-start+j] = "ACGT*N"[q[j].call];
+		    if (qual)
+			qual[i-start+j] = q[j].scores[q[j].call];
+		}
+	    }
+	}
+    }
+
+    cache_decr(io, c);
+    return 0;
+}
+
+/*
  * The consensus calculation function - rewritten for tgap style
  * databases.
  *

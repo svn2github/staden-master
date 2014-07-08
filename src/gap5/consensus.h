@@ -53,6 +53,20 @@ typedef struct {
 int calculate_consensus_simple(GapIO *io, tg_rec contig, int start, int end,
 			       char *con, float *qual);
 
+
+/*
+ * As per calculate_consensus_simple but producing heterozygous bases
+ * in the consensus.
+ *
+ * Note that there is no ambiguity code for base/gap so we use lowercase
+ * letters to represent that code. The quality value represents the
+ * likelihood of the heterozygous base being a real het rather than
+ * a single base type.
+ */
+int calculate_consensus_simple_het(GapIO *io, tg_rec contig,
+				   int start, int end,
+				   char *con, float *qual);
+
 /*
  * The consensus calculation function - rewritten for tgap style
  * databases.

@@ -1116,15 +1116,24 @@ int tcl_list_base_confidence(ClientData clientData, Tcl_Interp *interp,
     return TCL_OK;
 }
 
+typedef struct {
+    GapIO *io;
+    char *inlist;
+    int hets;
+    int ref_pos;
+} cons_arg;
+
 int tcl_calc_consensus(ClientData clientData, Tcl_Interp *interp,
 		       int objc, Tcl_Obj *CONST objv[])
 {
     int rargc;
     contig_list_t *rargv;
-    list2_arg args;
+    cons_arg args;
     cli_args a[] = {
-	{"-io",		ARG_IO,  1, NULL,  offsetof(list2_arg, io)},
-	{"-contigs",	ARG_STR, 1, NULL,  offsetof(list2_arg, inlist)},
+	{"-io",		ARG_IO,  1, NULL,  offsetof(cons_arg, io)},
+	{"-contigs",	ARG_STR, 1, NULL,  offsetof(cons_arg, inlist)},
+	{"-hets",       ARG_INT, 0, "0",   offsetof(cons_arg, hets)},
+	{"-ref_pos",    ARG_INT, 0, "0",   offsetof(cons_arg, ref_pos)},
 	{NULL,	    0,	     0, NULL, 0}
     };
 
@@ -1134,15 +1143,70 @@ int tcl_calc_consensus(ClientData clientData, Tcl_Interp *interp,
     active_list_contigs_extended(args.io, args.inlist, &rargc, &rargv);
 
     if (rargc >= 1) {
+	int *rp = NULL;
 	char *buf;
 
 	if (NULL == (buf = (char *)ckalloc(rargv[0].end - rargv[0].start + 2)))
-	    return TCL_OK;
+	    return TCL_ERROR;
 
-	calculate_consensus_simple(args.io, rargv[0].contig, rargv[0].start,
-				   rargv[0].end, buf, NULL);
+	if (args.ref_pos) {
+	    rp = (int *)ckalloc((rargv[0].end - rargv[0].start + 1) * sizeof(*rp));
+	    if (NULL == rp) {
+		ckfree(buf);
+		return TCL_ERROR;
+	    }
+
+	    if (0 != padded_to_reference_array(args.io,
+					       rargv[0].contig,
+					       rargv[0].start,
+					       rargv[0].end,
+					       rp,
+					       NULL, NULL, NULL)) {
+		ckfree((char *)rp);
+		return TCL_ERROR;
+	    }
+	}
+
+	if (args.hets) {
+	    calculate_consensus_simple_het(args.io, rargv[0].contig,
+					   rargv[0].start, rargv[0].end,
+					   buf, NULL);
+	} else {
+	    calculate_consensus_simple(args.io, rargv[0].contig,
+				       rargv[0].start, rargv[0].end,
+				       buf, NULL);
+	}
 	buf[rargv[0].end - rargv[0].start + 1] = 0;
+
+	if (args.ref_pos) {
+	    int i, j;
+	    char *rbuf;
+
+	    for (j = rargv[0].end - rargv[0].start; j > 0; j--)
+		if (rp[j] > 0)
+		    break;
+
+	    rbuf = ckalloc(rp[j]+1);
+	    if (!rbuf) {
+		ckfree((char *)rp);
+	    }
+
+	    /* Map to ref pos coords. Only works if not complemented */
+	    for (j = 1, i = 0; i <= rargv[0].end - rargv[0].start; i++) {
+		if (rp[i] == INT_MIN)
+		    continue; // Insertion
+
+		while (j < rp[i])
+		    rbuf[j++-1] = 'N';
+		rbuf[j++-1] = buf[i];
+	    }
+	    ckfree(buf);
+	    buf = rbuf;
+	}
+
 	Tcl_SetResult(interp, buf, TCL_VOLATILE);
+	if (rp)
+	    ckfree((char *)rp);
 	ckfree(buf);
     }
 
@@ -1155,10 +1219,11 @@ int tcl_calc_quality(ClientData clientData, Tcl_Interp *interp,
 {
     int rargc;
     contig_list_t *rargv;
-    list2_arg args;
+    cons_arg args;
     cli_args a[] = {
-	{"-io",		ARG_IO,  1, NULL,  offsetof(list2_arg, io)},
-	{"-contigs",	ARG_STR, 1, NULL,  offsetof(list2_arg, inlist)},
+	{"-io",		ARG_IO,  1, NULL,  offsetof(cons_arg, io)},
+	{"-contigs",	ARG_STR, 1, NULL,  offsetof(cons_arg, inlist)},
+	{"-hets",       ARG_INT, 1, "0",   offsetof(cons_arg, hets)},
 	{NULL,	    0,	     0, NULL, 0}
     };
 
@@ -1180,8 +1245,15 @@ int tcl_calc_quality(ClientData clientData, Tcl_Interp *interp,
 	    return TCL_ERROR;
 	}
 
-	calculate_consensus_simple(args.io, rargv[0].contig, rargv[0].start,
-				   rargv[0].end, NULL, flt);
+	if (args.hets) {
+	    calculate_consensus_simple_het(args.io, rargv[0].contig,
+					   rargv[0].start, rargv[0].end,
+					   NULL, flt);
+	} else {
+	    calculate_consensus_simple(args.io, rargv[0].contig,
+				       rargv[0].start, rargv[0].end,
+				       NULL, flt);
+	}
 	for (i = 0; i < len; i++) {
 	    int q = rint(flt[i]);
 	    if (q < -127) q = -127;
@@ -1194,6 +1266,52 @@ int tcl_calc_quality(ClientData clientData, Tcl_Interp *interp,
 
 	xfree(flt);
 	xfree(buf);
+    }
+
+    xfree(rargv);
+    return TCL_OK;
+}
+
+int tcl_calc_ref_positions(ClientData clientData, Tcl_Interp *interp,
+			   int objc, Tcl_Obj *CONST objv[])
+{
+    int rargc;
+    contig_list_t *rargv;
+    list2_arg args;
+    cli_args a[] = {
+	{"-io",		ARG_IO,  1, NULL,  offsetof(list2_arg, io)},
+	{"-contigs",	ARG_STR, 1, NULL,  offsetof(list2_arg, inlist)},
+	{NULL,	    0,	     0, NULL, 0}
+    };
+
+    if (-1 == gap_parse_obj_args(a, &args, objc, objv))
+	return TCL_ERROR;
+
+    active_list_contigs_extended(args.io, args.inlist, &rargc, &rargv);
+
+    if (rargc >= 1) {
+	int *rp, i;
+	Tcl_Obj *cons = Tcl_NewListObj(0, NULL);
+
+	rp = (int *)ckalloc((rargv[0].end - rargv[0].start + 1) * sizeof(*rp));
+	if (NULL == rp)
+	    return TCL_ERROR;
+
+	if (0 != padded_to_reference_array(args.io,
+					   rargv[0].contig,
+					   rargv[0].start,
+					   rargv[0].end,
+					   rp,
+					   NULL, NULL, NULL)) {
+	    ckfree((char *)rp);
+	    return TCL_ERROR;
+	}
+
+	for (i = 0; i < rargv[0].end - rargv[0].start + 1; i++)
+	    Tcl_ListObjAppendElement(interp, cons, Tcl_NewIntObj(rp[i]));
+
+	Tcl_SetObjResult(interp, cons);
+	ckfree((char *)rp);
     }
 
     xfree(rargv);
@@ -2805,6 +2923,8 @@ NewGap_Init(Tcl_Interp *interp) {
     Tcl_CreateObjCommand(interp, "calc_consensus", tcl_calc_consensus,
 			 (ClientData) NULL, NULL);
     Tcl_CreateObjCommand(interp, "calc_quality", tcl_calc_quality,
+			 (ClientData) NULL, NULL);
+    Tcl_CreateObjCommand(interp, "calc_ref_positions", tcl_calc_ref_positions,
 			 (ClientData) NULL, NULL);
     Tcl_CreateObjCommand(interp, "calc_consensus_full",
 			 tcl_calc_consensus_full,
