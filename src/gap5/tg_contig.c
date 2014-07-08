@@ -1716,8 +1716,7 @@ int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
 	} else {
 	    /* Ensure it's now a deletion */
 	    r->flags = ((r->flags & ~GRANGE_FLAG_REFPOS_INDEL)
-			| GRANGE_FLAG_REFPOS_DEL
-			| GRANGE_FLAG_REFPOS_HAVE_SIZE);
+			| GRANGE_FLAG_REFPOS_DEL);
 	    r->pair_rec = cur_del;
 	    debug("Set refpos marker to %d base deletion\n", cur_del);
 	}
@@ -1750,10 +1749,7 @@ int contig_delete_base_common(GapIO *io, contig_t **c, int pos, int shift,
 	    /* Dir needs checking */
 	    r.flags    = GRANGE_FLAG_ISREFPOS
 		| GRANGE_FLAG_REFPOS_DEL
-		| GRANGE_FLAG_REFPOS_FWD
-		| GRANGE_FLAG_REFPOS_HAVE_SIZE
-		| GRANGE_FLAG_REFPOS_HAVE_POS
-		| (id >= 0 ? GRANGE_FLAG_REFPOS_HAVE_ID : 0);
+		| GRANGE_FLAG_REFPOS_FWD;
 	    bin_add_range(io, c, &r, NULL, NULL, 0);
 	} /* else no refpos data => don't keep tracking it */
     }
@@ -5692,10 +5688,7 @@ int set_refpos_marker(GapIO *io, contig_t **c, int pos,
 	if (is_del) r->pair_rec = len;
 	r->flags = (r->flags & ~GRANGE_FLAG_REFPOS_INDEL)
 	    | (type & GRANGE_FLAG_REFPOS_INDEL)
-	    | (dir & GRANGE_FLAG_REFPOS_DIR)
-	    | GRANGE_FLAG_REFPOS_HAVE_POS
-	    | (id >= 0 ? GRANGE_FLAG_REFPOS_HAVE_ID : 0)
-	    | (is_del ? GRANGE_FLAG_REFPOS_HAVE_SIZE : 0);
+	    | (dir & GRANGE_FLAG_REFPOS_DIR);
 
 	bin->flags |= BIN_RANGE_UPDATED | BIN_BIN_UPDATED;
 	
@@ -5708,10 +5701,7 @@ int set_refpos_marker(GapIO *io, contig_t **c, int pos,
 
 	r.flags = GRANGE_FLAG_ISREFPOS
 	    | (type & GRANGE_FLAG_REFPOS_INDEL)
-	    | (dir & GRANGE_FLAG_REFPOS_DIR)
-	    | GRANGE_FLAG_REFPOS_HAVE_POS
-	    | (id >= 0 ? GRANGE_FLAG_REFPOS_HAVE_ID : 0)
-	    | (is_del ? GRANGE_FLAG_REFPOS_HAVE_SIZE : 0);
+	    | (dir & GRANGE_FLAG_REFPOS_DIR);
 	if (NULL == bin_add_range(io, c, &r, NULL, NULL, 0)) return -1;
     }
 
