@@ -965,7 +965,7 @@ static void sam_export_seq(GapIO *io, scram_fd *bf,
 	       if ((fi->r.flags & GRANGE_FLAG_END_MASK) !=
 		   (fi->r.flags & GRANGE_FLAG_PEND_MASK)) {
 		   /* Opposite orientations */
-		   //flag |= 0x02; /* proper pair */
+		   flag |= 0x02; /* proper pair */
 	       }
 
 	       /*
