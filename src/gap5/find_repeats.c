@@ -23,7 +23,7 @@
  */
 void *repeat_obj_func(int job, void *jdata, obj_match *obj,
 		      mobj_repeat *repeat) {
-    static char buf[80];
+    static char buf[160];
     obj_cs *cs;
     int cs_id;
 

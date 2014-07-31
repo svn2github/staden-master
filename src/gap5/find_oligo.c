@@ -34,7 +34,7 @@ void *find_oligo_obj_func1(int job,
 			   obj_match *obj,
 			   mobj_find_oligo *find_oligo)
 {
-    static char buf[80];
+    static char buf[160];
     obj_cs *cs;
     int cs_id;
 
@@ -173,7 +173,7 @@ void *find_oligo_obj_func2(int job,
 			   obj_match *obj,
 			   mobj_find_oligo *find_oligo)
 {
-    static char buf[80];
+    static char buf[160];
     obj_cs *cs;
     int cs_id;
 

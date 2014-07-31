@@ -132,7 +132,7 @@ int check_uassembly_single(GapIO *io, char *cons, int contig, rangec_t *r,
  */
 void *checkass_obj_func(int job, void *jdata, obj_checkass *obj,
 			mobj_checkass *ca) {
-    static char buf[80];
+    static char buf[160];
     obj_cs *cs;
     int cs_id;
 

@@ -27,7 +27,7 @@ static int auto_join(GapIO *io, mobj_fij *r);
 
 void *fij_obj_func(int job, void *jdata, obj_fij *obj,
 		      mobj_fij *fij) {
-    static char buf[80];
+    static char buf[160];
     obj_cs *cs;
     int cs_id;
 
