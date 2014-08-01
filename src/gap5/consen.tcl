@@ -652,6 +652,7 @@ proc mask_consensus {io crec start end cons tags mask} {
 }
 
 proc get_consensus {args} {
+    set opt(-hets) "0"
     foreach {key value} $args {
 	set opt($key) $value
     }

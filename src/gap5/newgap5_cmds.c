@@ -37,6 +37,7 @@
 #include "break_contig.h"
 #include "template_display.h"
 #include "export_contigs.h"
+#include "export_snps.h"
 #include "import_gff.h"
 #include "find_oligo.h"
 #include "tg_index_common.h"
@@ -1132,7 +1133,7 @@ int tcl_calc_consensus(ClientData clientData, Tcl_Interp *interp,
     cli_args a[] = {
 	{"-io",		ARG_IO,  1, NULL,  offsetof(cons_arg, io)},
 	{"-contigs",	ARG_STR, 1, NULL,  offsetof(cons_arg, inlist)},
-	{"-hets",       ARG_INT, 0, "0",   offsetof(cons_arg, hets)},
+	{"-hets",       ARG_INT, 1, "0",   offsetof(cons_arg, hets)},
 	{"-ref_pos",    ARG_INT, 0, "0",   offsetof(cons_arg, ref_pos)},
 	{NULL,	    0,	     0, NULL, 0}
     };
@@ -2965,6 +2966,10 @@ NewGap_Init(Tcl_Interp *interp) {
 			 (ClientData) NULL, NULL);
     Tcl_CreateObjCommand(interp, "import_gff",
 			 tcl_import_gff,
+			 (ClientData) NULL, NULL);
+
+    Tcl_CreateObjCommand(interp, "export_snps",
+			 tcl_export_snps,
 			 (ClientData) NULL, NULL);
 
     Tcl_CreateObjCommand(interp, "find_oligo",
