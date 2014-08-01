@@ -143,6 +143,7 @@ GAP5=\
 	break_contig.o \
 	dis_readings.o \
 	export_contigs.o \
+	export_snps.o \
 	find_oligo.o \
 	import_gff.o \
 	shuffle_pads.o \
