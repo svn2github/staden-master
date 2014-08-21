@@ -5831,6 +5831,8 @@ int padded_to_reference_array(GapIO *io, tg_rec cnum,
 	i++;
     }
 
+    contig_iter_del(ci);
+
     return 0;
 }
 
