@@ -607,6 +607,8 @@ static uint32_t *sam_refbased_cigar(GapIO *io, contig_t *c, int cpos,
 	//printf("%d%c\n", last_oplen, "MIDNSHP=X"[last_op]);
     }
 
+    free(rpos);
+
     *ncigar_p = ncigar;
     return cigar;
 }
@@ -2724,12 +2726,11 @@ static int export_tags_gff(GapIO *io, FILE *fp,
 	    char key[1024], val[8192];
 	    size_t key_len, val_len;
 
-	    printf("ACD TAG with comm %s\n", a->comment ? a->comment : "(null)");
+	    //printf("ACD TAG with comm %s\n", a->comment ? a->comment : "(null)");
 	    while (NULL != (cp = parse_acd_tag(cp,
 					       key, (key_len=1024, &key_len),
 					       val, (val_len=8192, &val_len)))){
-		printf("Key='%.*s' val='%.*s'\n",
-		       (int) key_len, key, (int) val_len, val);
+		//printf("Key='%.*s' val='%.*s'\n", (int) key_len, key, (int) val_len, val);
 		if (key_len == 5 && strncmp(key, "score", 5) == 0) {
 		    if ((val_len > 0) &&
 			(*val == '+' || *val == '-' || isdigit(*val))) {
