@@ -1,5 +1,30 @@
 package require Plotchart
 
+# Registers the xcombobox as a suitable editing tool for tablelist
+;proc tablelist_add_xcombobox {} {
+    set name xcombobox
+    array set ::tablelist::editWin [list \
+	$name-creationCmd   "xcombobox %W" \
+	$name-putValueCmd   "%W set %T" \
+	$name-getValueCmd   "%W get" \
+	$name-putTextCmd    "%W set %T" \
+	$name-getTextCmd    "%W get" \
+	$name-putListCmd    "" \
+	$name-getListCmd    "" \
+	$name-selectCmd     "" \
+	$name-invokeCmd     {[%W subwidget button] invoke} \
+	$name-fontOpt       -font \
+	$name-useFormat     1 \
+	$name-useReqWidth   0 \
+	$name-usePadX       1 \
+	$name-isEntryLike   1 \
+	$name-focusWin      {[%W subwidget entry]} \
+	$name-reservedKeys  {Left Right Up Down}
+       ]
+}
+
+tablelist_add_xcombobox
+
 ;proc ListLibrariesPopulate {io w} {
     # Clear any existing data
     $w selection clear 0 end
@@ -16,7 +41,7 @@ package require Plotchart
 	set mean    [$lib get_insert_size]
 	set sd      [$lib get_insert_sd]
 	set count   [$lib get_count]
-	set type [lindex [list unknown sanger illumina solid 454] $type]
+	set type [lindex [list unknown Sanger Illumina SOLiD 454 Helicos IonTorrent PacBio ONT] $type]
 	
 	# Find most likely library orientation
 	set max 0
@@ -44,6 +69,39 @@ package require Plotchart
     #$db delete
 }
 
+proc ListLibraries_editStartCmd {tbl row col text} {
+    set w [$tbl editwinpath]
+
+    puts [info level [info level]]
+
+    switch $col {
+	3 {
+	    # Machine type
+            $w configure -values [list unknown Sanger Illumina SOLiD 454 Helicos IonTorrent PacBio ONT]
+	    $w configure -fixed_list 1
+	}
+    }
+
+    return $text
+}
+
+proc ListLibraries_editEndCmd {io tbl row col text} {
+    set w [$tbl editwinpath]
+
+    puts [info level [info level]]
+
+    # Save
+
+   switch $col {
+       3 {
+	   # Machine type
+	   puts [$w get]
+       }
+    }
+
+    return $text
+}
+
 proc ListLibraries {io} {
     set t [xtoplevel .list_libraries]
     if {$t == ""} return
@@ -62,10 +120,13 @@ proc ListLibraries {io} {
         -labelcommand tablelist::sortByColumn \
 	-exportselection 0 \
 	-stretch 0 \
-        -yscrollcommand [list $t.yscroll set]
+        -yscrollcommand [list $t.yscroll set] \
+	-editstartcommand ListLibraries_editStartCmd \
+	-editendcommand "ListLibraries_editEndCmd $io"
 
     $t.list columnconfigure 0 -sortmode integer
     $t.list columnconfigure 2 -sortmode integer
+    $t.list columnconfigure 3 -editable yes -editwindow xcombobox
     $t.list columnconfigure 4 -sortmode integer
     $t.list columnconfigure 5 -sortmode real
     

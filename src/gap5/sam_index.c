@@ -98,6 +98,18 @@ int stech_str2int(const char *str) {
     if (strcasecmp(str, "SOLID") == 0)
 	return STECH_SOLID;
 
+    if (strcasecmp(str, "HELICOS") == 0)
+	return STECH_HELICOS;
+
+    if (strcasecmp(str, "IONTORRENT") == 0)
+	return STECH_IONTORRENT;
+
+    if (strcasecmp(str, "PACBIO") == 0)
+	return STECH_PACBIO;
+
+    if (strcasecmp(str, "ONT") == 0)
+	return STECH_ONT;
+
     return STECH_UNKNOWN;
 }
 

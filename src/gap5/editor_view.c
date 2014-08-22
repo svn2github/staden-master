@@ -719,6 +719,18 @@ char *edGetBriefSeq(edview *xx, tg_rec seq, int pos, char *format) {
 		case STECH_454:
 		    add_string(status_buf, &j, l1, l2, "454");
 		    break;
+		case STECH_HELICOS:
+		    add_string(status_buf, &j, l1, l2, "Helicos");
+		    break;
+		case STECH_IONTORRENT:
+		    add_string(status_buf, &j, l1, l2, "IonTorrent");
+		    break;
+		case STECH_PACBIO:
+		    add_string(status_buf, &j, l1, l2, "PacBio");
+		    break;
+		case STECH_ONT:
+		    add_string(status_buf, &j, l1, l2, "ONT");
+		    break;
 		default:
 		    add_string(status_buf, &j, l1, l2, "unknown");
 		    break;

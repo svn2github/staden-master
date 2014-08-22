@@ -33,6 +33,7 @@ widget create Xcombobox -type frame -base entry -components {
     {-values 		values		Values		{}}
     {-command 		command		Command		{}}
     {-postcommand 	postCommand	PostCommand	{}}
+    {-fixed_list        fixedList       FixedList       0}
 }
 
 namespace eval ::Widget::Xcombobox {;
@@ -93,6 +94,17 @@ namespace eval ::Widget::Xcombobox {;
 	    -values {
 		uplevel \#0 [list set $data(-valuesvariable) $val]
 	    }
+	    -fixed_list {
+		if {$data(-state) == "normal"} {
+		    if {$val == 1} {
+			bindtags $data(entry) [list $data(entry) \
+				 [winfo toplevel $data(entry)] all]
+		    } else {
+			bindtags $data(entry) [list $data(entry) Entry \
+				 [winfo toplevel $data(entry)] all]
+		    }
+		}
+	    }
 	}
 	set data($key) $val
     }
@@ -129,15 +141,17 @@ namespace eval ::Widget::Xcombobox {;
 	}
     }
 
-    toplevel $w.list -width $W -height 200 -class ComboList
-    wm geometry $w.list ${W}x200+$x+$y
+    toplevel $w.list -width $W -class ComboList
+    #wm geometry $w.list ${W}x200+$x+$y
+    wm geometry $w.list +$x+$y
     wm transient $w.list $w
     wm overrideredirect $w.list 1
     
     set l [listbox $w.list.l \
 	       -exportselection 0 \
 	       -yscrollcommand "$w.list.ys set" \
-	       -width 10]
+	       -width 10 \
+	       -height 10]
     scrollbar $w.list.ys -command "$l yview" -orient vertical
     if {[uplevel \#0 [list info exists [set ${w}(-valuesvariable)]]]} {
 	set v [uplevel \#0 [list set [set ${w}(-valuesvariable)]]]
@@ -148,8 +162,13 @@ namespace eval ::Widget::Xcombobox {;
     if {"$v" == ""} {
 	$l insert end ""
     }
-    pack $w.list.l -fill both -expand 1 -side left
-    pack $w.list.ys -fill both -side right
+    if {[llength $v] <= 10} {
+	$w.list.l configure -height [llength $v]
+	pack $w.list.l -fill both -expand 0 -side left
+    } else {
+	pack $w.list.l -fill both -expand 0 -side left
+	pack $w.list.ys -fill both -side right
+    }
 
     update idletasks
     grab -global $w.list

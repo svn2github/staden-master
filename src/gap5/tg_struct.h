@@ -305,11 +305,15 @@ typedef struct seq_block {
 
 
 /* Sequencing technologies for seq_t.seq_tech */
-#define STECH_UNKNOWN 0
-#define STECH_SANGER  1
-#define STECH_SOLEXA  2
-#define STECH_SOLID   3
-#define STECH_454     4
+#define STECH_UNKNOWN    0
+#define STECH_SANGER     1
+#define STECH_SOLEXA     2
+#define STECH_SOLID      3
+#define STECH_454        4
+#define STECH_HELICOS    5
+#define STECH_IONTORRENT 6
+#define STECH_PACBIO     7
+#define STECH_ONT        8
 
 /* Sequence flags for seq_t.flags */
 #define SEQ_COMPLEMENTED (1<<0)
