@@ -1126,17 +1126,9 @@ int bio_add_unmapped(bam_io_t *bio, bam_seq_t *b) {
     }
 
     /* Fetch read-group and pretend it's a library for now */
-    stech = STECH_UNKNOWN;
-    if ((LB = bam_aux_find(b, "RG"))) {
-	SAM_RG *rg_tag = sam_hdr_find_rg(scram_get_header(bio->fp), ++LB);
-	if (rg_tag) {
-	    SAM_hdr_tag *t = sam_hdr_find_key(scram_get_header(bio->fp),
-					      rg_tag->ty, LB, NULL);
-	    if (t)
-		stech = stech_str2int(t->str);
-	}
-    }
-    if (!LB)
+    if ((LB = bam_aux_find(b, "RG")))
+	LB++;  // bam_aux_find returned the type code too.
+    else
 	LB = bio->fn;
 
     suffix = bam_aux_find(b, "FS");
@@ -1147,6 +1139,15 @@ int bio_add_unmapped(bam_io_t *bio, bam_seq_t *b) {
     hi = HacheTableAdd(bio->libs, (char *)LB, strlen(LB), hd, &new);
     if (new) {
 	tg_rec lrec;
+	SAM_RG *rg_tag = sam_hdr_find_rg(scram_get_header(bio->fp), LB);
+	if (rg_tag) {
+	    SAM_hdr_tag *t = sam_hdr_find_key(scram_get_header(bio->fp),
+					      rg_tag->ty, "PL", NULL);
+	    stech = t ? stech_str2int(t->str+3) : STECH_UNKNOWN;
+	} else {
+	    stech = STECH_UNKNOWN;
+	}
+
 	printf("New library %s\n", LB);
 
 	lrec = library_new(bio->io, (char *)LB);
@@ -1157,6 +1158,7 @@ int bio_add_unmapped(bam_io_t *bio, bam_seq_t *b) {
 	cache_incr(bio->io, lib);
     }
     lib = hi->data.p;
+    stech = lib->machine;
 
     /* Construct a seq_t struct */
     name = bam_name(b);
@@ -1512,17 +1514,9 @@ int bio_del_seq(bam_io_t *bio, pileup_t *p) {
 	goto anno_only; /* Yes I know! The code needs splitting up */
 
     /* Fetch read-group and pretend it's a library for now */
-    stech = STECH_UNKNOWN;
-    if ((LB = bam_aux_find(b, "RG"))) {
-	SAM_RG *rg_tag = sam_hdr_find_rg(scram_get_header(bio->fp), ++LB);
-	if (rg_tag) {
-	    SAM_hdr_tag *t = sam_hdr_find_key(scram_get_header(bio->fp),
-					      rg_tag->ty, LB, NULL);
-	    if (t)
-		stech = stech_str2int(t->str);
-	}
-    }
-    if (!LB)
+    if ((LB = bam_aux_find(b, "RG")))
+	LB++;  // bam_aux_find returned the type code too.
+    else
 	LB = bio->fn;
 
     suffix = bam_aux_find(b, "FS");
@@ -1533,6 +1527,15 @@ int bio_del_seq(bam_io_t *bio, pileup_t *p) {
     hi = HacheTableAdd(bio->libs, (char *)LB, strlen(LB), hd, &new);
     if (new) {
 	tg_rec lrec;
+	SAM_RG *rg_tag = sam_hdr_find_rg(scram_get_header(bio->fp), LB);
+	if (rg_tag) {
+	    SAM_hdr_tag *t = sam_hdr_find_key(scram_get_header(bio->fp),
+					      rg_tag->ty, "PL", NULL);
+	    stech = t ? stech_str2int(t->str+3) : STECH_UNKNOWN;
+	} else {
+	    stech = STECH_UNKNOWN;
+	}
+
 	printf("New library %s\n", LB);
 
 	lrec = library_new(bio->io, (char *)LB);
@@ -1543,6 +1546,7 @@ int bio_del_seq(bam_io_t *bio, pileup_t *p) {
 	cache_incr(bio->io, lib);
     }
     lib = hi->data.p;
+    stech = lib->machine;
 
     /*
     printf("\nSeq %d @ %6d: '%.*s' '%.*s' => nseq=%d\n",

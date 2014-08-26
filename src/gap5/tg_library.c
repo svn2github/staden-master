@@ -382,3 +382,47 @@ int template_max_size(GapIO *io) {
 
     return io->max_template_size;
 }
+
+
+/*
+ * Changes the library name.
+ *
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+int library_set_name(GapIO *io, tg_rec rec, char *name) {
+    library_t *lib = cache_search(io, GT_Library, rec);
+
+    if (io->read_only)
+	return -1;
+
+    lib = cache_rw(io, lib);
+    if (NULL == (lib = cache_item_resize(lib, sizeof(*lib) + strlen(name)+1)))
+	return -1;
+    lib->name = (char *)&lib->data;
+    strcpy(lib->name, name);
+
+    return 0;
+}
+
+
+/*
+ * Changes the library machine type.
+ *
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+int library_set_machine(GapIO *io, tg_rec rec, int machine) {
+    library_t *lib = cache_search(io, GT_Library, rec);
+
+    if (io->read_only)
+	return -1;
+
+    if (machine < 0 || machine > STECH_LAST)
+	return -1;
+
+    lib = cache_rw(io, lib);
+    lib->machine = machine;
+
+    return 0;
+}

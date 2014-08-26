@@ -28,6 +28,8 @@ typedef int64_t tg_rec;
 /* ----------------------------------------------------------------------
  * Primary data types. The holes in the numbering are simply ancient history
  * from the xgap and earlier era.
+ *
+ * 6 bits, so max value = 63.
  */
 #define GT_Generic        0
 #define GT_RecArray       3
@@ -271,9 +273,9 @@ typedef struct {
     tg_rec parent_rec;/* template record or seq record if type == GT_Seq */
     int parent_type;  /* GT_Seq, GT_Template, GT_Ligation, etc */
     tg_rec rec;       /* recno of this seq_t */
-    unsigned int seq_tech:3;
-    unsigned int flags:3;
-    unsigned int format:2;
+    unsigned int seq_tech;
+    unsigned int flags;
+    unsigned int format;
     uint8_t mapping_qual; /* REMOVE? In GRange already. Same for parent_rec */
     int name_len;
     int template_name_len;   /* if name comes from <template><suffix>  */
@@ -304,7 +306,7 @@ typedef struct seq_block {
 } seq_block_t;
 
 
-/* Sequencing technologies for seq_t.seq_tech */
+/* Sequencing technologies for seq_t.seq_tech; 5 bits, so max=31 */
 #define STECH_UNKNOWN    0
 #define STECH_SANGER     1
 #define STECH_SOLEXA     2
@@ -314,6 +316,7 @@ typedef struct seq_block {
 #define STECH_IONTORRENT 6
 #define STECH_PACBIO     7
 #define STECH_ONT        8
+#define STECH_LAST       8 // highest value
 
 /* Sequence flags for seq_t.flags */
 #define SEQ_COMPLEMENTED (1<<0)

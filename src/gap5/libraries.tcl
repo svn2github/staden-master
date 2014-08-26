@@ -90,14 +90,29 @@ proc ListLibraries_editEndCmd {io tbl row col text} {
 
     puts [info level [info level]]
 
-    # Save
+    set db [$io get_database]
+    set rec [$db get_library_rec $row]
+    set lib [$io get_library $rec]
+    puts "Processing [$lib get_name]"
 
-   switch $col {
+    switch $col {
+       1 {
+	   # Entry name
+	   puts [$w get]
+	   $lib set_name [$w get]
+       }
+
        3 {
 	   # Machine type
-	   puts [$w get]
+	   set id [lsearch [list unknown Sanger Illumina SOLiD 454 Helicos IonTorrent PacBio ONT] [$w get]]
+	   puts [$w get]:$id
+	   $lib set_machine_type $id
        }
     }
+
+    $lib delete
+
+    $io flush
 
     return $text
 }
@@ -125,6 +140,7 @@ proc ListLibraries {io} {
 	-editendcommand "ListLibraries_editEndCmd $io"
 
     $t.list columnconfigure 0 -sortmode integer
+    $t.list columnconfigure 1 -editable yes -editwindow entry
     $t.list columnconfigure 2 -sortmode integer
     $t.list columnconfigure 3 -editable yes -editwindow xcombobox
     $t.list columnconfigure 4 -sortmode integer

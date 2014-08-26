@@ -3680,8 +3680,8 @@ static tg_rec io_track_create(void *dbh, void *vfrom) {
  * ? byte 'right clip'
  * ? byte sequence length
  * ? byte parent_rec;
- * 1 byte parent_type;
- * 1 byte seq_tech (3 bottom bits)
+ * 1 byte parent_type (6 bits + 2 high bits of seq_tech);
+ * 1 byte seq_tech (3 bottom bits, + 2 high bits of previous byte)
  *      + flags (3 next bits)
  *      + format (2 top bits)
  * 1 byte mapping_quality
@@ -3720,6 +3720,9 @@ static cached_item *seq_decode(unsigned char *buf, size_t len, tg_rec rec) {
 	parent_type = *cp++;
 	format = *cp++;
 	seq_tech = format & ((1<<3)-1);
+	// Steal 2 bits from parent_type to increase data range in seq_tech
+	seq_tech += (parent_type >> 6) << 3;
+	parent_type &= 0x3f;
 	format >>= 3;
 	flags = format & ((1<<3)-1);
 	format >>= 3;
@@ -3983,10 +3986,11 @@ static int io_seq_write_view(g_io *io, seq_t *seq, GView v, tg_rec rec) {
 
     /* Read-pair info */
     cp += intw2u7(seq->parent_rec, cp);
-    *cp++ = seq->parent_type;
+    /* Top two bits are used to increase seq_tech size */
+    *cp++ = seq->parent_type | ((seq->seq_tech >> 3) << 6);
 
     /* flags & m.quality */
-    *cp++ = (seq->format << 6) | (seq->flags << 3) | seq->seq_tech;
+    *cp++ = (seq->format << 6) | (seq->flags << 3) | (seq->seq_tech & 7);
     *cp++ = seq->mapping_qual;
 
     /* Annotations */
@@ -4328,7 +4332,10 @@ static cached_item *io_seq_block_read(void *dbh, tg_rec rec) {
     for (i = 0 ; i < SEQ_BLOCK_SZ; i++) { 
 	if (!in[i].bin) continue;
 	unsigned char f = *cp++;
-	in[i].seq_tech = f & 7;
+	// Steal 2 bits from parent_type to expand seq_tech range
+	in[i].seq_tech = (f & 7) | ((in[i].parent_type >> 6) << 3);
+	in[i].parent_type &= 0x3f;
+
 	in[i].flags = (f >> 3) & 7;
 	in[i].format = (f >> 6) & 3;
 	if (in[i].flags & SEQ_COMPLEMENTED)
@@ -4794,11 +4801,13 @@ static int io_seq_block_write(void *dbh, cached_item *ci) {
 	} else {
 	    out[5] += int2u7((int32_t)s->parent_rec, out[5]);
 	}
-	*out[6]++ = s->parent_type;
+
+	/* Top 2 bits of parent type encode high bits of seq_tech */
+	*out[6]++ = s->parent_type | ((s->seq_tech >> 3) << 6);
 	
 	/* flags & m.quality */
 	s->format = SEQ_FORMAT_CNF1;
-	*out[7]++ = (s->format << 6) | (s->flags << 3) | s->seq_tech;
+	*out[7]++ = (s->format << 6) | (s->flags << 3) | (s->seq_tech & 7);
 
 	/* Duplicated in range, but adds about 1% on test bam input */
 	*out[8]++ = s->mapping_qual;

@@ -84,4 +84,22 @@ int get_library_stats(GapIO *io, tg_rec rec,
  */
 int template_max_size(GapIO *io);
 
+
+/*
+ * Changes the library name.
+ *
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+int library_set_name(GapIO *io, tg_rec rec, char *name);
+
+
+/*
+ * Changes the library machine type.
+ *
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+int library_set_machine(GapIO *io, tg_rec rec, int machine);
+
 #endif /* _TG_LIBRARY_ */
