@@ -2070,7 +2070,7 @@ proc seq_seqs_filter {w t} {
     label $f2.min_label -text "Min. Qual"
     scale $f2.min_qual \
 	-from 0 \
-	-to 80 \
+	-to 255 \
 	-orient horiz \
 	-variable ${w}(_MinQual) \
 	-command "seq_seqs_filter_update $w $t $f min"
@@ -2078,7 +2078,7 @@ proc seq_seqs_filter {w t} {
     label $f2.max_label -text "Max. Qual"
     scale $f2.max_qual \
 	-from 0 \
-	-to 80 \
+	-to 255 \
 	-orient horiz \
 	-variable ${w}(_MaxQual) \
 	-command "seq_seqs_filter_update $w $t $f max"
@@ -2760,6 +2760,8 @@ proc CreateTemplateDisplay {io cnum {pos {}}} {
 	    }
 
 	    # Correct (Libs) element to see if it's valid for this database.
+	    catch {unset .read_depth.${i}(Libs~)}
+	    catch {unset .read_depth.${i}(_Libs)}
 	    if {[info exists .read_depth.${i}(Libs)]} {
 		foreach rec [set .read_depth.${i}(Libs)] {
 		    if {![info exists lib_recs($rec)]} {
