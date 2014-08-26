@@ -581,7 +581,7 @@ int gap_range_x(gap_range_t *gr, double ax_conv, double bx_conv,
 		    verror(ERR_WARN, "gap_range_x",
 			   "start %d/%d end %d/%d",
 			   r->pair_start, tl->x[0], r->pair_end, tl->x[3]);	
-	}
+		}
 	    }
 		
 	}
