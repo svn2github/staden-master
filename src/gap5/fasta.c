@@ -302,7 +302,7 @@ int parse_fasta_or_fastq(GapIO *io, char *fn, tg_args *a, int format) {
 	    }
 	} else {
 	    assert(dummy_qual);
-	    memset(dummy_qual, 0, dummy_qual_len);
+	    memset(dummy_qual, 3, dummy_qual_len);
 	}
 
 	seq.trace_name     = NULL;
