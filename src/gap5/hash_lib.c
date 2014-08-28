@@ -1819,12 +1819,15 @@ int align_blocks (Hash *h, ALIGN_PARAMS *params, OVERLAP *overlap) {
 			 (h->block_match[j].pos_seq2+
 			  h->block_match[j].length));
 		len2 = MAX(len2, 0);
-		t += len2/1.3 -2; // assume approx 75% match in gaps, with
+		t += len2/1.4 -2; // assume approx 75% match in gaps, with
 		                  // at least 2 errs (1 each end).
 
-		//t -= pow(len2,1.5)/10;
-		t -= pow(len2,1.3)/3;
-
+		if (len2-2 > h->word_length) {
+		    if (len2-2 - h->word_length < 1000)
+			t -= (len2-2) * (1-pow(.99, len2-2 - h->word_length));
+		    else
+			t -= (len2-2);
+		}
 		
 		if ( t > h->block_match[i].best_score ) {
 		    h->block_match[i].best_score = t;
