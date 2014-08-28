@@ -1572,7 +1572,7 @@ int bio_del_seq(bam_io_t *bio, pileup_t *p) {
 	}
 	for (i = p->seq_offset+1; i < b->len; i++) {
 	    bs->seq [bs->seq_len] = bam_nt16_rev_table[bam_seqi(b_seq,i)];
-	    bs->conf[bs->seq_len] = b_qual[i];
+	    bs->conf[bs->seq_len] = b_qual[i] > 3 && b_qual[i] < 255 ?b_qual[i] :3;
 	    bs->pad[bs->seq_len] = bs->padded_pos++;
 	    bs->seq_len++;
 	}
@@ -2108,7 +2108,7 @@ static int sam_add_seq(void *cd, scram_fd *fp, pileup_t *p,
 		s->seq [s->seq_len] = 'N';
 	    }
 	    if (bio->a->data_type & DATA_QUAL) {
-		s->conf[s->seq_len] = p->qual;
+		s->conf[s->seq_len] = p->qual > 3 && p->qual < 255 ?p->qual :3;
 	    } else {
 		s->conf[s->seq_len] = 0;
 	    }
