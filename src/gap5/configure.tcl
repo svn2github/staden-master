@@ -58,6 +58,10 @@ proc ConfigureCutoffs {io} {
 	-values $seq_techs
     $t.seq_tech set [lindex $seq_techs [expr {$default_seq_tech-1}]]
 
+    if {[$io read_only]} {
+	$t.seq_tech configure -state disabled
+    }
+
     radiolist $t.mode \
 	-title [keylget l CMODE_NAME] \
 	-bd 2 -relief groove \

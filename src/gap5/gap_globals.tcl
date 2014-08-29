@@ -17,12 +17,12 @@ proc set_global_defaults {} {
 }
 
 proc set_database_defaults {io} {
+    global default_seq_tech
+    set default_seq_tech 2
+
     set db [$io get_database]
     set arec [$db get_config_anno]
     if {$arec <= 0} return
-
-    global default_seq_tech
-    set default_seq_tech 2
 
     set ae [$io get_anno_ele $arec]
     foreach line [split [$ae get_comment] "\n"] {
