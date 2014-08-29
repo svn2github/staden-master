@@ -10,6 +10,7 @@
 #include <tg_gio.h>
 
 #include "consensus.h"
+#include "gap_globals.h"
 
 #define CONS_BLOCK_SIZE 4096
 
@@ -1068,20 +1069,81 @@ static int calculate_consensus_bit(GapIO *io, tg_rec contig,
 
 #define P_HET 1e-6
 
+double p_overcall[] = {
+    0.001, // unknown
+    0.010, // sanger
+    0.001, // solexa/illumina
+    0.001, // solid
+    0.010, // 454
+    0.010, // helicos
+    0.010, // iontorrent
+    0.010, // pacbio
+    0.050, // ont
+};
+
+double p_undercall[] = {
+    0.001, // unknown
+    0.010, // sanger
+    0.001, // solexa/illumina
+    0.001, // solid
+    0.010, // 454
+    0.010, // helicos
+    0.010, // iontorrent
+    0.010, // pacbio
+    0.280, // ont
+};
+
 static double prior[25];     /* Sum to 1.0 */
 static double lprior15[15];  /* 15 combinations of {ACGT*} */
-static double acc_prior[25]; /* Cumulative values up to 32768 */
 
 /* Precomputed matrices for the consensus algorithm */
-static double pMM[101], p__[101], p_M[101];
+static double pMM[9][101], p__[9][101], p_M[9][101], po_[9][101], poM[9][101];
+static double poo[9][101], puu[9][101], pum[9][101], pmm[9][101];
 
 static double e_tab_a[1002];
 static double *e_tab = &e_tab_a[500];
 static double e_log[501];
 
+/*
+ * Lots of confusing matrix terms here, so some definitions will help.
+ *
+ * M = match base
+ * m = match pad
+ * _ = mismatch
+ * o = overcall
+ * u = undercall
+ *
+ * We need to distinguish between homozygous columns and heterozygous columns,
+ * done using a flat prior.  This is implemented by treating every observation
+ * as coming from one of two alleles, giving us a 2D matrix of possibilities
+ * (the hypotheses) for each and every call (the observation).
+ *
+ * So pMM[] is the chance that given a call 'x' that it came from the
+ * x/x allele combination.  Similarly p_o[] is the chance that call
+ * 'x' came from a mismatch (non-x) / overcall (consensus=*) combination.
+ *
+ * Examples with observation (call) C and * follows
+ *
+ *  C | A  C  G  T  *          * | A  C  G  T  * 
+ *  -----------------	       ----------------- 
+ *  A | __ _M __ __ o_	       A | uu uu uu uu um
+ *  C | _M MM _M _M oM	       C | uu uu uu uu um
+ *  G | __ _M __ __ o_	       G | uu uu uu uu um
+ *  T | __ _M __ __ o_	       T | uu uu uu uu um
+ *  * | o_ oM o_ o_ oo	       * | um um um um mm
+ *
+ * In calculation terms, the _M is half __ and half MM, similarly o_ and um.
+ *
+ * Relative weights of substitution vs overcall vs undercall are governed on a
+ * per base basis using the P_OVER and P_UNDER scores (subst is 1-P_OVER-P_UNDER).
+ *
+ * The heterozygosity weight though is a per column calculation as we're
+ * trying to model whether the column is pure or mixed. Hence this is done
+ * once via a prior and has no affect on the individual matrix cells.
+ */
+
 static void consensus_init(double p_het) {
-    int i;
-    double acc = 0;
+    int i, j, t;
 
     memset(lookup, 5, 256*sizeof(lookup[0]));
     lookup['A'] = lookup['a'] = 0;
@@ -1095,6 +1157,7 @@ static void consensus_init(double p_het) {
     for (i = 0; i <= 500; i++)
 	e_log[i] = log(i);
 
+    // Heterozygous locations
     for (i = 0; i < 25; i++)
 	prior[i] = p_het / 20;
     prior[0] = prior[6] = prior[12] = prior[18] = prior[24] = (1-p_het)/5;
@@ -1115,21 +1178,48 @@ static void consensus_init(double p_het) {
     lprior15[13] = log(prior[19]*2);
     lprior15[14] = log(prior[24]);
 
-    for (i = 0; i < 25; i++) {
-	acc += prior[i];
-	acc_prior[i] = acc * (0xffffff+1);
-    }
 
-    for (i = 1; i < 101; i++) {
-	double prob = 1 - pow(10, -i / 10.0);
-	 
-	pMM[i] = log(prob/5);
-	p__[i] = log((1-prob)/20);
-	p_M[i] = log(prob/10 + (1-prob)/40);
+    // Rewrite as new form
+    for (t = STECH_UNKNOWN; t <= STECH_LAST; t++) {
+	for (i = 1; i < 101; i++) {
+	    double prob = 1 - pow(10, -i / 10.0);
+	    double norm;
+
+	    if (t == STECH_ONT)
+		prob = 0.8; // Fake FIXED prob for now
+
+	    // May want to multiply all these by 5 so pMM[i] becomes close
+	    // to -0 for most data. This makes the sums increment very slowly,
+	    // keeping bit precision in the accumulator.
+
+	    //--- Illumina
+	    norm = (1-p_overcall[t])*prob + 3*((1-p_overcall[t])*(1-prob)/3)
+		+ p_overcall[t]*(1-prob);
+	    pMM[t][i] = log((1-p_overcall[t]) * prob /norm);
+	    p__[t][i] = log((1-p_overcall[t]) * (1-prob)/3 /norm);
+	    poo[t][i] = log((p_overcall[t]*(1-prob)) /norm);
+
+	    p_M[t][i] = log((exp(pMM[t][i]) + exp(p__[t][i]))/2);
+	    po_[t][i] = log((exp(p__[t][i]) + exp(poo[t][i]))/2);
+	    poM[t][i] = log((exp(pMM[t][i]) + exp(poo[t][i]))/2);
+
+	    // [t]* observation vs base
+	    norm = p_undercall[t]*(1-prob)*4 + (1-p_undercall[t])*prob;
+	    puu[t][i] = log((p_undercall[t] * (1-prob)) /norm);
+	    pmm[t][i] = log((1-p_undercall[t])*prob /norm);
+	    pum[t][i] = log((exp(puu[t][i]) + exp(pmm[t][i]))/2);
+	}
+
+	pMM[t][0] = pMM[t][1];
+	p__[t][0] = p__[t][1];
+	p_M[t][0] = p_M[t][1];
+
+	pmm[t][0] = pmm[t][1];
+	poo[t][0] = poo[t][1];
+	poM[t][0] = poM[t][1];
+	puu[t][0] = puu[t][1];
+	pum[t][0] = pum[t][1];
     }
-    pMM[0] = pMM[1];
-    p__[0] = p__[1];
-    p_M[0] = p_M[1];
 }
 
 /* 
@@ -1282,8 +1372,9 @@ int calculate_consensus_bit_het(GapIO *io, tg_rec contig,
 	for (j = left-1; j < right; j++) {
 	    char base;
 	    uint8_t base_l;
-	    int qual;
-	    double *S, MM, __, _M, qe;
+	    int qual, stech;
+	    double *S, qe;
+	    double MM, __, _M, oo, oM, o_, uu, um, mm;
 
 	    if (sp+j > end)
 		continue;
@@ -1301,15 +1392,28 @@ int calculate_consensus_bit_het(GapIO *io, tg_rec contig,
 		perfect[sp-start+j] |= (1<<base_l);
 	    
 	    /* Quality 0 should never be permitted as it breaks the math */
-	    if (qual < 1)
-		qual = 1;
+	    if (qual < 2)
+		qual = 2;
 	    if (qual > 100)
 		qual = 100;
 
 	    S = scores[sp-start+j];
-	    __ = p__[qual];
-	    MM = pMM[qual];
-	    _M = p_M[qual];
+
+	    /* MM=match  _M=half-match  __=mismatch */
+	    stech = s->seq_tech ? s->seq_tech : default_seq_tech;
+	    __ = p__[stech][qual];
+	    MM = pMM[stech][qual];
+	    _M = p_M[stech][qual];
+
+	    /* observation ACGT, but against hypothesis ** or *base */
+	    oo = poo[stech][qual];
+	    oM = poM[stech][qual];
+	    o_ = po_[stech][qual];
+
+	    /* observation * */
+	    uu = puu[stech][qual];
+	    um = pum[stech][qual];
+	    mm = pmm[stech][qual];
 
 	    if (flags & CONS_DISCREP) {
 		qe = q2p[qual];
@@ -1322,52 +1426,52 @@ int calculate_consensus_bit_het(GapIO *io, tg_rec contig,
 
 
 	    switch (base_l) {
-	    case 0:
-		S[0] += MM; S[1 ]+= _M; S[2 ]+= _M; S[3 ]+= _M; S[4 ]+= _M;
-		            S[5 ]+= __; S[6 ]+= __; S[7 ]+= __; S[8 ]+= __;
-			                S[9 ]+= __; S[10]+= __; S[11]+= __; 
-					            S[12]+= __; S[13]+= __; 
-						                S[14]+= __;
+	    case 0: //  match       subst     subst       subst     overcall
+		S[0] += MM; S[1 ]+= _M; S[2 ]+= _M; S[3 ]+= _M; S[4 ]+= oM;
+		            S[5 ]+= __; S[6 ]+= __; S[7 ]+= __; S[8 ]+= o_;
+			                S[9 ]+= __; S[10]+= __; S[11]+= o_; 
+					            S[12]+= __; S[13]+= o_; 
+						                S[14]+= oo;
 		break;
 
 	    case 1:
-		S[0] += __; S[1 ]+= _M; S[2 ]+= __; S[3 ]+= __; S[4 ]+= __;
-		            S[5 ]+= MM; S[6 ]+= _M; S[7 ]+= _M; S[8 ]+= _M;
-			                S[9 ]+= __; S[10]+= __; S[11]+= __; 
-					            S[12]+= __; S[13]+= __; 
-						                S[14]+= __;
+		S[0] += __; S[1 ]+= _M; S[2 ]+= __; S[3 ]+= __; S[4 ]+= o_;
+		            S[5 ]+= MM; S[6 ]+= _M; S[7 ]+= _M; S[8 ]+= oM;
+			                S[9 ]+= __; S[10]+= __; S[11]+= o_; 
+					            S[12]+= __; S[13]+= o_; 
+						                S[14]+= oo;
 		break;
 
 	    case 2:
-		S[0] += __; S[1 ]+= __; S[2 ]+= _M; S[3 ]+= __; S[4 ]+= __;
-		            S[5 ]+= __; S[6 ]+= _M; S[7 ]+= __; S[8 ]+= __;
-			                S[9 ]+= MM; S[10]+= _M; S[11]+= _M; 
-					            S[12]+= __; S[13]+= __; 
-						                S[14]+= __;
+		S[0] += __; S[1 ]+= __; S[2 ]+= _M; S[3 ]+= __; S[4 ]+= o_;
+		            S[5 ]+= __; S[6 ]+= _M; S[7 ]+= __; S[8 ]+= o_;
+			                S[9 ]+= MM; S[10]+= _M; S[11]+= oM; 
+					            S[12]+= __; S[13]+= o_; 
+						                S[14]+= oo;
 		break;
 
 	    case 3:
-		S[0] += __; S[1 ]+= __; S[2 ]+= __; S[3 ]+= _M; S[4 ]+= __;
-		            S[5 ]+= __; S[6 ]+= __; S[7 ]+= _M; S[8 ]+= __;
-			                S[9 ]+= __; S[10]+= _M; S[11]+= __; 
-					            S[12]+= MM; S[13]+= _M; 
-						                S[14]+= __;
+		S[0] += __; S[1 ]+= __; S[2 ]+= __; S[3 ]+= _M; S[4 ]+= o_;
+		            S[5 ]+= __; S[6 ]+= __; S[7 ]+= _M; S[8 ]+= o_;
+			                S[9 ]+= __; S[10]+= _M; S[11]+= o_; 
+					            S[12]+= MM; S[13]+= oM; 
+						                S[14]+= oo;
 		break;
 
-	    case 4:
-		S[0] += __; S[1 ]+= __; S[2 ]+= __; S[3 ]+= __; S[4 ]+= _M;
-		            S[5 ]+= __; S[6 ]+= __; S[7 ]+= __; S[8 ]+= _M;
-			                S[9 ]+= __; S[10]+= __; S[11]+= _M; 
-					            S[12]+= __; S[13]+= _M; 
-						                S[14]+= MM;
+	    case 4: // undercall  under       under      under  agree-no-base
+		S[0] += uu; S[1 ]+= uu; S[2 ]+= uu; S[3 ]+= uu; S[4 ]+= um;
+		            S[5 ]+= uu; S[6 ]+= uu; S[7 ]+= uu; S[8 ]+= um;
+			                S[9 ]+= uu; S[10]+= uu; S[11]+= um; 
+					            S[12]+= uu; S[13]+= um; 
+						                S[14]+= mm;
 		break;
 
 	    case 5: /* N => equal weight to all A,C,G,T but not a pad */
-		S[0] += MM; S[1 ]+= MM; S[2 ]+= MM; S[3 ]+= MM; S[4 ]+= _M;
-		            S[5 ]+= MM; S[6 ]+= MM; S[7 ]+= MM; S[8 ]+= _M;
-			                S[9 ]+= MM; S[10]+= MM; S[11]+= _M; 
-					            S[12]+= MM; S[13]+= _M; 
-						                S[14]+= __;
+		S[0] += MM; S[1 ]+= MM; S[2 ]+= MM; S[3 ]+= MM; S[4 ]+= oM;
+		            S[5 ]+= MM; S[6 ]+= MM; S[7 ]+= MM; S[8 ]+= oM;
+			                S[9 ]+= MM; S[10]+= MM; S[11]+= oM; 
+					            S[12]+= MM; S[13]+= oM; 
+						                S[14]+= oo;
 		break;
 	    }
 
@@ -1468,6 +1572,7 @@ int calculate_consensus_bit_het(GapIO *io, tg_rec contig,
 	shift = -DBL_MAX;
 	max = -DBL_MAX;
 	max_het = -DBL_MAX;
+
 	for (j = 0; j < 15; j++) {
 	    S[j] += lprior15[j];
 	    if (shift < S[j]) {
@@ -1664,7 +1769,7 @@ int calculate_consensus_pileup(int flags, pileup_base_t *p, consensus_t *cons){
 	seq_t *s = p->s;
 	char base;
 	uint8_t base_l;
-	int qual;
+	int qual, stech;
 	double MM, __, _M, qe;
 
 	if (p->base_index < s->left-1)
@@ -1691,9 +1796,10 @@ int calculate_consensus_pileup(int flags, pileup_base_t *p, consensus_t *cons){
 	if (qual > 100)
 	    qual = 100;
 
-	__ = p__[qual];
-	MM = pMM[qual];
-	_M = p_M[qual];
+	stech = s->seq_tech ? s->seq_tech : default_seq_tech;
+	__ = p__[stech][qual];
+	MM = pMM[stech][qual];
+	_M = p_M[stech][qual];
 
 	if (flags & CONS_DISCREP) {
 	    qe = q2p[qual];

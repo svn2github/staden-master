@@ -43,6 +43,8 @@ int min_vector_len = 0;
 int template_check_flags = 0;
 double template_size_tolerance = 1;
 
+int default_seq_tech = STECH_SOLEXA;
+
 static char *gap5_defs_trace(ClientData cd, Tcl_Interp *interp,
 			     char *n1, char *n2, int flags);
 
@@ -60,6 +62,7 @@ int   gap4_global_get_gopenval( void )			{ return gopenval; }
 void  gap4_global_set_gopenval( int ov )		{ gopenval=ov; }
 int   gap4_global_get_gextendval( void )		{ return gextendval; }
 void  gap4_global_set_gextendval( int ev )		{ gextendval=ev; }
+void  gap4_global_set_seq_tech( int t )                 { default_seq_tech=t; }
 double gap4_global_get_template_size_tolerance ( void ) {
     return template_size_tolerance;
 }
@@ -238,6 +241,9 @@ int init_globals(Tcl_Interp *interp) {
     Tcl_LinkVar(interp, "template_check_flags", (char *)&template_check_flags,
 		TCL_LINK_INT);
 
+    /* default_seq_tech */
+    Tcl_LinkVar(interp, "default_seq_tech", (char *)&default_seq_tech,
+		TCL_LINK_INT);
 
     return TCL_OK;
 }

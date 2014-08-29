@@ -24,6 +24,7 @@ int    gap4_global_get_gextendval( void );
 void   gap4_global_set_gextendval( int ev );
 double gap4_global_get_template_size_tolerance( void );
 void   gap4_global_set_template_size_tolerance( double ts );
+void   gap4_global_set_seq_tech( int t );
 
 
 
@@ -67,6 +68,8 @@ extern int rawdata_note;		/* "rawdata_note" - see notes.c */
 extern double template_size_tolerance;  /* "template_size_tolerance" */
 extern int    min_vector_len;		/* Minimum length of SVEC tag */
 extern int    template_check_flags;	/* TEMP_OFLAG_* for template.c */
+
+extern int default_seq_tech;            /* sequencing technology if unknown */
 
 #define CONSENSUS_MODE_FREQ	  0
 #define CONSENSUS_MODE_WEIGHTED	  1 	/* as FREQ, determined by qual_cut >= 0 */
