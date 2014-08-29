@@ -235,8 +235,20 @@ typedef struct {
     tg_rec anno_ele_brec;    /* Current anno_ele block */
     tg_rec anno_ele_sub_rec; /* Next anno_ele sub-record */
 
-    /* Global incrememnting timestamp */
+    /* Global incremementing timestamp */
     int timestamp;
+
+    /* An annotation holding database-wide configurations.
+     *
+     * In order to avoid bumping the on-disk database_t structure we hold the
+     * config_anno record number in the scaffold_name index as a
+     * "__g5::CONFIG" => rec lookup.  This is a good(!?) general purpose
+     * namespace for holding database-level annotations without the need to
+     * bump the version number further for each new type of field.
+     *
+     * Just whatever you do, don't create real scaffolds named __g5::*.
+     */
+    tg_rec config_anno;
 } database_t;
 
 

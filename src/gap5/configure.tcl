@@ -7,10 +7,12 @@
 # for a disclaimer of all warranties.
 #
 
+set seq_techs [list Sanger Illumina SOLiD 454 Helico IonTorrent PacBio ONT]
+
 #-----------------------------------------------------------------------------
 # Sets the consensus and quality cutoff values
 #
-proc ConfigureCutoffs {} {
+proc ConfigureCutoffs {io} {
     global gap5_defs consensus_iub
 
     set l [keylget gap5_defs CONFIGURE]
@@ -49,6 +51,13 @@ proc ConfigureCutoffs {} {
     global $t.iub.v
     set $t.iub.v $consensus_iub
 
+    global seq_techs default_seq_tech
+    xcombobox $t.seq_tech \
+	-label "Seq. tech. for unknown datasets" \
+	-fixed_list 1 \
+	-values $seq_techs
+    $t.seq_tech set [lindex $seq_techs [expr {$default_seq_tech-1}]]
+
     radiolist $t.mode \
 	-title [keylget l CMODE_NAME] \
 	-bd 2 -relief groove \
@@ -62,22 +71,23 @@ proc ConfigureCutoffs {} {
 		[list "scalebox_configure $t.quality -state disabled"]]
 
     okcancelhelp $t.ok -bd 2 -relief groove \
-	-ok_command "ConfigureCutoffs2 0 $t $t.consensus $t.quality \
-		$t.chem.v $t.mode $t.iub.v" \
-	-perm_command "ConfigureCutoffs2 1 $t $t.consensus $t.quality \
+	-ok_command "ConfigureCutoffs2 $io 0 $t $t.consensus $t.quality \
+		$t.chem.v $t.mode $t.iub.v $t.seq_tech" \
+	-perm_command "ConfigureCutoffs2 $io 1 $t $t.consensus $t.quality \
 		$t.chem.v $t.mode $t.iub.v" \
 	-cancel_command "destroy $t" \
 	-help_command "show_help gap5 {Con-Calculation}"
 
     pack $t.mode $t.consensus $t.quality -side top -fill both
-    pack $t.chem -pady 7 -side top -fill both
-    pack $t.iub -pady 7 -side top -fill both
+    pack $t.chem -pady 7 -side top -anchor w
+    pack $t.iub -pady 7 -side top -anchor w
+    pack $t.seq_tech -side top -anchor w
     pack $t.ok -side top -fill both
 }
 
-proc ConfigureCutoffs2 {perm t consensus quality chem mode iub} {
+proc ConfigureCutoffs2 {io perm t consensus quality chem mode iub seq_tech} {
     global gap5_defs consensus_cutoff quality_cutoff chem_as_double $chem env
-    global consensus_mode consensus_iub $iub
+    global consensus_mode consensus_iub $iub default_seq_tech seq_techs
 
     set consensus_mode [expr [radiolist_get $mode]-1]
     if {$consensus_mode == 0} {
@@ -91,6 +101,21 @@ proc ConfigureCutoffs2 {perm t consensus quality chem mode iub} {
     set consensus_cutoff [expr [scalebox_get $consensus]/100.0]
     set chem_as_double [set $chem]
     set consensus_iub [set $iub]
+    set seq_tech [lsearch $seq_techs [$seq_tech get]]
+    if {$seq_tech >= 0} {
+	incr seq_tech
+	if {$seq_tech != $default_seq_tech} {
+	    # Warning: changing this invalidates cached consensus. We should
+	    # warn the user and clear it.
+	    set yn [tk_messageBox -type yesno -title "Clear cached consensus" -message "Changing the default sequencing technology may invalidate any precomputed consensus.  Hence the consensus cache will need to be purged, which may take a few minutes.  Do you wish to make this configuration change?"]
+
+	    if {$yn == "yes"} {
+		set default_seq_tech $seq_tech
+		invalidate_consensus_cache $io
+		set_database_param $io default_seq_tech $default_seq_tech
+	    }
+	}
+    }
 
     keylset gap5_defs CONSENSUS_MODE   $consensus_mode
     keylset gap5_defs CONSENSUS_CUTOFF $consensus_cutoff
@@ -105,6 +130,62 @@ proc ConfigureCutoffs2 {perm t consensus quality chem mode iub} {
     }
 
     destroy $t
+}
+
+# Stores variable 'var'/'val' in the global database CNFG annotation.
+proc set_database_param {io var val} {
+    set db [$io get_database]
+    if {[set arec [$db get_config_anno]] == 0} {
+	set arec [$io new_anno_ele 16 0 0 0]
+	if {$arec == 0} {
+	    return -1
+	}
+
+	set ae [$io get_anno_ele $arec]
+	$ae set_type CNFG
+
+	$db set_config_anno $arec
+    } else {
+	set ae [$io get_anno_ele $arec]
+    }
+
+    set comment [$ae get_comment]
+    array set vars ""
+
+    foreach line [split $comment "\n"] {
+	if {$line == "\n"} continue
+	if {[regexp {set ([^ ]*) (.*)} $line _ a b] != 1} continue
+
+	set vars($a) $b
+    }
+    set vars($var) $val
+
+    set comment ""
+    foreach key [array names vars] {
+	append comment "set $key $vars($key)\n"
+    }
+    
+    $ae set_comment $comment
+
+    $io flush
+
+    return 0
+}
+
+# Invalidates the consensus cache for all contigs
+proc invalidate_consensus_cache {io} {
+    set db [$io get_database]
+    set nc [$db get_num_contigs]
+
+    vfuncheader "Purging consensus cache"
+    for {set i 0} {$i < $nc} {incr i} {
+	set crec [$io contig_order $i]
+	set c [$io get_contig $crec]
+	vmessage "Purging consensus for contig [expr {$i+1}] of $nc (=$crec)"
+	$c invalidate_consensus
+	$c delete
+	$io flush
+    }
 }
 
 #-----------------------------------------------------------------------------

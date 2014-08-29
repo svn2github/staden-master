@@ -16,18 +16,7 @@ load_package tk_utils
 tk_utils_init
 load_package gap5
 
-set consensus_mode          [keylget gap5_defs CONSENSUS_MODE]
-set consensus_cutoff        [keylget gap5_defs CONSENSUS_CUTOFF]
-set quality_cutoff          [keylget gap5_defs QUALITY_CUTOFF]
-set chem_as_double          [keylget gap5_defs CHEM_AS_DOUBLE]
-set consensus_iub           [keylget gap5_defs CONSENSUS_IUB]
-set template_size_tolerance [keylget gap5_defs TEMPLATE_TOLERANCE]
-set min_vector_len          [keylget gap5_defs MIN_VECTOR_LENGTH]
-set align_open_cost         [keylget gap5_defs ALIGNMENT.OPEN.COST]
-set align_extend_cost       [keylget gap5_defs ALIGNMENT.EXTEND.COST]
-load_alignment_matrix       [keylget gap5_defs ALIGNMENT.MATRIX_FILE]
-set ignore_all_ptype        [keylget gap5_defs IGNORE_ALL_PTYPE]
-set ignore_custom_ptype     [keylget gap5_defs IGNORE_CUSTOM_PTYPE]
+set_global_defaults
 	
 # Error reporting, override the tk route
 catch {rename tk_messageBox {}}
@@ -146,6 +135,8 @@ proc db_open {db access} {
 	puts stderr "Exiting as failed to open with read/write access."
 	exit 1
     }
+
+    set_database_defaults $io
 
     return $io
 }

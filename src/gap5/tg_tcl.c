@@ -2847,6 +2847,9 @@ static int tcl_anno_ele_read(GapIO *io, Tcl_Interp *interp,
     Tcl_GetWideIntFromObj(interp, objv[1], &elenum);
     e = (anno_ele_t *)cache_search(io, GT_AnnoEle, elenum);
 
+    if (NULL == e)
+	return TCL_ERROR;
+
     if (NULL == (te = (tcl_anno_ele *)ckalloc(sizeof(*te))))
 	return TCL_ERROR;
     te->io = io;
@@ -3173,13 +3176,13 @@ static int database_cmd(ClientData clientData, Tcl_Interp *interp,
 
     static char *options[] = {
 	"get_num_contigs",  "flush", "get_num_libraries",
-	"get_library_rec",
+	"get_library_rec",  "get_config_anno", "set_config_anno",
 	(char *)NULL,
     };
 
     enum options {
-	GET_NUM_CONTIGS,     FLUSH,   GET_NUM_LIBRARIES,
-	GET_LIBRARY_REC
+	GET_NUM_CONTIGS,     FLUSH,            GET_NUM_LIBRARIES,
+	GET_LIBRARY_REC,     GET_CONFIG_ANNO,  SET_CONFIG_ANNO
     };
 
     if (objc < 2) {
@@ -3211,6 +3214,43 @@ static int database_cmd(ClientData clientData, Tcl_Interp *interp,
 	Tcl_GetIntFromObj(interp, objv[2], &idx);
 	Tcl_SetWideIntObj(Tcl_GetObjResult(interp),
 			  arr(tg_rec, io->library, idx));
+	break;
+    }
+
+    case GET_CONFIG_ANNO: {
+	if (!io->db->config_anno)
+	    io->db->config_anno = scaffold_index_query(io, "__g5::CONFIG");
+	Tcl_SetWideIntObj(Tcl_GetObjResult(interp),
+			  io->db->config_anno > 0 ? io->db->config_anno : 0);
+	break;
+    }
+
+    case SET_CONFIG_ANNO: {
+	Tcl_WideInt rec, scaf_rec, irec;
+	GapIO *iob = gio_base(io);
+
+	if (objc != 3) {
+	    Tcl_WrongNumArgs(interp, 1, objv, "set_config_anno anno_rec");
+	    return TCL_ERROR;
+	}
+	
+	Tcl_GetWideIntFromObj(interp, objv[2], &rec);
+	io->db = cache_rw(io, io->db);
+	io->db->config_anno = rec;
+
+	/* Add 'rec' to the scaffold index under __g5::CONFIG fake name */
+	scaf_rec = iob->iface->scaffold.index_query(iob->dbh, "__g5::CONFIG", 0);
+	if (scaf_rec > 0) {
+	    tg_rec r;
+	    irec = iob->iface->scaffold.index_del(iob->dbh, "__g5::CONFIG",
+						  scaf_rec);
+	    if (irec != -1 && irec != io->db->scaffold_name_index)
+		io->db->scaffold_name_index = irec;
+	}
+	irec = iob->iface->scaffold.index_add(iob->dbh, "__g5::CONFIG", rec);
+	if (irec != -1 && irec != io->db->scaffold_name_index)
+	    io->db->scaffold_name_index = irec;
+
 	break;
     }
 

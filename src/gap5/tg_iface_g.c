@@ -1565,6 +1565,9 @@ static cached_item *io_database_read(void *dbh, tg_rec rec) {
 	db->timestamp = 2;
     }
 
+    // Obtained via index lookup
+    db->config_anno = 0;
+
     g_assert(cp-buf == buf_len, NULL);
     free(buf);
 
@@ -1645,9 +1648,8 @@ static int io_database_write_view(g_io *io, database_t *db, GView v) {
 	cp += intw2u7(db->scaffold, cp);
 	cp += intw2u7(db->scaffold_name_index, cp);
     }
-    if (io->db_vers >= 6) {
+    if (io->db_vers >= 6)
 	cp += int2u7(db->timestamp, cp);
-    }
     
     /* FIXME: Should write block record numbers */
 

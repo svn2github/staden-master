@@ -205,6 +205,8 @@ proc New_Open_Database { f entry_content browsed_path } {
     #catch {file delete -force $db_name.$version.BUSY}
     set io [g5::open_database -name $file -access $access -create $create]
 
+    set_database_defaults $io
+
     return $io
 }
 
@@ -242,6 +244,7 @@ proc DB_Load { file } {
 
     set orig_type $licence(type)
     set new_io [g5::open_database -name "$db_name" -access $access]
+    set_database_defaults $new_io
     global debug_level
     $new_io debug_level $debug_level
 

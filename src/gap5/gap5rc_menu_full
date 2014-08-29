@@ -146,7 +146,7 @@ add_command	{View.List Base Confidence}	 8 14 {ListBaseConfidence \$io}
 add_command     {View.List Libraries}            8 14 {ListLibraries \$io}
 #add_command     {View.Contig Navigation}         1 2 {ViewNavigationData \$io}
 
-add_command	{Options.Consensus algorithm}	1  2 {ConfigureCutoffs}
+add_command	{Options.Consensus algorithm}	4  6 {ConfigureCutoffs \$io}
 #add_command	{Options.Set maxseq/maxdb}	1  2 {SetMaxseq \$io}
 add_command	{Options.Set fonts}		1  2 {SetFonts}
 if { $tcl_platform(platform) != "windows" } {
@@ -155,7 +155,7 @@ if { $tcl_platform(platform) != "windows" } {
 add_command	{Options.Configure menus}	1  2 {ConfigureMenus}
 add_command	{Options.Set genetic code}	1  2 {SetGeneticCode} {e}
 add_command	{Options.Alignment scores}	1  2 {SetAlignmentScores} {e}
-add_command	{Options.Trace file location}   4  6 {SetRawData \$io} {e}
+#add_command	{Options.Trace file location}   4  6 {SetRawData \$io} {e}
 #add_command	{Options.Template Status} \
 #			     		 1 2 {SetTemplateStatusConfig} {e}
 

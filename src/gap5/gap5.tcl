@@ -645,6 +645,7 @@ if {$argc == 1} {
 	exit 1
     }
     $io debug_level $debug_level
+    set_database_defaults $io
 
     if {$origtype == "d" && $licence(type) == "v"} {
 	viewer_mode
@@ -663,18 +664,8 @@ if {$argc == 1} {
     gap5_usage
 }
 
-set consensus_mode          [keylget gap5_defs CONSENSUS_MODE]
-set consensus_cutoff        [keylget gap5_defs CONSENSUS_CUTOFF]
-set quality_cutoff          [keylget gap5_defs QUALITY_CUTOFF]
-set chem_as_double          [keylget gap5_defs CHEM_AS_DOUBLE]
-set consensus_iub           [keylget gap5_defs CONSENSUS_IUB]
-set template_size_tolerance [keylget gap5_defs TEMPLATE_TOLERANCE]
-set min_vector_len          [keylget gap5_defs MIN_VECTOR_LENGTH]
-set align_open_cost         [keylget gap5_defs ALIGNMENT.OPEN.COST]
-set align_extend_cost       [keylget gap5_defs ALIGNMENT.EXTEND.COST]
-load_alignment_matrix       [keylget gap5_defs ALIGNMENT.MATRIX_FILE]
-set ignore_all_ptype        [keylget gap5_defs IGNORE_ALL_PTYPE]
-set ignore_custom_ptype     [keylget gap5_defs IGNORE_CUSTOM_PTYPE]
+set_global_defaults
+
 if {[catch {load_genetic_code -filename [keylget gap5_defs GENETIC_CODE]} err]} {
     verror ERR_WARNING load_genetic_code $err
 }

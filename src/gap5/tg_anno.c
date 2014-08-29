@@ -47,7 +47,10 @@ tg_rec anno_ele_add(GapIO *io, int obj_type, tg_rec obj_rec, tg_rec anno_rec,
     tg_rec seq_bin = 0;
 
     /* Find contig for obj_rec/obj_type */
-    if (obj_type == GT_Contig) {
+    if (obj_type == GT_Database) {
+	// fake bin 1 in order to make sure it is written (bin 0 => unused)
+	return anno_ele_new(io, 1, obj_type, obj_rec, 0, type, dir, comment);
+    } else if (obj_type == GT_Contig) {
 	crec = obj_rec;
     } else {
 	int st, en;
@@ -207,7 +210,7 @@ int anno_ele_set_type(GapIO *io, anno_ele_t **e, char *str) {
     ae->tag_type = type;
 
     /* Also update range_t cached copy of type */
-    if (ae->bin) {
+    if (ae->bin && ae->obj_type != GT_Database) {
 	bin_index_t *bin = (bin_index_t *)cache_search(io, GT_Bin, ae->bin);
 	range_t *r = NULL;
 	int i, nranges;

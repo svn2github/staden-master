@@ -306,3 +306,6 @@ set auto_index(CheckDatabase) [list source [file join $dir check_database.tcl]]
 set auto_index(CheckAssembly) [list source [file join $dir check_assembly.tcl]]
 
 set auto_index(ContigExtend) [list source [file join $dir contig_extend.tcl]]
+
+set auto_index(set_global_defaults) [list source [file join $dir gap_globals.tcl]]
+set auto_index(set_database_defaults) [list source [file join $dir gap_globals.tcl]]
