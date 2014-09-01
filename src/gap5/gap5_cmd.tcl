@@ -939,6 +939,58 @@ proc ::cmd::check_assembly::run {dbname _options} {
 
 
 #-----------------------------------------------------------------------------
+# COMMAND: extend or trim
+namespace eval cmd::trim {
+    set name "Trim and/or Extend Contigs"
+}
+
+set ::cmd::trim::opts {
+    h|help  0 0    {}     {Shows this help.}
+    {} {} {} {} {}
+    
+    contigs       1 {*} list {Output only specific contigs. 'list' is a space separated list of contig names}
+    {} {} {} {} {}    	  
+    
+    trim             0 0    {} {Whether to trim contigs [off]}
+    min_trim_depth   1 3   val {Minimum depth for trimming}
+    {} {} {} {} {}    	  
+
+    extend           0 0    {} {Whether to extend contigs [off]}
+    min_extend_depth 1 3   val {Minimum depth for extend}
+    smatch_score     1 1   val {Score for a match when extending}
+    mismatch_score   1 -3  val {Score for a mismatch when extending}
+}
+
+proc ::cmd::trim::run {dbname _options} {
+    upvar $_options opt
+    set io [db_open $dbname rw]
+
+    if {$opt(trim) == 0 && $opt(extend) == 0} {
+	puts stderr "Please use -trim and/or -extend to indicate which methods \
+you wish to apply."
+	exit 1
+    }
+
+    if {$opt(contigs) == "*"} {
+	set opt(contigs) [CreateAllContigList=Numbers $io]
+    }
+
+    contig_extend \
+	-io             $io \
+	-contigs        $opt(contigs) \
+	-extend         $opt(extend) \
+	-min_depth      $opt(min_extend_depth) \
+	-match_score    $opt(match_score) \
+	-mismatch_score $opt(mismatch_score) \
+	-trim           $opt(trim) \
+	-trim_depth     $opt(min_trim_depth)
+
+    $io close
+}
+
+
+
+#-----------------------------------------------------------------------------
 # Main entry
 
 set cmd [lindex $argv 0]
