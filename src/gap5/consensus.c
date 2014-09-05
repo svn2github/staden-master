@@ -1069,6 +1069,8 @@ static int calculate_consensus_bit(GapIO *io, tg_rec contig,
 
 #define P_HET 1e-6
 
+
+#if 0
 double p_overcall[] = {
     0.001, // unknown
     0.010, // sanger
@@ -1091,6 +1093,19 @@ double p_undercall[] = {
     0.010, // iontorrent
     0.010, // pacbio
     0.280, // ont
+};
+#endif
+
+double tech_undercall[] = {
+    1.00, // unknown
+    1.00, // sanger
+    1.00, // solexa/illumina
+    1.00, // solid
+    1.00, // 454
+    1.00, // helicos
+    1.00, // iontorrent
+    1.00, // pacbio
+    1.63, // ont
 };
 
 static double prior[25];     /* Sum to 1.0 */
@@ -1185,14 +1200,13 @@ static void consensus_init(double p_het) {
 	    double prob = 1 - pow(10, -i / 10.0);
 	    double norm;
 
-	    if (t == STECH_ONT)
-		prob = 0.8; // Fake FIXED prob for now
+//	    if (t == STECH_ONT)
+//		prob = 0.85; // Fake FIXED prob for now
 
 	    // May want to multiply all these by 5 so pMM[i] becomes close
 	    // to -0 for most data. This makes the sums increment very slowly,
 	    // keeping bit precision in the accumulator.
-
-	    //--- Illumina
+#if 0
 	    norm = (1-p_overcall[t])*prob + 3*((1-p_overcall[t])*(1-prob)/3)
 		+ p_overcall[t]*(1-prob);
 	    pMM[t][i] = log((1-p_overcall[t]) * prob /norm);
@@ -1208,6 +1222,19 @@ static void consensus_init(double p_het) {
 	    puu[t][i] = log((p_undercall[t] * (1-prob)) /norm);
 	    pmm[t][i] = log((1-p_undercall[t])*prob /norm);
 	    pum[t][i] = log((exp(puu[t][i]) + exp(pmm[t][i]))/2);
+#else
+	    pMM[t][i] = log(prob/5);
+	    p__[t][i] = log((1-prob)/20);
+	    p_M[t][i] = log((exp(pMM[t][i]) + exp(p__[t][i]))/2);
+
+	    puu[t][i] = p__[t][i];
+
+	    poM[t][i] = p_M[t][i] *= tech_undercall[t];
+	    po_[t][i] = p__[t][i] *= tech_undercall[t];
+	    poo[t][i] = p__[t][i] *= tech_undercall[t];
+	    pum[t][i] = p_M[t][i] *= tech_undercall[t];
+	    pmm[t][i] = pMM[t][i] *= tech_undercall[t];
+#endif
 	}
 
 	pMM[t][0] = pMM[t][1];
@@ -1216,6 +1243,7 @@ static void consensus_init(double p_het) {
 
 	pmm[t][0] = pmm[t][1];
 	poo[t][0] = poo[t][1];
+	po_[t][0] = po_[t][1];
 	poM[t][0] = poM[t][1];
 	puu[t][0] = puu[t][1];
 	pum[t][0] = pum[t][1];
