@@ -363,7 +363,7 @@ double list_base_confidence(int *matfreqs, int *misfreqs, long matrix[6][6])
     /* Substitution matrix */
     {
 	int b1, b2;
-	long tmis = 0, tins = 0, tdel = 0;
+	long tmis = 0, tins = 0, tdel = 0, tmat = 0;
 
 	vmessage("Substitution matrix:\n");
 	vmessage("call\\cons  A        C        G        T        N        *");
@@ -373,18 +373,25 @@ double list_base_confidence(int *matfreqs, int *misfreqs, long matrix[6][6])
 		vmessage(" %8ld", matrix[b1][b2]);
 		if (b1 != b2) {
 		    if (b1 == 5)
-			tdel += matrix[b1][b2];
-		    else if (b2 == 5)
 			tins += matrix[b1][b2];
+		    else if (b2 == 5)
+			tdel += matrix[b1][b2];
 		    else
 			tmis += matrix[b1][b2];
+		} else if (b1 < 4) {
+		    tmat += matrix[b1][b2];
 		}
 	    }
 	}
-	vmessage("\n\nTotal mismatches = %ld, insertions = %ld, "
-		 "deletions = %ld\n\n",
-		 tmis, tins, tdel);
-    }
+	vmessage("\n\nTotal matches = %ld, mismatches = %ld, "
+		 "insertions = %ld, deletions = %ld\n\n",
+		 tmat, tmis, tins, tdel); 
+
+	tmat += tdel; // aligned against non-* consensus.
+	vmessage("Substitution rate %5.2f%\n",   100.0 * tmis / tmat);
+	vmessage("Insertion rate    %5.2f%\n",   100.0 * tins / tmat);
+	vmessage("Deletion rate     %5.2f%\n\n", 100.0 * tdel / tmat);
+   }
 
     /* Headings */
     vmessage("Conf.        Match        Mismatch           Expected      Over-\n");
