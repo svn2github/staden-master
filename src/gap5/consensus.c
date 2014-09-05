@@ -104,7 +104,7 @@ int calculate_consensus_simple2(GapIO *io, tg_rec contig, int start, int end,
 		if (con)
 		    con[i-start+j] = "ACGT*N"[q[j].call];
 		if (qual)
-		    qual[i-start+j] = q[j].scores[q[j].call];
+		    qual[i-start+j] = q[j].phred;
 	    }
 	}
     }
@@ -1615,6 +1615,10 @@ int calculate_consensus_bit_het(GapIO *io, tg_rec contig,
 	    norm[j] = 0;
 	}
 
+        /*
+	 * This leaves norm[j] as an array of SUM(norm[]) over all values
+	 * except j'th.
+	 */
 	tot1 = tot2 = 0;
 	for (j = 0; j < 15; j++) {
 	    norm[j]    += tot1;
