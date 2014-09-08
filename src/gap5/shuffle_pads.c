@@ -82,6 +82,7 @@
 #include "tg_contig.h"
 #include "break_contig.h" /* contig_visible_start(), contig_visible_end() */
 #include "io_lib/hash_table.h"
+#include "str_finder.h"
 
 typedef struct {
     int pos;
@@ -2549,6 +2550,7 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
     int i;
     consensus_t *cons;
     int updated = 0;
+    char *str = NULL, *cons_simple = NULL;
 
     vmessage("Extend soft-clips for contig =%"PRIrec" at %d..%d\n",
 	     crec, start, end);
@@ -2557,7 +2559,8 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
     if (!(cons = calloc(end - start + 1, sizeof(*cons)))) {
 	return -1;
     }
-
+    if (!(cons_simple = malloc(end-start+1)))
+	return -1;
 
     /*
      * Firstly retrim reads back to their original clip positions so we
@@ -2602,6 +2605,23 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
     /* Now compute the consensus and rescan */
  skip_reset:
     calculate_consensus(io, crec, start, end, cons);
+
+    // Generate consensus including [ACGT]/* hets.
+    //
+    // So A* het becomes A, allowing it to be hashed and included
+    // in the STR finder.
+    for (i = 0; i < end-start+1; i++) {
+	if (cons[i].het_call % 5 == 4 && cons[i].scores[6] > 0)
+	    cons_simple[i] = "acgt*"[cons[i].het_call / 5];
+	else
+	    cons_simple[i] = "ACGT*"[cons[i].call];
+    }
+
+    /* Array of STR regions to filter */
+    if (!(str = cons_mark_STR(cons_simple, end-start+1, 1))) {
+	free(cons_simple);
+	return -1;
+    }
 
     citer = contig_iter_new(io, crec, 0, CITER_FIRST, start, end);
     while ((r = contig_iter_next(io, citer))) {
@@ -2747,10 +2767,103 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 
 	// Update the range? Not needed as start/end haven't changed.
 	// However the consensus valid range flag may be incorrect.
+
+	if (set_to_old)
+	    // Skip the STR finding step as we'll do another loop yet
+	    continue;
+
+	// We've extended as far as we can, but was it justified? We now
+	// check against previously detected short tandem repeats and trim
+	// back (if possible) any sequences that end mid-repeat without
+	// correctly observing the correct repeat size.
+	//
+	// Note: only do this for heterozygous indel regions?
+
+	//continue;
+
+	if ((s->len<0) ^ r->comp) {
+	    // Right end (left of comp. seq)
+	    p = r->end - s->right + 1 - start;
+	    if (p >= 0 && p <= end-start && str[p]) {
+		int p2, v, bit;
+		for (v = str[p], bit = 1; bit < 256; bit <<= 1) {
+		    if (!(v & bit))
+			continue;
+		
+		    for (p2 = p; p2 < end-start+1 && (str[p2] & bit); p2++)
+			;
+
+		    if (p2-1 > p) {
+			s = cache_rw(io, s);
+			s->right = MAX(r->end - p2 + 1 - start,
+				       s->left+1);
+		    }
+		}
+	    }
+
+	    // Left end
+	    p = r->end - s->left + 1 - start + 1;
+	    if (p >= 0 && p <= end-start && str[p]) {
+		int p2, v, bit;
+		for (v = str[p], bit = 1; bit < 256; bit <<= 1) {
+		    if (!(v & bit))
+			continue;
+		
+		    for (p2 = p; p2 > 0 && (str[p2] & bit); p2--)
+			;
+
+		    if (p2+1 < p) {
+			s = cache_rw(io, s);
+			s->left = MIN(r->end - p2 + 1 - start,
+				      s->right-1);
+		    }
+		}
+	    }
+	} else {
+	    // Right end
+	    p = r->start + s->right-1 - start;
+	    if (p >= 0 && p <= end-start && str[p]) {
+		int p2, v, bit;
+		for (v = str[p], bit = 1; bit < 256; bit <<= 1) {
+		    if (!(v & bit))
+			continue;
+		
+		    for (p2 = p; p2 > 0 && (str[p2] & bit); p2--)
+			;
+
+		    if (p2+1 < p) {
+			s = cache_rw(io, s);
+			s->right = MAX(p2 - (r->start - start) + 1,
+				       s->left+1);
+		    }
+		}
+	    }
+
+	    // Left end
+	    p = r->start + s->left-1 - start;
+	    if (p >= 0 && p <= end-start && str[p]) {
+		int p2, v, bit;
+		for (v = str[p], bit = 1; bit < 256; bit <<= 1) {
+		    if (!(v & bit))
+			continue;
+		
+		    for (p2 = p; p2 < end-start+1 && (str[p2] & bit); p2++)
+			;
+
+		    if (p2-1 > p) {
+			s = cache_rw(io, s);
+			s->left = MIN(p2 - (r->start - start - 1),
+				      s->right-1);
+		    }
+		}
+	    }
+	}
     }
     contig_iter_del(citer);
 
+    free(cons_simple);
     free(cons);
+    free(str);
 
     return 0;
 }
@@ -2948,3 +3061,4 @@ int *find_adapter(GapIO *io, int ncontigs, contig_list_t *contigs) {
 
     return counts_clip;
 }
+

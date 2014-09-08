@@ -147,6 +147,7 @@ GAP5=\
 	find_oligo.o \
 	import_gff.o \
 	shuffle_pads.o \
+	str_finder.o \
 	restriction_enzymes.o \
 	gap_canvas_box.o \
 	contig_extend.o \
