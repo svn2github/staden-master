@@ -2606,23 +2606,6 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
  skip_reset:
     calculate_consensus(io, crec, start, end, cons);
 
-    // Generate consensus including [ACGT]/* hets.
-    //
-    // So A* het becomes A, allowing it to be hashed and included
-    // in the STR finder.
-    for (i = 0; i < end-start+1; i++) {
-	if (cons[i].het_call % 5 == 4 && cons[i].scores[6] > 0)
-	    cons_simple[i] = "acgt*"[cons[i].het_call / 5];
-	else
-	    cons_simple[i] = "ACGT*"[cons[i].call];
-    }
-
-    /* Array of STR regions to filter */
-    if (!(str = cons_mark_STR(cons_simple, end-start+1, 1))) {
-	free(cons_simple);
-	return -1;
-    }
-
     citer = contig_iter_new(io, crec, 0, CITER_FIRST, start, end);
     while ((r = contig_iter_next(io, citer))) {
 	seq_t *sorig;
@@ -2777,9 +2760,27 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 	// back (if possible) any sequences that end mid-repeat without
 	// correctly observing the correct repeat size.
 	//
-	// Note: only do this for heterozygous indel regions?
+	// Note: only do this for heterozygous indel regions.
 
-	//continue;
+	//if (don't trim STRs)
+	//    continue;
+
+	// Generate consensus including [ACGT]/* hets.
+	//
+	// So A* het becomes A, allowing it to be hashed and included
+	// in the STR finder.
+	for (i = 0; i < end-start+1; i++) {
+	    if (cons[i].het_call % 5 == 4 && cons[i].scores[6] > 0)
+		cons_simple[i] = "acgt*"[cons[i].het_call / 5];
+	    else
+		cons_simple[i] = "ACGT*"[cons[i].call];
+	}
+
+	/* Array of STR regions to filter */
+	if (!(str = cons_mark_STR(cons_simple, end-start+1, 1))) {
+	    free(cons_simple);
+	    return -1;
+	}
 
 	if ((s->len<0) ^ r->comp) {
 	    // Right end (left of comp. seq)
@@ -2795,8 +2796,9 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 
 		    if (p2-1 > p) {
 			s = cache_rw(io, s);
-			s->right = MAX(r->end - p2 + 1 - start,
-				       s->left+1);
+			s->right = MIN(s->right,
+				       MAX(r->end - p2 + 1 - start,
+					   s->left+1));
 		    }
 		}
 	    }
@@ -2814,8 +2816,9 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 
 		    if (p2+1 < p) {
 			s = cache_rw(io, s);
-			s->left = MIN(r->end - p2 + 1 - start,
-				      s->right-1);
+			s->left = MAX(s->left,
+				      MIN(r->end - p2 + 1 - start,
+					  s->right-1));
 		    }
 		}
 	    }
@@ -2833,8 +2836,9 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 
 		    if (p2+1 < p) {
 			s = cache_rw(io, s);
-			s->right = MAX(p2 - (r->start - start) + 1,
-				       s->left+1);
+			s->right = MIN(s->right,
+				       MAX(p2 - (r->start - start) + 1,
+					   s->left+1));
 		    }
 		}
 	    }
@@ -2852,8 +2856,9 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 
 		    if (p2-1 > p) {
 			s = cache_rw(io, s);
-			s->left = MIN(p2 - (r->start - start - 1),
-				      s->right-1);
+			s->left = MAX(s->left,
+				      MIN(p2 - (r->start - start - 1),
+					  s->right-1));
 		    }
 		}
 	    }
@@ -2861,9 +2866,9 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
     }
     contig_iter_del(citer);
 
-    free(cons_simple);
     free(cons);
-    free(str);
+    if (str) free(str);
+    if (cons_simple) free(cons_simple);
 
     return 0;
 }
