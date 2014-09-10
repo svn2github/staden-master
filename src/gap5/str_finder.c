@@ -88,7 +88,7 @@ static int add_rep(rep_ele **list, char *cons, int clen, int pos, int rlen,
 	while (cons[--pos] == '*');
     }
     //pos++;
-    while (cons[pos-1] == '*') pos--;
+    while (pos > 1 && cons[pos-1] == '*') pos--;
     el->start = pos;
 
     // Check it meets the lower-case only criteria
