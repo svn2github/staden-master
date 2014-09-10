@@ -29,11 +29,10 @@ static int L[256] = {
 };
 
 static int add_rep(rep_ele **list, char *cons, int clen, int pos, int rlen,
-		   int lower_only, int *w_p) {
+		   int lower_only, int w) {
     rep_ele *el, *tmp, *prev;
     char *cp1, *cp2, *cp_end;
-    int extra, i;
-    int w = *w_p;
+    int i;
 
     // Already handled this in previous overlap?
     if (*list) {
@@ -72,16 +71,10 @@ static int add_rep(rep_ele **list, char *cons, int clen, int pos, int rlen,
 	cp2++;
     }
 
-//    while (cp2 < cp_end && *cp1 == *cp2)
-//	w<<=2, w|=L[*cp2], cp1++, cp2++;
-    *w_p = w;
-
-    extra = cp2-&cons[pos+1];
-
     if (!(el = malloc(sizeof(*el))))
 	return -1;
 
-    el->end   = pos + extra;
+    el->end   = pos + cp2-&cons[pos+1];
     pos++;
     while (rlen--) {
 	while (cons[--pos] == '*');
@@ -102,7 +95,7 @@ static int add_rep(rep_ele **list, char *cons, int clen, int pos, int rlen,
 	}
 
 	if (!lc)
-	    return extra;
+	    return;
     }
 
     // Remove any older items on the list that are entirely contained within el
@@ -126,11 +119,8 @@ static int add_rep(rep_ele **list, char *cons, int clen, int pos, int rlen,
 
     DL_APPEND(*list, el);
 
-    return extra;
+    return;
 }
-
-//FIXME: handle padded cons.
-
 
 /*
  * Finds repeated homopolymers up to 8-mers.
@@ -150,19 +140,19 @@ rep_ele *find_STR(char *cons, int len, int lower_only) {
 	w |= L[cons[i]];;
 	//printf("%3d %c w=%08x\n", i, cons[i], w);
 	if (j>= 1 && (w&0x0003) == ((w>> 2)&0x0003))
-	    i += add_rep(&reps, cons, len, i, 1, lower_only, &w);
+	    add_rep(&reps, cons, len, i, 1, lower_only, w);
 	if (j>= 3 && (w&0x000f) == ((w>> 4)&0x000f))
-	    i += add_rep(&reps, cons, len, i, 2, lower_only, &w);
+	    add_rep(&reps, cons, len, i, 2, lower_only, w);
 	if (j>= 5 && (w&0x003f) == ((w>> 6)&0x003f))
-	    i += add_rep(&reps, cons, len, i, 3, lower_only, &w);
+	    add_rep(&reps, cons, len, i, 3, lower_only, w);
 	if (j>= 7 && (w&0x00ff) == ((w>> 8)&0x00ff))
-	    i += add_rep(&reps, cons, len, i, 4, lower_only, &w);
+	    add_rep(&reps, cons, len, i, 4, lower_only, w);
 	if (j>= 9 && (w&0x03ff) == ((w>>10)&0x03ff))
-	    i += add_rep(&reps, cons, len, i, 5, lower_only, &w);
+	    add_rep(&reps, cons, len, i, 5, lower_only, w);
 	if (j>=11 && (w&0x0fff) == ((w>>12)&0x0fff))
-	    i += add_rep(&reps, cons, len, i, 6, lower_only, &w);
+	    add_rep(&reps, cons, len, i, 6, lower_only, w);
 	if (j>=13 && (w&0x3fff) == ((w>>14)&0x3fff))
-	    i += add_rep(&reps, cons, len, i, 7, lower_only, &w);
+	    add_rep(&reps, cons, len, i, 7, lower_only, w);
 
 	j++;
     }
@@ -174,21 +164,21 @@ rep_ele *find_STR(char *cons, int len, int lower_only) {
 	w |= L[cons[i]];
 	//printf("%3d %c w=%08x\n", i, cons[i], w);
 	if ((w&0xffff) == ((w>>16)&0xffff)) 
-	    i += add_rep(&reps, cons, len, i, 8, lower_only, &w);
+	    add_rep(&reps, cons, len, i, 8, lower_only, w);
 	else if ((w&0x3fff) == ((w>>14)&0x3fff)) 
-	    i += add_rep(&reps, cons, len, i, 7, lower_only, &w);
+	    add_rep(&reps, cons, len, i, 7, lower_only, w);
 	else if ((w&0x0fff) == ((w>>12)&0x0fff)) 
-	    i += add_rep(&reps, cons, len, i, 6, lower_only, &w);
+	    add_rep(&reps, cons, len, i, 6, lower_only, w);
 	else if ((w&0x03ff) == ((w>>10)&0x03ff)) 
-	    i += add_rep(&reps, cons, len, i, 5, lower_only, &w);
+	    add_rep(&reps, cons, len, i, 5, lower_only, w);
 	else if ((w&0x00ff) == ((w>> 8)&0x00ff)) 
-	    i += add_rep(&reps, cons, len, i, 4, lower_only, &w);
+	    add_rep(&reps, cons, len, i, 4, lower_only, w);
 	else if ((w&0x003f) == ((w>> 6)&0x003f)) 
-	    i += add_rep(&reps, cons, len, i, 3, lower_only, &w);
+	    add_rep(&reps, cons, len, i, 3, lower_only, w);
 	else if ((w&0x000f) == ((w>> 4)&0x000f)) 
-	    i += add_rep(&reps, cons, len, i, 2, lower_only, &w);
+	    add_rep(&reps, cons, len, i, 2, lower_only, w);
 	else if ((w&0x0003) == ((w>> 2)&0x0003)) 
-	    i += add_rep(&reps, cons, len, i, 1, lower_only, &w);
+	    add_rep(&reps, cons, len, i, 1, lower_only, w);
     }
 
     return reps;
