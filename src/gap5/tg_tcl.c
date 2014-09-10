@@ -1168,7 +1168,7 @@ static int contig_cmd(ClientData clientData, Tcl_Interp *interp,
 	//	s->rec, bin->rec);
 	if ((s->flags & SEQ_UNMAPPED) || s->bin != bin->rec) {
 	    int old_comp = ((s->flags & SEQ_UNMAPPED)
-			    ? bin_get_orient(tc->io, s->bin) : 0);
+			    ? 0 : bin_get_orient(tc->io, s->bin));
 	    int new_comp = bin_get_orient(tc->io, bin->rec);
 
 	    //printf("New seq bin (%d)%d->(%d)%d\n",
