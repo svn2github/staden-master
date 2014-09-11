@@ -352,6 +352,58 @@ static void remove_pads(GapIO *io, MALIGN *malign, contig_t *c,
 }
 
 /*
+ * Seeds the malign structure with suitable regions to realign. This
+ * is a stab at speeding up the initial scan.
+ */
+void seed_malign_region(GapIO *io, MALIGN *malign, contig_list_t cl,
+			int indels_only) {
+    char *cons = malloc(cl.end - cl.start + 1);
+    int i;
+
+    if (!cons || 
+	calculate_consensus_simple_het(io,
+				       cl.contig,
+				       cl.start,
+				       cl.end,
+				       cons,
+				       NULL) != 0) {
+	malign_add_region(malign,
+			  cl.start,
+			  cl.end);
+	return;
+    }
+
+    for (i = cl.start; i <= cl.end; i++) {
+	int j;
+	if (islower(cons[i-cl.start])) {
+	    // het indel
+	    for (j = i+1; j <= cl.end && islower(cons[j-cl.start]); j++)
+		;
+	    malign_add_region(malign, i-100, j+100);
+	    i = j + 99;
+	} else if (!indels_only &&
+		   (cons[i-cl.start] != 'A' &&
+		    cons[i-cl.start] != 'C' &&
+		    cons[i-cl.start] != 'G' &&
+		    cons[i-cl.start] != 'T' &&
+		    cons[i-cl.start] != 'N' &&
+		    cons[i-cl.start] != '*')) {
+	    malign_add_region(malign, i-100, i+100);
+	    i += 99;
+	}
+    }
+
+//    for (i = 0; i < malign->nregion; i++) {
+//	printf("REGION %d/%d: \t%d\t%d\n",
+//	       i+1, malign->nregion,
+//	       malign->region[i].start,
+//	       malign->region[i].end);
+//    }
+
+    free(cons);
+}
+
+/*
  * Iterates through all sequences in a contig realigning them against the
  * consensus vector.
  *
@@ -1906,9 +1958,9 @@ int shuffle_contigs_io(GapIO *io, int ncontigs, contig_list_t *contigs,
 				  cl.end);
 	    resort_contigl(malign);
 
-	    malign_add_region(malign,
-			      cl.start,
-			      cl.end);
+	    // FIXME: Add an option to controll whether we set the
+	    // indel_only parameter.
+	    seed_malign_region(io, malign, cl, 0);
 
 	    ArrayMax(indels) = 0;
 	    orig_score = new_score = malign_diffs(malign, &tot_score);
@@ -2606,6 +2658,25 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
  skip_reset:
     calculate_consensus(io, crec, start, end, cons);
 
+    if (!set_to_old) {
+	// Generate consensus including [ACGT]/* hets.
+	//
+	// So A* het becomes A, allowing it to be hashed and included
+	// in the STR finder.
+	for (i = 0; i < end-start+1; i++) {
+	    if (cons[i].het_call % 5 == 4 && cons[i].scores[6] > 0)
+		cons_simple[i] = "acgt*"[cons[i].het_call / 5];
+	    else
+		cons_simple[i] = "ACGT*"[cons[i].call];
+	}
+
+	/* Array of STR regions to filter */
+	if (!(str = cons_mark_STR(cons_simple, end-start+1, 1))) {
+	    free(cons_simple);
+	    return -1;
+	}
+    }
+
     citer = contig_iter_new(io, crec, 0, CITER_FIRST, start, end);
     while ((r = contig_iter_next(io, citer))) {
 	seq_t *sorig;
@@ -2764,23 +2835,6 @@ int rewrite_soft_clips(GapIO *io, tg_rec crec, int start, int end,
 
 	//if (don't trim STRs)
 	//    continue;
-
-	// Generate consensus including [ACGT]/* hets.
-	//
-	// So A* het becomes A, allowing it to be hashed and included
-	// in the STR finder.
-	for (i = 0; i < end-start+1; i++) {
-	    if (cons[i].het_call % 5 == 4 && cons[i].scores[6] > 0)
-		cons_simple[i] = "acgt*"[cons[i].het_call / 5];
-	    else
-		cons_simple[i] = "ACGT*"[cons[i].call];
-	}
-
-	/* Array of STR regions to filter */
-	if (!(str = cons_mark_STR(cons_simple, end-start+1, 1))) {
-	    free(cons_simple);
-	    return -1;
-	}
 
 	if ((s->len<0) ^ r->comp) {
 	    // Right end (left of comp. seq)
