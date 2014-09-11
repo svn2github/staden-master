@@ -283,3 +283,59 @@ int main(int argc, char **argv) {
     return 0;
 }
 #endif
+
+#ifdef TEST_MAIN2
+#define BS 1024*1024
+static unsigned char *load(uint64_t *lenp) {
+    unsigned char *data = NULL;
+    uint64_t dsize = 0;
+    uint64_t dcurr = 0;
+    signed int len;
+
+    do {
+	if (dsize - dcurr < BS) {
+	    dsize = dsize ? dsize * 2 : BS;
+	    data = realloc(data, dsize);
+	}
+
+	len = read(0, data + dcurr, BS);
+	if (len > 0)
+	    dcurr += len;
+    } while (len > 0);
+
+    if (len == -1) {
+	perror("read");
+    }
+
+    *lenp = dcurr;
+    return data;
+}
+
+int main(int argc, char **argv) {
+    rep_ele *reps, *elt, *tmp;
+    char *str;
+    uint64_t i, in_len;
+    int count = 0;
+
+    str = load(&in_len);
+
+    reps = find_STR(str, in_len, 0);
+
+    DL_FOREACH_SAFE(reps, elt, tmp) {
+	printf("%2d .. %2d %.*s\n", elt->start, elt->end,
+	       elt->end - elt->start+1, &str[elt->start]);
+	count++;
+	DL_DELETE(reps, elt);
+	free(elt);
+    }
+
+    printf("Found %d reps\n", count);
+
+    //str = cons_mark_STR(argv[1], len, 1);
+    //for (i = 0; i < len; i++) {
+    //	printf("%3d %c %d\n", i, argv[1][i], str[i]);
+    //}
+
+    return 0;
+}
+#endif
