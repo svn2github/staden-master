@@ -476,6 +476,8 @@ int remove_contig_holes(GapIO *io, tg_rec contig, int start, int end,
 	    vmessage("GAP from %d..%d; breaking.\n", cend, last);
 	    if (!empty_contigs_only)
 		r = break_contig(io, contig, last, 0);
+	    else
+		r = 0;
 
 	    /* Who knows what impact break_contig has - restart to be safe */
 	    contig_iter_del(iter);

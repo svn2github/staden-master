@@ -1113,7 +1113,7 @@ void overlap_mismatch(Hash *h, EDIT_PAIR *edit_pair, OVERLAP *overlap,
     total = mat = score = 0;
     op1 = op2 = 0;
     while (i < seq1_len && j < seq2_len) {
-	char c1, c2;
+	char c1 = 0, c2 = 0;
 
 	while (op1 == 0) {
 	    op1 = *S1++;
