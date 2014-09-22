@@ -77,7 +77,10 @@ zfp *zfopen(const char *path, const char *mode) {
     /* Try normal fopen */
     if (NULL != (zf->fp = fopen(path, mode))) {
 	unsigned char magic[2];
-	fread(magic, 1, 2, zf->fp);
+	if (2 != fread(magic, 1, 2, zf->fp)) {
+	    fclose(zf->fp);
+	    return NULL;
+	}
 	if (!(magic[0] == 0x1f &&
 	      magic[1] == 0x8b)) {
 	    fseeko(zf->fp, 0, SEEK_SET);

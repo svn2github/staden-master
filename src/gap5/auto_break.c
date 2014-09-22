@@ -636,7 +636,7 @@ static Array suspect_joins(GapIO *io, tg_rec contig, int64_t tw,
 			   HashTable *clip_hash, int end_skip_len) {
     int i, clen, cstart, cend;
     char *valid = NULL, *cp;
-    int *clip_depth = NULL, *total_depth;
+    int *clip_depth = NULL, *total_depth = NULL;
     char legal_chars[256];
     Array gaps;
     char *cons = NULL;
@@ -1988,7 +1988,7 @@ dstring_t *auto_break_contigs(GapIO *io, int argc, contig_list_t *argv,
 			      int singleton_score, int singleton_unique_score)
 {
     int i;
-    int64_t tw;
+    int64_t tw = 0;
     double gc;
     int depth = 1; // filter by consensus
 

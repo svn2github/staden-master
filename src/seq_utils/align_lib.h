@@ -464,4 +464,6 @@ void init_W128(int **matrix,
 
 int set_alignment_matrix ( char *fn, char *base_order );
 
+void scale_malign_scores(MALIGN *malign, int start, int end);
+
 #endif

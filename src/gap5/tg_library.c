@@ -163,7 +163,7 @@ int update_library_stats(GapIO *io, tg_rec rec, int min_count,
     double m, s;
     */
     double N[3];
-    double isize[3], sd_[3], last_sd[3];
+    double isize[3], sd_[3], last_sd[3] = {0};
 
     if (!lib)
 	return -1;

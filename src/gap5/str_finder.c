@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <ctype.h>
 
 #include "str_finder.h"
 #include "utlist.h"
@@ -28,8 +29,8 @@ static int L[256] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  /* 255 */
 };
 
-static int add_rep(rep_ele **list, char *cons, int clen, int pos, int rlen,
-		   int lower_only, int w) {
+static void add_rep(rep_ele **list, char *cons, int clen, int pos, int rlen,
+		    int lower_only, int w) {
     rep_ele *el, *tmp, *prev;
     char *cp1, *cp2, *cp_end;
     int i;
@@ -37,9 +38,8 @@ static int add_rep(rep_ele **list, char *cons, int clen, int pos, int rlen,
     // Already handled this in previous overlap?
     if (*list) {
 	tmp = DL_TAIL(*list);
-	if (tmp->start <= pos-rlen*2+1 && tmp->end >= pos) {
-	    return 0;
-	}
+	if (tmp->start <= pos-rlen*2+1 && tmp->end >= pos)
+	    return;
     }
 
     // Find current and last occurence of repeated word.
@@ -72,7 +72,7 @@ static int add_rep(rep_ele **list, char *cons, int clen, int pos, int rlen,
     }
 
     if (!(el = malloc(sizeof(*el))))
-	return -1;
+	return;
 
     el->end   = pos + cp2-&cons[pos+1];
     pos++;

@@ -146,7 +146,7 @@ static int export_snps_contig(GapIO *io, tg_rec contig, int start, int end,
 		    ref_entry *e;
 		    //e = ref->ref_id[ref_id[i]];
 		    e = ref->ref_id[22]; // HACK FOR TESTING
-		    printf("Loading %d..%d\n", start_pos, e->length);
+		    printf("Loading %d..%d\n", start_pos, (int)e->length);
 		    ref_seq = load_ref_portion(ref->fp, e, start_pos, e->length);
 		}
 

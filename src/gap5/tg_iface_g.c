@@ -3157,7 +3157,7 @@ static cached_item *io_bin_read(void *dbh, tg_rec rec) {
     /* Load tracks */
     if (b->track) {
 	GViewInfo vi;
-	size_t nitems, i;
+	size_t nitems = 0, i;
 	GBinTrack *bt;
 
 	if (-1 == (v = lock(io, (int)b->track, G_LOCK_RO)))
@@ -3168,6 +3168,10 @@ static cached_item *io_bin_read(void *dbh, tg_rec rec) {
 	io->rdcounts[GT_Track]++;
 
 	bt = (GBinTrack *)io_generic_read_i4(io, v, GT_RecArray, &nitems);
+	if (!bt) {
+	    free(buf);
+	    return NULL;
+	}
 	nitems /= sizeof(GBinTrack) / sizeof(GCardinal);
 	bin->track = ArrayCreate(sizeof(bin_track_t), nitems);
 	bin->track->max = bin->track->dim = nitems;

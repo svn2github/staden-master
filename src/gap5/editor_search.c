@@ -232,8 +232,8 @@ int edview_search_sequence(edview *xx, int dir, int strand, char *value) {
     int patlen;
     char *uppert, *upperb;
     int found = 0;
-    tg_rec fseq;
-    int fpos, i;
+    tg_rec fseq = 0;
+    int fpos = 0, i;
     contig_iterator *iter;
     rangec_t *(*ifunc)(GapIO *io, contig_iterator *ci);
     rangec_t *r;
@@ -962,8 +962,8 @@ int edview_search_edit(edview *xx, int dir, int strand, char *value) {
     rangec_t *(*ifunc)(GapIO *io, contig_iterator *ci);
     rangec_t *r;
     int best_pos, found = 0;
-    int fpos;
-    tg_rec fseq;
+    int fpos = 0;
+    tg_rec fseq = 0;
 
     if (dir) {
 	start = xx->cursor_apos + 1;

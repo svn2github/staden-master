@@ -864,7 +864,7 @@ static void sam_export_seq(GapIO *io, scram_fd *bf,
 
     /* Cigar encoding */
     uint32_t *cigar = NULL, *cigar_tmp;
-    int ncigar, ncigar_tmp;
+    int ncigar = 0, ncigar_tmp;
 
     /* A single SAM line */
     static dstring_t *ds = NULL;
@@ -1154,7 +1154,7 @@ static void sam_export_seq(GapIO *io, scram_fd *bf,
     if (fifo_queue_head(tq)) {
 	char *d;
 	int i = 0, j = 0, l = ABS(s->len), n = 0;
-	int op, op_len = 0;
+	int op = 0, op_len = 0;
 	depad_map = malloc(l * sizeof(*depad_map));
 	if (!depad_map)
 	    return;

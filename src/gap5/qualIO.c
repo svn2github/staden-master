@@ -388,9 +388,9 @@ double list_base_confidence(int *matfreqs, int *misfreqs, long matrix[6][6])
 		 tmat, tmis, tins, tdel); 
 
 	tmat += tdel; // aligned against non-* consensus.
-	vmessage("Substitution rate %5.2f%\n",   100.0 * tmis / tmat);
-	vmessage("Insertion rate    %5.2f%\n",   100.0 * tins / tmat);
-	vmessage("Deletion rate     %5.2f%\n\n", 100.0 * tdel / tmat);
+	vmessage("Substitution rate %5.2f%%\n",   100.0 * tmis / tmat);
+	vmessage("Insertion rate    %5.2f%%\n",   100.0 * tins / tmat);
+	vmessage("Deletion rate     %5.2f%%\n\n", 100.0 * tdel / tmat);
    }
 
     /* Headings */

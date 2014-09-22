@@ -708,6 +708,7 @@ int btree_count(btree_t *t, btree_node_t *n) {
     return cnt;
 }
 
+#if 0
 #define FRONT_COMPRESSION
 int btree_size(btree_t *t, btree_node_t *n) {
     int sz = 0, sz2 = 0;
@@ -752,6 +753,7 @@ int btree_size(btree_t *t, btree_node_t *n) {
 
     return sz + sz2;
 }
+#endif
 
 void btree_list(btree_t *t, char *prefix) {
     btree_node_t *n;

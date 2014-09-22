@@ -1430,7 +1430,7 @@ int bio_del_seq(bam_io_t *bio, pileup_t *p) {
     bam_seq_t *b;
     seq_t s;
     HacheItem *hi;
-    tg_rec recno, bin_rec;
+    tg_rec recno = 0, bin_rec;
     int i, paired;
     int is_pair = 0;
     int flags;

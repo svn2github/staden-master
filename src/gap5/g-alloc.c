@@ -681,6 +681,7 @@ int heap_free(dheap_t *h, int64_t pos) {
     return 0;
 }
 
+#ifdef HEAP_CHECKER
 /*
  * Brute force check on the heap validity.
  * It's pretty inefficient and could be sped up, but for now this is just
@@ -1041,7 +1042,6 @@ void heap_check(dheap_t *h) {
     }
 }
 
-#ifdef HEAP_CHECKER
 int main(int argc, char **argv) {
     dheap_t *h;
 

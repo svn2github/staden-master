@@ -167,13 +167,18 @@ void bttmp_file_sort(bttmp_t *tmp) {
     char new_tmp[L_tmpnam];
     char buf[100+2*L_tmpnam];
 
-    tmpnam(new_tmp);
+    if (!tmpnam(new_tmp)) {
+	verror(ERR_WARN, "bttmp_file_sort",
+	       "Failed to find a temporary file name.\n");
+	return;
+    }
     sprintf(buf, "sort < %s > %s", tmp->name, new_tmp);
     fclose(tmp->fp);
 
     /* Use unix sort for now */
     printf("buf=%s\n", buf);
-    system(buf);
+    if (-1 == system(buf))
+	perror(buf);
     printf("done\n");
 
     // unlink(tmp->name);
@@ -1336,8 +1341,8 @@ static void merge_pairs(GapIO *io, tg_pair_t *pair) {
 	int i, nr;
 	char name[8192];
 	seq_t *s2;
-	bin_index_t *b2;
-	range_t *r;
+	bin_index_t *b2 = NULL;
+	range_t *r = NULL;
 	pair_loc_t *p;
 	int st, en;
 	tg_rec bin_rec, contig;
@@ -1406,7 +1411,7 @@ static void merge_pairs(GapIO *io, tg_pair_t *pair) {
 
 
 static void complete_pairs(GapIO *io, tg_pair_t *pair) {
-    bin_index_t *bo;
+    bin_index_t *bo = NULL;
     range_t *ro;
     tg_rec current_bin = -1;
     char line[1024];

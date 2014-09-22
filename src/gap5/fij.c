@@ -773,7 +773,7 @@ fij(fij_arg *fij_args,
     GapIO *io = fij_args->io;
     char *consensus = NULL;
     mobj_fij *FIJMatch = NULL;
-    int id;
+    int id = 0;
     char *val;
     Contig_parms *contig_list = NULL;
     contig_list_t *combined = NULL;

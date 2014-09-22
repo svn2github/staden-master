@@ -262,7 +262,9 @@ int actf_lock(int read_only, char *file, int new) {
 #endif
     namelen = strlen(content);
     sprintf(content + namelen, " %d\n", (int)getpid());
-    write(fd, content, namelen + strlen(content + namelen));
+    // Failure to write here isn't a serious problem.
+    if (-1 == write(fd, content, namelen + strlen(content + namelen)))
+	verror(ERR_WARN, "actf_lock", "Failed to write to lock file\n");
 
     lock_files[numu_lock_files].pathname = fname; fname = NULL;
     lock_files[numu_lock_files].db_name = strdup(db_name);
