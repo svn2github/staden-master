@@ -331,59 +331,6 @@ bio_seq_t *bio_new_seq(bam_io_t *bio, pileup_t *p, int pos) {
 }
 
 
-static char *append_int(char *cp, int i) {
-    int j, k = 0;
-
-    if (i < 0) {
-	*cp++ = '-';
-	i = -i;
-    } else if (i == 0) {
-	*cp++ = '0';
-	return cp;
-    }
-
-    if (i < 1000)
-	goto b1;
-    if (i < 100000)
-	goto b2;
-    if (i < 100000000)
-	goto b3;
-
-    j = i / 1000000000;
-    if (j || k) *cp++ = j + '0', k=1, i %= 1000000000;
-
-    j = i / 100000000;
-    if (j || k) *cp++ = j + '0', k=1, i %= 100000000;
-    
- b3:
-    j = i / 10000000;
-    if (j || k) *cp++ = j + '0', k=1, i %= 10000000;
-    
-    j = i / 1000000;
-    if (j || k) *cp++ = j + '0', k=1, i %= 1000000;
-    
-    j = i / 100000;
-    if (j || k) *cp++ = j + '0', k=1, i %= 100000;
-    
- b2:
-    j = i / 10000;
-    if (j || k) *cp++ = j + '0', k=1, i %= 10000;
-
-    j = i / 1000;
-    if (j || k) *cp++ = j + '0', k=1, i %= 1000;
-
- b1:
-    j = i / 100;
-    if (j || k) *cp++ = j + '0', k=1, i %= 100;
-
-    j = i / 10;
-    if (j || k) *cp++ = j + '0', k=1, i %= 10;
-
-    if (i || k) *cp++ = i + '0';
-
-    return cp;
-}
-
 #define APPEND_FMT(fmt) \
     *cp++ = s[0]; \
     *cp++ = s[1]; \
