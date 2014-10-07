@@ -193,5 +193,5 @@ proc ImportSequences2 { old_io f job } {
     vmessage "Import finished."
 
     ClearBusy
-    PostLoadSetup
+    AssemblySinglePostLoad $io; # from assemble_single.tcl
 }
