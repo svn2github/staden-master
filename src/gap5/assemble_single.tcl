@@ -78,7 +78,7 @@ proc AssemblySingle2 {io w} {
 		-message "Error detected while importing reads."
 	$io flush
 	ClearBusy
-	PostLoadSetup
+	AssemblySinglePostLoad $io
 	return
     }
 
@@ -86,5 +86,33 @@ proc AssemblySingle2 {io w} {
 
     $io flush
     ClearBusy
-    PostLoadSetup
+    AssemblySinglePostLoad $io
+}
+
+proc AssemblySinglePostLoad {io} {
+    global gap5_defs
+
+    # Display contig selector if appropriate.
+    set cs_win [keylget gap5_defs CONTIG_SEL.WIN]
+    global do_csel
+    if {![winfo exists $cs_win] && $do_csel} {
+	if {$do_csel == 2 || [db_info num_contigs $io] <= 1000} {
+	    ContigSelector $io
+	} else {
+	    vmessage "\nSkipping contig selector due to large number of contigs."
+	}
+    } else {
+	ContigInitReg $io
+	catch {raise $cs_win}
+    }
+
+    # We may be going from 0 contigs to N contigs, so "un-grey" menus if so.
+    ActivateMenu_Open 
+    Menu_Check_RO $io
+
+    # Check CurContig/LREG/RREG if not already done
+    global CurContig
+    if {![info exists CurContig] || $CurContig == ""} {
+	InitContigGlobals $io
+    }
 }
