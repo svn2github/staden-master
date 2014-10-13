@@ -552,3 +552,5 @@ set auto_index(xtwinspin) [list source [file join $dir xtwinspin.tcl]]
 set auto_index(xradiobox) [list source [file join $dir xradiobox.tcl]]
 
 set auto_index(console) [list source [file join $dir console.tcl]]
+
+set auto_index(func_edit) [list source [file join $dir func_edit.tcl]]
