@@ -267,7 +267,8 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 			       int nbases, int comp, HacheTable *hash,
 			       int cstart, int cend,
 			       int *moved_left, int *moved_right,
-			       int *fixed_right, HacheTable *pileup) {
+			       int *fixed_right, HacheTable *pileup,
+			       int *fail) {
     bin_index_t *bin;
     int bin_start = INT_MAX;
     int bin_end   = INT_MIN;
@@ -326,13 +327,32 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	    if (!s) {
 		verror(ERR_WARN, "contig_insert_base2",
 		       "failed to load seq #%"PRIrec, r->rec);
-		return -1;
+		/*
+		 * Keep going regardless!
+		 *
+		 * This is less problematic than simply bailing out here,
+		 * as doing that will leave some reads with an insertion
+		 * and some without, along with reads to the right
+		 * not being shifted.
+		 *
+		 * It is better to attempt to fix the problem or to
+		 * work around it than to cause an even bigger one by
+		 * simply aborting the action.
+		 */
+		*fail = 1;
+		continue;
 	    }
 	    if (ABS(r->end - r->start) + 1 != ABS(s->len)) {
 		verror(ERR_WARN, "contig_insert_base2", 
 		       "Range start/end are inconsistent with seq length "
 		       "for #%"PRIrec, r->rec);
-		return -1;
+		/* Fix it! */
+		s = cache_rw(io, s);
+		s->len = (s->len >= 0)
+		    ?   ABS(r->end - r->start) + 1
+		    : -(ABS(r->end - r->start) + 1);
+
+		*fail = 1;
 	    }
 	    if (s->len < 0) {
 		astart = NMIN(r->end - (s->right-1), r->end - (s->left-1));
@@ -374,7 +394,7 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 						base, conf,
 						nbases, 0, comp);
 		}
-		if (0 != res) return -1;
+		if (0 != res) *fail = 1;
 		grow = 1;
 	    }
 	    break;
@@ -435,7 +455,7 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		hd.i = grow ? apos : (comp ? INT_MAX : INT_MIN);
 		if (NULL == HacheTableAdd(hash, (char *)&r->rec,
 					  sizeof(r->rec), hd, NULL)) {
-		    return -1;
+		    *fail = 1;
 		}
 	    }
 	}
@@ -497,8 +517,8 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 				       base, conf, nbases, comp, hash,
 				       cstart, cend,
 				       moved_left, moved_right,
-				       fixed_right, pileup);
-	    if (ins < 0) return -1;
+				       fixed_right, pileup, fail);
+	    if (ins < 0) *fail = 1;
 	} else if (pos < MIN(ch->pos, ch->pos + ch->size-1)) {
 	    /* Child is to the right (parent uncomplemented), or
 	       left (parent complemented) so need to update pos */
@@ -509,6 +529,7 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 	    ch->flags |= BIN_BIN_UPDATED;
 	}
     }
+
     return ins;
 }
 
@@ -679,7 +700,7 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
     tg_rec ref_id = 0;
     int dir;
     HacheTable *hash = NULL;
-    int ret;
+    int ret, fail = 0;
     int nbases2 = nbases; 
     int cstart = (*c)->start, cend = (*c)->end;
     int moved_left, moved_right, fixed_right;
@@ -714,7 +735,7 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
 			      contig_offset(io, c), contig_offset(io, c),
 			      base, conf, nbases, 0, hash,
 			      cstart, cend, &moved_left, &moved_right,
-			      &fixed_right, pileup);
+			      &fixed_right, pileup, &fail);
 
     ret |= contig_insert_tag2(io, n->rec, contig_get_bin(c), pos, pos,
 			      pos == n->start,
@@ -775,8 +796,8 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
 //    contig_visible_start(io, (*c)->rec, CITER_CSTART);
 //    contig_visible_end(io, (*c)->rec, CITER_CEND);
 
-    if (1 != ret)
-	return 0;
+    if (ret != 1)
+	return fail ? -1 : 0;
 
     rpos -= dir; /* Compensate for complemented contigs */
     rpos--;
@@ -869,7 +890,7 @@ int contig_insert_base_common(GapIO *io, contig_t **c,
     if (hash)
 	HacheTableDestroy(hash, 0);
 
-    return ret;
+    return fail ? -1 : ret;
 }
 
 int contig_insert_base(GapIO *io, contig_t **c, int pos, char base, int conf) {
