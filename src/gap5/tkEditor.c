@@ -119,6 +119,36 @@ static Tk_ConfigSpec configSpecs[] = {
 	 "-qualcolour9","selQualColour9",	"Background",	"#b9b9ff",
 	 offset(qual_bg2[9]),		0, NULL},
     {TK_CONFIG_COLOR,
+	 "-qualcolour0","selQualColour0",	"Background",	"#40c0ff",
+	 offset(qual_haplo[0]),		0, NULL},
+    {TK_CONFIG_COLOR,
+	 "-qualcolour1","selQualColour1",	"Background",	"#ff40a0",
+	 offset(qual_haplo[1]),		0, NULL},
+    {TK_CONFIG_COLOR,
+	 "-qualcolour2","selQualColour2",	"Background",	"#80ff30",
+	 offset(qual_haplo[2]),		0, NULL},
+    {TK_CONFIG_COLOR,
+	 "-qualcolour3","selQualColour3",	"Background",	"#ff8030",
+	 offset(qual_haplo[3]),		0, NULL},
+    {TK_CONFIG_COLOR,
+	 "-qualcolour4","selQualColour4",	"Background",	"#f000ff",
+	 offset(qual_haplo[4]),		0, NULL},
+    {TK_CONFIG_COLOR,
+	 "-qualcolour5","selQualColour5",	"Background",	"#00c000",
+	 offset(qual_haplo[5]),		0, NULL},
+    {TK_CONFIG_COLOR,
+	 "-qualcolour6","selQualColour6",	"Background",	"#00f0a0",
+	 offset(qual_haplo[6]),		0, NULL},
+    {TK_CONFIG_COLOR,
+	 "-qualcolour7","selQualColour7",	"Background",	"#ff80ff",
+	 offset(qual_haplo[7]),		0, NULL},
+    {TK_CONFIG_COLOR,
+	 "-qualcolour8","selQualColour8",	"Background",	"#ff3030",
+	 offset(qual_haplo[8]),		0, NULL},
+    {TK_CONFIG_COLOR,
+	 "-qualcolour9","selQualColour9",	"Background",	"#ff8070",
+	 offset(qual_haplo[9]),		0, NULL},
+    {TK_CONFIG_COLOR,
 	 "-qual_fg","qualForeground",	"Foreground","#ff5050",
 	 offset(qual_below),		0, NULL},
     {TK_CONFIG_COLOR,
@@ -241,6 +271,9 @@ static Tk_ConfigSpec configSpecs[] = {
     {TK_CONFIG_STRING,
          "-output_list", "outputList", "OutputList",
          "readings", offset(output_list), TK_CONFIG_NULL_OK, NULL},
+    {TK_CONFIG_STRING,
+         "-haplotype_list", "haplotypeList", "HaplotypeList",
+         NULL, offset(haplotype_list), TK_CONFIG_NULL_OK, NULL},
     {TK_CONFIG_END,
 	 (char *)NULL,	(char *)NULL,	(char *)NULL,	(char *) NULL,
          0,	0,	NULL},
@@ -402,6 +435,7 @@ static int EditorCmd(ClientData clientData, Tcl_Interp *interp,
     for (i = 0; i < 10; i++) {
 	ed->qual_bg[i] = NULL;
 	ed->qual_bg2[i] = NULL;
+	ed->qual_haplo[i] = NULL;
     }
     for (i = 0; i < 4; i++)
 	ed->edit_bg[i] = NULL;
@@ -419,6 +453,7 @@ static int EditorCmd(ClientData clientData, Tcl_Interp *interp,
     ed->yScrollCmd = NULL;
     ed->highlight_cmd = NULL;
     ed->output_list = NULL;
+    ed->haplotype_list = NULL;
     ed->max_height = 0;
     ed->xx = NULL;
     /*

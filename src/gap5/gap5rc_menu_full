@@ -261,6 +261,7 @@ add_command	{Commands.Change Contig Name}	3 6 {editor_set_name \[curr_ed $e\]}
 add_command	{Commands.Template Display}	3 6 {editor_template_display \[curr_ed $e\]}
 add_separator 	{Commands.S5}
 add_command 	{Commands.Sort By Sequence} 	3 6 {editor_sort_by_sequence \[curr_ed $e\]}
+add_command	{Commands.Show Haplotypes} 	3 6 {editor_show_haplotypes \[curr_ed $e\]}
 
 #add_command	{Commands.Save Contig}		3 2 {$e save}
 #add_command	{Commands.Dump Contig to File}	1 0 {dump_contig_dialog $e}

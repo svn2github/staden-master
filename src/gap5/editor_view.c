@@ -1341,10 +1341,18 @@ static void tk_redisplaySeqTags(edview *xx, XawSheetInk *ink, seq_t *s,
 /* Returns 1 if rec is in the global "readings" list, 0 if not */
 static int seq_in_readings_list(edview *xx, tg_rec rec) {
     char srec[20], list[1024];
+    char *v;
 
     sprintf(list, "NGList_read_hash_%s", xx->ed->output_list);
     sprintf(srec, "#%"PRIrec, rec);
-    return Tcl_GetVar2(xx->interp, list, srec, TCL_GLOBAL_ONLY) ? 1 : 0;
+    v = Tcl_GetVar2(xx->interp, list, srec, TCL_GLOBAL_ONLY);
+    if (v)
+	return 1;
+
+    sprintf(list, "NGList_read_hash_%s", xx->ed->haplotype_list);
+    sprintf(srec, "#%"PRIrec, rec);
+    v = Tcl_GetVar2(xx->interp, list, srec, TCL_GLOBAL_ONLY);
+    return v ? atoi(v)+1 : 0;
 }
 
 static void tk_redisplaySeqSequences(edview *xx, rangec_t *r, int nr) {
@@ -1550,6 +1558,8 @@ static void tk_redisplaySeqSequences(edview *xx, rangec_t *r, int nr) {
 		    int p2 = r[i].end   - xx->displayPos;
 		    int bg = -1, t;
 		    double nc = xx->names->sw.columns;
+		    int h;
+
 		    if (p < 0) p = 0;
 		    p = p * (nc / xx->displayWidth);
 		    if (p2 < 0) p2 = 0;
@@ -1559,25 +1569,32 @@ static void tk_redisplaySeqSequences(edview *xx, rangec_t *r, int nr) {
 		    while (nline[p] != ' ')
 			p++;
 
-		    if (seq_in_readings_list(xx, s->rec)) {
-			int ptmp = p;
-			do {
-			    nink[ptmp].sh |= sh_bold;
-			    nink[ptmp++].sh |= box_alt ? sh_box : sh_box_alt;
-			} while (ptmp < p2);
-			qual_bg = xx->ed->qual_bg2;
-			bg = xx->ed->qual_bg2[9]->pixel;
-		    }
-
-		    if (xx->ed->display_mapping_quality) {
-			int qbin = s->mapping_qual / 10;
-			if (qbin < 0) qbin = 0;
-			if (qbin > 9) qbin = 9;
-			bg = qual_bg[qbin]->pixel;
+		    h = seq_in_readings_list(xx, s->rec);
+		    if (h > 1) {
+			bg = xx->ed->qual_haplo[h%10]->pixel;
 		    } else {
-			t = sequence_get_template_info(xx->io, sorig,
-						       NULL, NULL);
-			bg = xx->ed->tmpl_bg[t+1]->pixel;
+			if (h == 1) {
+			    int ptmp = p;
+			    do {
+				nink[ptmp].sh |= sh_bold;
+				nink[ptmp++].sh |= box_alt
+				    ? sh_box
+				    : sh_box_alt;
+			    } while (ptmp < p2);
+			    qual_bg = xx->ed->qual_bg2;
+			    bg = xx->ed->qual_bg2[9]->pixel;
+			}
+
+			if (xx->ed->display_mapping_quality) {
+			    int qbin = s->mapping_qual / 10;
+			    if (qbin < 0) qbin = 0;
+			    if (qbin > 9) qbin = 9;
+			    bg = qual_bg[qbin]->pixel;
+			} else {
+			    t = sequence_get_template_info(xx->io, sorig,
+							   NULL, NULL);
+			    bg = xx->ed->tmpl_bg[t+1]->pixel;
+			}
 		    }
 
 		    nline[p] = dir;
@@ -1595,8 +1612,8 @@ static void tk_redisplaySeqSequences(edview *xx, rangec_t *r, int nr) {
 		    }
 
 		} else {
-		    XColor **qual_bg = xx->ed->qual_bg;
-		    int t;
+		    XColor **qual_bg;
+		    int t, h;
 
 		    nline[0] = dir;
 		    if (nl > 0)
@@ -1607,24 +1624,39 @@ static void tk_redisplaySeqSequences(edview *xx, rangec_t *r, int nr) {
 		    nink[0].sh = sh_bg;
 		    nink[0].bg = xx->ed->tmpl_bg[t+1]->pixel;
 
-		    if (seq_in_readings_list(xx, s->rec)) {
-			qual_bg = xx->ed->qual_bg2;
-			for (k = 1; k < ncol && k < MAX_NAME_WIDTH; k++) {
-			    nink[k].sh |= sh_bg |
-				(box_alt ? sh_box : sh_box_alt);
-			    nink[k].bg = qual_bg[9]->pixel;
-			}
-		    }
+		    h = seq_in_readings_list(xx, s->rec);
 
-		    /*if (xx->ed->display_mapping_quality)*/ {
+		    if (h <= 1) {
 			int qbin = s->mapping_qual / 10;
 			if (qbin < 0) qbin = 0;
 			if (qbin > 9) qbin = 9;
 
+			if (h == 1) {
+			    // Normal selection
+			    qual_bg = xx->ed->qual_bg2;
+			    for (k = 1; k < ncol && k < MAX_NAME_WIDTH; k++) {
+				nink[k].sh |= sh_bg |
+				    (box_alt ? sh_box : sh_box_alt);
+				nink[k].bg = qual_bg[qbin]->pixel;
+			    }
+			} else {
+			    // No selection
+			    qual_bg = xx->ed->qual_bg;
+			    for (k = 1; k < ncol && k < MAX_NAME_WIDTH; k++) {
+				nink[k].sh |= sh_bg;
+				nink[k].bg = qual_bg[qbin]->pixel;
+			    }
+			}
+
+		    } else {
+			// Haplotype; colour without tinting by mapping quality
+			int qp = xx->ed->qual_haplo[h%10]->pixel;
+
 			for (k = 1; k < ncol && k < MAX_NAME_WIDTH; k++) {
 			    nink[k].sh |= sh_bg;
-			    nink[k].bg = qual_bg[qbin]->pixel;
+			    nink[k].bg = qp;
 			}
+			
 		    }
 		}
 	    }

@@ -152,6 +152,7 @@ GAP5=\
 	gap_canvas_box.o \
 	contig_extend.o \
 	auto_break.o \
+	find_haplotypes.o \
 	$(GOBJS) \
 	$(TG_IO) \
 	$(CEDITOR) \

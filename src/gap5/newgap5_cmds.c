@@ -57,6 +57,7 @@
 #include "editor_join.h"
 #include "restriction_enzymes.h"
 #include "auto_break.h"
+#include "find_haplotypes.h"
 
 #include "sam_index.h"
 #include <io_lib/bam.h>
@@ -2751,6 +2752,76 @@ int tcl_iter_test(ClientData clientData,
 }
 		  
 
+typedef struct {
+    GapIO *io;
+    char *inlist;
+} fh_args;
+int
+tcl_find_haplotypes(ClientData clientData,
+		    Tcl_Interp *interp,
+		    int objc,
+		    Tcl_Obj *CONST objv[])
+{
+    fh_args args;
+    contig_list_t *contig_array = NULL;
+    int ncontigs;
+    GapIO *io;
+    Array rec_list;
+    Tcl_Obj *lobj;
+    int i;
+
+    /* Parse arguments */
+    cli_args a[] = {
+	{"-io",	           ARG_IO,  1,NULL, offsetof(fh_args, io)},
+	{"-contigs",       ARG_STR, 1,NULL, offsetof(fh_args, inlist)},
+	{NULL,	           0,	    0,NULL, 0}
+    };
+
+    vfuncheader("Find Haplotypes");
+
+    if (-1 == gap_parse_obj_args(a, &args, objc, objv))
+	return TCL_ERROR;
+
+    /* Fetch the list of contig records */
+    io = args.io;
+    active_list_contigs(io, args.inlist, &ncontigs, &contig_array);
+    if (ncontigs == 0) {
+	if (contig_array)
+	    xfree(contig_array);
+	return TCL_OK;
+    }
+
+    /* Do it */
+    rec_list = find_haplotypes(args.io, contig_array, ncontigs);
+    if (!rec_list)
+	return TCL_ERROR;
+
+    lobj = Tcl_NewListObj(0, NULL);
+    for (i = 0; i < ArrayMax(rec_list); i++) {
+	Array x = arr(Array, rec_list, i);
+	int j;
+	Tcl_Obj *lobj2 = Tcl_NewListObj(0, NULL);
+
+	for (j = 0; j < ArrayMax(x); j++) {
+	    Tcl_ListObjAppendElement(interp, lobj2,
+				     Tcl_NewWideIntObj(arr(tg_rec, x, j)));
+	}
+	Tcl_ListObjAppendElement(interp, lobj, lobj2);
+    }
+    
+    Tcl_SetObjResult(interp, lobj);
+
+    for (i = 0; i < ArrayMax(rec_list); i++)
+	ArrayDestroy(arr(Array, rec_list, i));
+    ArrayDestroy(rec_list);
+
+    if (contig_array)
+	xfree(contig_array);
+
+    return TCL_OK;
+}
+
+
 /* set up tcl commands which call C procedures */
 /*****************************************************************************/
 /*				   NewGap_Init				     */
@@ -3017,6 +3088,9 @@ NewGap_Init(Tcl_Interp *interp) {
 			 (ClientData) NULL, NULL);
     Tcl_CreateObjCommand(interp, "pair_readings",
 			 tcl_pair_readings,
+			 (ClientData) NULL, NULL);
+    Tcl_CreateObjCommand(interp, "find_haplotypes",
+			 tcl_find_haplotypes,
 			 (ClientData) NULL, NULL);
 			 
     

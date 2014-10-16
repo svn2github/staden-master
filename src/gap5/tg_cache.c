@@ -412,6 +412,9 @@ static void contig_unload(GapIO *io, cached_item *ci, int unlock) {
     if (c->link)
 	ArrayDestroy(c->link);
 
+    if (c->haplo_hash)
+	HashTableDestroy(c->haplo_hash, 0);
+
     if (unlock)
 	io->iface->contig.unlock(io->dbh, ci->view);
     cache_free(ci);
@@ -431,6 +434,10 @@ static void contig_block_unload(GapIO *io, cached_item *ci, int unlock) {
 
 	    if (c->link)
 		ArrayDestroy(c->link);
+
+	    if (c->haplo_hash)
+		HashTableDestroy(c->haplo_hash, 0);
+
 	    if (si)
 		free(si);
 	}

@@ -1873,6 +1873,8 @@ static cached_item *io_contig_read(void *dbh, tg_rec rec) {
     c->nrefpos = 0;
     c->timestamp = 1;
     c->clipped_timestamp = 0;
+    c->haplo_hash = NULL;
+    c->haplo_timestamp = 0;
 
     free(ch);
 
@@ -5124,6 +5126,10 @@ static cached_item *io_contig_block_read(void *dbh, tg_rec rec) {
     for (i = 0; i < CONTIG_BLOCK_SZ; i++) {
 	cp += u72intw(cp, &i64);
 	in[i].bin = i64;
+
+	/* Nul values as these are in-memory only */
+	in[i].haplo_timestamp = 0;
+	in[i].haplo_hash = NULL;
     }
 
     /* Flags */

@@ -122,6 +122,8 @@ set auto_index(InitListContigs) [list source [file join $dir list_contigs.tcl]]
 set auto_index(ListContigsScaffoldSort) [list source [file join $dir list_contigs.tcl]]
 set auto_index(ListContigsScaffoldFormat) [list source [file join $dir list_contigs.tcl]]
 
+set auto_index(ListGet) [list source [file join $dir list_proc.tcl]]
+set auto_index(ListType) [list source [file join $dir list_proc.tcl]]
 set auto_index(ListLoad) [list source [file join $dir list_proc.tcl]]
 set auto_index(ListSave) [list source [file join $dir list_proc.tcl]]
 set auto_index(ListCreate) [list source [file join $dir list_proc.tcl]]

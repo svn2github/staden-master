@@ -1845,6 +1845,47 @@ proc editor_sort_by_sequence {w} {
     }
 }
 
+proc editor_show_haplotypes {w} {
+    set w2 [selection own]
+    
+    if {$w2 == ""} {
+    	set w2 $w
+    } else {
+    	if {[winfo class $w2] != "Editor"} {
+	    bell
+	    return
+	}
+    }
+    
+    foreach {otype orec start end} [$w2 select get] break
+    
+    if {$start == $end || $otype != 17} {
+    	return
+    }
+
+    upvar \#0 contigIO_$orec cio
+    set hap [find_haplotypes -io $cio(io) -contigs "{=$orec $start $end}"]
+
+    global NGLists
+    set count 1
+    set meta_list ""
+    foreach hlist $hap {
+	puts "Haplotype $count with [llength $hlist] elements"
+	ListCreate2 haplotype_$count [regsub -all {^| } $hlist &#] SEQID
+	lappend meta_list haplotype_$count
+	incr count
+    }
+
+    # Access with "{haplotypes}"
+    ListCreate2 haplotypes $meta_list LIST_OF_LISTS
+
+    InitListTrace haplotypes
+    UpdateReadingDisplays haplotypes
+    $w configure -haplotype_list haplotypes
+
+    #edit_olist_switch $w haplotypes
+}
+
 #-----------------------------------------------------------------------------
 # Output list handling
 proc editor_olist_populate {w} {
@@ -1869,13 +1910,14 @@ proc editor_olist_switch {w l} {
 	ListCreate2 $l {} SEQID
     }
     InitListTrace $l
+    UpdateReadingDisplays $l
     set opt(OutputList) $l
     set opt(ListSize) [ListSize $opt(OutputList)]
 
     foreach ed $opt(all_editors) {
 	$ed configure -output_list $l 
 	$ed redraw
-   }
+    }
 }
 
 #-----------------------------------------------------------------------------

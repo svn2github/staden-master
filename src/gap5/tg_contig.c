@@ -13,9 +13,11 @@
 #include "break_contig.h"
 #include "tg_check.h"
 #include "list_proc.h"
+#include "find_haplotypes.h"
+#include "io_lib/hash_table.h"
 
 /* Uncomment to turn on debugging output for the insertion / deletion code */
-//#define DEBUG_INDEL
+#define DEBUG_INDEL
 
 #define NORM(x) (f_a * (x) + f_b)
 #define NMIN(x,y) (MIN(NORM((x)),NORM((y))))
@@ -2634,115 +2636,81 @@ static int (*set_sort(int job))(const void *, const void *) {
 }
 
 
-static int find_string_match_values(GapIO *io, rangec_t *r, seq_sort_t *setting, int count) {
-    char *seq = NULL;
-    int seq_size = (setting->end - setting->start) + 1;
-    int i, j, k;
-    int c_start = setting->start;
-    int c_end   = setting->end;
+static int find_haplo_match_values(GapIO *io, tg_rec crec, int start, int end,
+				   rangec_t *r, seq_sort_t *setting, int count) {
     
-    if (NULL == (seq = (char *)malloc(seq_size * sizeof(char)))) {
-    	fprintf(stderr, "Error: memory allocation failure in find_string_match_values\n");
-	return 1;
-    }
-    
-    seq[seq_size - 1] = 0;
-    
-    // get the selection, either from the consensus or a read
-    
-    if (setting->rec == 0) return 1;
+    contig_list_t clist;
+    Array rec_list;
+    HashTable *h;
+    contig_t *c;
+    int i, j;
 
-    if (setting->type == GT_Contig) {
-    	if (-1 == (calculate_consensus_simple(io, setting->rec,
-	    	     setting->start, setting->end, seq, NULL))) {
-	    fprintf(stderr, "Error: unable to retrieve consensus data\n");
-	    free(seq);
-	    return 1;
-	}
-    } else {
-    	seq_t *s = cache_search(io, GT_Seq, setting->rec);
-	
-	// look for the right record in range for the pos info
-	// there is probably a better way but do this for now
-	
-	for (i = 0; i < count; i++) {
-	    if (r[i].rec == setting->rec) break;
-	}
-	
-	if (i == count) { // rec not there, probably out of range
-	    free(seq);
-	    return 1;
-	}
-	
-	
-	k = 0;
-	
-	// map the select start to the consensus start
-	c_start += r[i].start;
-	c_end   += r[i].start;;
-	
-    	for (j = setting->start; j <=  setting->end; j++) {
-	    char base;
-	    int cutoff;
-	    
-	    if (get_base(s, &r[i], j, &base, &cutoff) || cutoff) {
-	    	seq[k] = '_';
-	    } else {
-	    	seq[k] = base;
-	    }
-	    
-	    k++;
-	}
+    c = cache_search(io, GT_Contig, crec);
+    if (!c)
+	return 1;
+
+    // Use selection if set, otherwise the current visible portion.
+    if (setting->type == GT_Contig && setting->rec == crec &&
+	ABS(setting->end - setting->start) > 0) {
+	crec  = setting->rec;
+	start = MIN(setting->start, setting->end);
+	end   = MAX(setting->start, setting->end);
     }
-    
-    // go through the reads and assign matching scores
-    
+
+    if (c->timestamp <= c->haplo_timestamp &&
+	start == c->haplo_start &&
+	end == c->haplo_end &&
+	setting->rec == c->haplo_rec) {
+	// cached
+	h = c->haplo_hash;
+    } else {
+	clist.contig = crec;
+	clist.start  = start;
+	clist.end    = end;
+
+	if (!(rec_list = find_haplotypes(io, &clist, 1)))
+	    return 1;
+
+	if (c->haplo_hash)
+	    HashTableDestroy(c->haplo_hash, 0);
+
+	c->haplo_start = start;
+	c->haplo_end = end;
+	c->haplo_rec = setting->rec;
+	c->haplo_hash = HashTableCreate(count, 0);
+	c->haplo_timestamp = c->timestamp;
+
+	h = c->haplo_hash;
+
+	// Index
+	for (i = 0; i < ArrayMax(rec_list); i++) {
+	    Array x = arr(Array, rec_list, i);
+	    for (j = 0; j < ArrayMax(x); j++) {
+		HashData hd = {ArrayMax(rec_list) - i};
+		HashTableAdd(h, (char *)arrp(tg_rec, x, j), sizeof(tg_rec), hd, NULL);
+	    }
+	}
+
+	for (i = 0; i < ArrayMax(rec_list); i++)
+	    ArrayDestroy(arr(Array, rec_list, i));
+	ArrayDestroy(rec_list);
+    }
+
+    // Loop through 'r' using indexed haplotype
     for (i = 0; i < count; i++) {
     	rangec_t *rn = &r[i];
-	
-    	if ((rn->flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISSEQ) {
-    	    seq_t *s = cache_search(io, GT_Seq, rn->rec);
+	HashItem *hi;
 
-	    k = 0;
-	    rn->seq_match = 0;
-	    
-	    // create a hash to group like sequences together
-	    rn->seq_hash = 1315423911;
-
-	    for (j = (c_start - rn->start); j <= (c_end - rn->start); j++) {
-		char base;
-		int cutoff;
-
-		if (get_base(s, &r[i], j, &base, &cutoff) || cutoff) {
-		    base = '_';
-		}
-		
-		// naive match scoring, +3 match, -1 mismatch, 0 for off the read end
-		
-		if (seq[k] == base) {
-	    	    rn->seq_match += 3;
-		} else if (base != '_') {
-	    	    rn->seq_match --;
-		}
-
-		k++;
-		
-		rn->seq_hash ^= ((rn->seq_hash << 5) + base + (rn->seq_hash >> 2));
-	    }
-	    
-	    rn->seq_hash &= 0x0FFF;
-
+	if ((hi = HashTableSearch(h, (char *)&rn->rec, sizeof(rn->rec)))) {
+	    rn->seq_match = hi->data.i;
 	} else {
-	   rn->seq_match = 0;
-	   rn->seq_hash  = 0; 
-	} 
+	    rn->seq_match = -1;
+	}
+	rn->seq_hash = 0;
     }
-    
-    free(seq);
 
     return 0;
 }
-
 
 
 
@@ -3309,7 +3277,7 @@ static rangec_t *contig_objects_in_range(GapIO *io, contig_t **c, seq_sort_t *so
 	    }
 	    
 	    if (job & CSIR_SORT_BY_SEQUENCE) {
-	    	if (find_string_match_values(io, r, sort_set, *count)) {
+		if (find_haplo_match_values(io, (*c)->rec, start, end, r, sort_set, *count)) {
 		    // something wrong, possibly selection not set. Default to tech sort
 		    first ^= CSIR_SORT_BY_SEQUENCE;
 		    first |= CSIR_SORT_BY_X | CSIR_SORT_BY_SEQ_TECH;

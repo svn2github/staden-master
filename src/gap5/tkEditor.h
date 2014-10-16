@@ -13,8 +13,9 @@ struct _edview;
 typedef struct {
 #   include "tkSheet_struct.h"
 
-    XColor *qual_bg[10];  /* unhighlighted reads */
-    XColor *qual_bg2[10]; /* highlighted reads => different tint */
+    XColor *qual_bg[10];    /* unhighlighted reads */
+    XColor *qual_bg2[10];   /* highlighted reads => different tint */
+    XColor *qual_haplo[10]; /* haplotype colours */
     XColor *qual_below;
     XColor *diff1_bg;
     XColor *diff2_bg;
@@ -28,6 +29,7 @@ typedef struct {
     char *yScrollCmd;
     char *highlight_cmd;
     char *output_list;
+    char *haplotype_list;
     int max_height;
     
     /* And our data to edit */

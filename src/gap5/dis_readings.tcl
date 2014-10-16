@@ -93,6 +93,14 @@ proc OK_Pressed_DisReading { io f cs infile id sel_task constags } {
 	if {[set list [lorf_get_list $infile]] == ""} {bell; return}
     }
 
+    # Check if list of lists, if so recurse
+    set loop ""
+    if {[lorf_in_get $infile] == 1} {
+	if {[ListType [lorf_in_name $infile]] == "LIST_OF_LISTS"} {
+	    set loop $list
+	}
+    }
+
     #convert reading numbers into reading names
 #    set list [eval get_read_names -io $io $list]
     destroy $f
@@ -103,12 +111,25 @@ proc OK_Pressed_DisReading { io f cs infile id sel_task constags } {
 	return
     }
 
-    set result [log_call disassemble_readings \
-		    -io $io \
-		    -readings $list \
-		    -move $iopt \
-		    -duplicate_tags $dup_tags \
-		    -remove_holes [set $f.Break]]
+    if {$loop == ""} {
+	log_call disassemble_readings \
+	    -io $io \
+	    -readings $list \
+	    -move $iopt \
+	    -duplicate_tags $dup_tags \
+	    -remove_holes [set $f.Break]
+    } else {
+	foreach l $loop {
+	    set list [ListGet $l]
+	    log_call disassemble_readings \
+		-io $io \
+		-readings $list \
+		-move $iopt \
+		-duplicate_tags $dup_tags \
+		-remove_holes [set $f.Break]
+	}
+    }
+
     #if database is empty, destroy contig selector and set menus back to
     #as if opened new database
     if {[db_info num_contigs $io] == 0} {

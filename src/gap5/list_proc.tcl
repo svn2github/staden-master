@@ -47,6 +47,16 @@ proc ListGet {name} {
     }
 }
 
+proc ListType {name} {
+    global NGListTag
+
+    if {![info exists NGListTag($name)]} {
+	return ""
+    } else {
+	return $NGListTag($name)
+    }
+}
+
 #############################################################################
 # List file IO
 proc ListLoad {file name {tag {}}} {
@@ -1183,6 +1193,7 @@ set NGList_urd 1
 # to the hash.
 proc UpdateReadingDisplays {list args} {
     global NGList io NGList_urd NGList_read_hash_$list  NGList_size
+    global NGListTag
     upvar #0 NGList_read_hash_$list hash
 
     # Optimisation for when this gets triggered LOTS of times, eg
@@ -1191,11 +1202,25 @@ proc UpdateReadingDisplays {list args} {
 	return
     }
 
-    PruneReadingList $list
-
     array set tmp ""
-    foreach r_name $NGList($list) {
-	set tmp($r_name) 1
+    if {[info exists NGListTag($list)] && $NGListTag($list) == "LIST_OF_LISTS"} {
+	set c 1
+	foreach l $NGList($list) {
+	    PruneReadingList $l
+	    if {[info exists NGList($l)]} {
+		foreach r_name $NGList($l) {
+		    set tmp($r_name) $c
+		}
+		incr c
+	    } else {
+		set tmp($r_name) ""
+	    }
+	}
+    } else {
+	PruneReadingList $list
+	foreach r_name $NGList($list) {
+	    set tmp($r_name) ""
+	}
     }
 
     contig_notify -io $io -type BUFFER_START -cnum 0 -args {}
@@ -1210,7 +1235,7 @@ proc UpdateReadingDisplays {list args} {
 		    continue
 		}
 	    }
-	    set hash($r_name) ""
+	    set hash($r_name) $tmp($r_name)
 	}
     }
 
@@ -1221,8 +1246,11 @@ proc UpdateReadingDisplays {list args} {
 	}
     }
 
-    set NGList($list) [array names hash]
-    set NGList_size($list) [llength $NGList($list)]
+    if {[info exists NGListTag($list)] && $NGListTag($list) == "LIST_OF_LISTS"} {
+    } else {
+	set NGList($list) [array names hash]
+	set NGList_size($list) [llength $NGList($list)]
+    }
 
     contig_notify -io $io -type BUFFER_END -cnum 0 -args {}
 

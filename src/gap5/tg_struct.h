@@ -5,6 +5,8 @@
 #include <array.h>
 #include <inttypes.h>
 
+#include "io_lib/hash_table.h"
+
 /*
  * Record numbers. Note that on disc we assume record numbers are only
  * 32-bit as that's what the "g" library supports with GRec and GCardinal.
@@ -364,8 +366,17 @@ typedef struct {
     int    idx;   /* Index to block */
     int    timestamp;
     Array  link;  /* Array of contig_link_t fields */
+
+    // To optimise CSIR_SORT_BY_SEQUENCE sorting
+    int haplo_timestamp;
+    HashTable *haplo_hash;
+    int haplo_start, haplo_end;
+    tg_rec haplo_rec;
+
+    // Variable length data
     char  *name;
     char   data[1];
+
 } contig_t;
 
 #define CONTIG_FLAG_CLIPPED_VALID 1 /* Indicates clipped start/end are valid */
