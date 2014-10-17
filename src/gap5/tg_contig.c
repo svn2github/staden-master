@@ -17,7 +17,7 @@
 #include "io_lib/hash_table.h"
 
 /* Uncomment to turn on debugging output for the insertion / deletion code */
-#define DEBUG_INDEL
+//#define DEBUG_INDEL
 
 #define NORM(x) (f_a * (x) + f_b)
 #define NMIN(x,y) (MIN(NORM((x)),NORM((y))))
