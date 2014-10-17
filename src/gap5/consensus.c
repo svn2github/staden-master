@@ -164,6 +164,11 @@ int calculate_consensus_simple(GapIO *io, tg_rec contig, int start, int end,
 	if (bin->size >= CONS_BIN_SIZE && (bin->child[0] || bin->child[1]))
 	    continue;
 
+	// Too large implies something suspect is going on. Best just
+	// give up and fall back to computing from scratch.
+	if (bin->size >= 4*CONS_BIN_SIZE)
+	    continue;
+
 	if (j != i) r[j] = r[i];
 	j++;
     }
@@ -1451,6 +1456,15 @@ int calculate_consensus_bit_het(GapIO *io, tg_rec contig,
 
 	    if (flags & CONS_COUNTS)
 		cons[sp-start+j].counts[base_l]++;
+
+
+	    // FIXME:
+	    // Todo - consensus shouldn't consider every base as independent.
+	    // Like Gap4, we need to consider the best quality one on each
+	    // library/technology/strand combination and then all others
+	    // to be simply additional information, with less confidence.
+	    //
+	    // This will have the effect of making SNPs more likely perhaps?
 
 
 	    switch (base_l) {
