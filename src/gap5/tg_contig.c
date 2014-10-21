@@ -347,10 +347,7 @@ static int contig_insert_base2(GapIO *io, tg_rec crec, tg_rec bnum,
 		       "Range start/end are inconsistent with seq length "
 		       "for #%"PRIrec, r->rec);
 		/* Fix it! */
-		s = cache_rw(io, s);
-		s->len = (s->len >= 0)
-		    ?   ABS(r->end - r->start) + 1
-		    : -(ABS(r->end - r->start) + 1);
+		r->end = ABS(s->len) + r->start - 1;
 
 		*fail = 1;
 	    }
