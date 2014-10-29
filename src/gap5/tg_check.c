@@ -261,6 +261,10 @@ static int check_anno(GapIO *io, int fix, bin_index_t *bin, range_t *r,
     int err = 0;
     anno_ele_t *a = cache_search(io, GT_AnnoEle, r->rec);
 
+    if (!a) {
+	vmessage("Anno %"PRIrec": failed to read.\n", r->rec);
+	return 1;
+    }
     cache_incr(io, a);
 
     /* Bin records match */
