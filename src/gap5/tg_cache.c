@@ -1151,6 +1151,8 @@ int cache_flush(GapIO *io) {
 			} else if (bo->contig[j]) {
 			    if (bo->contig[j]->link)
 				ArrayDestroy(bo->contig[j]->link);
+			    if (bo->contig[j]->haplo_hash)
+				HashTableDestroy(bo->contig[j]->haplo_hash, 0);
 			    if (strcmp(bo->contig[j]->name,
 				       bn->contig[j]->name) &&
 				!io->base->base) {
@@ -2759,6 +2761,11 @@ cached_item *cache_dup(GapIO *io, cached_item *sub_ci) {
 	    } else {
 		c->link = NULL; /* Just incase! */
 	    }
+
+	    /* Force creation of a new haplo_hash, if needed */
+	    c->haplo_hash = NULL;
+	    c->haplo_timestamp = 0;
+
 	    break;
 	}
 
@@ -2954,6 +2961,11 @@ cached_item *cache_dup(GapIO *io, cached_item *sub_ci) {
 		       ArrayBase(contig_link_t, oc->link),
 		       ArrayMax(oc->link) * sizeof(contig_link_t));
 	    }
+
+	    /* Force creation of a new haplo_hash, if needed */
+	    c->haplo_hash = NULL;
+	    c->haplo_timestamp = 0;
+
 
 	    c->block = b;
 	    b->contig[c->idx] = c;
