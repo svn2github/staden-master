@@ -59,7 +59,6 @@ TG_IO = \
 	tg_scaffold.o \
 	tg_check.o \
         actf.o \
-	zfio.o \
 	gap_cli_arg.o \
 	tg_tcl.o
 
