@@ -888,7 +888,7 @@ proc contig_editor {w args} {
 	-command editor_olist_switch \
  	-postcommand "editor_olist_populate $tool.list_xc" \
 	-default readings \
-	-width 15
+	-width 20
     bind $tool.list_xc <Any-Leave> {
 	editor_olist_switch %W [%W get]
 	focus [winfo toplevel %W]
@@ -4777,6 +4777,33 @@ bind EdNames <<menu>> {
 		eval $j
 	    }
 	}
+    }
+
+    set lsep 0
+    set w [set ${ed}(top)]
+    global $w
+    set olist [set ${w}(OutputList)]
+    global NGList_read_hash_$olist
+    if {[info exists NGList_read_hash_${olist}(#$rec)]} {
+	if {!$lsep} {
+	    %W.m add separator
+	    set lsep 1
+	}
+	%W.m add command \
+	    -label "View list $olist" \
+	    -command "ListEditMulti [list $olist]"
+    }
+
+    global NGList_read_hash_haplotypes
+    if {[info exists NGList_read_hash_haplotypes(#$rec)]} {
+	set hnum $NGList_read_hash_haplotypes(#$rec)
+	if {!$lsep} {
+	    %W.m add separator
+	    set lsep 1
+	}
+	%W.m add command \
+	    -label "View list haplotype_$hnum" \
+	    -command "ListEditMulti haplotype_$hnum"
     }
 
     tk_popup %W.m [expr %X-20] [expr %Y-10]
