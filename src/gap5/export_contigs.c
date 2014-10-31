@@ -141,12 +141,13 @@ int tcl_export_tags(ClientData clientData, Tcl_Interp *interp,
     return res == 0 ? TCL_OK : -1;
 }
 
+
 /* ------------------------------------------------------------------------
  * export_contigs implementation
  */
 
-
 /*
+ * ------------------------------------------------------------------------
  * A FIFO queue. We stack up sequences in here until we have sufficient
  * data to punt the entire thing out including all the annotations.
  */
@@ -276,6 +277,43 @@ static void fifo_queue_swap(fifo_queue_t *f, fifo_t *a, fifo_t *b) {
     else if (f->tail == b)
 	f->tail = a;
 }
+
+
+/*
+ * ------------------------------------------------------------------------
+ * A TREE equivalent to the FIFO queue, allowing insertion into a sorted
+ * tree.  Annotations go fine on the fifo as it's a simple queue.
+ * Sequences however need to be sorted by clipped start coordinate if we're
+ * outputting to SAM, so a sorted data structure is more efficient than
+ * attempting to maintain a sorted linked list.
+ *
+ * See Misc/tree.h for the macros.
+ */
+
+typedef struct clip_start {
+    SPLAY_ENTRY(clip_start) link;
+    int clipped_pos;
+    int count;
+    rangec_t r;
+} clip_start;
+
+static int clip_cmp(clip_start *vp1, clip_start *vp2) {
+    int d;
+
+    return (d = (vp1->clipped_pos - vp2->clipped_pos))
+	? d : vp1->count - vp2->count;
+}
+
+// xt         = function name prefix.
+// clip_start = tree node type.
+SPLAY_HEAD(xt, clip_start);
+SPLAY_PROTOTYPE(xt, clip_start, link, clip_cmp);
+SPLAY_GENERATE(xt, clip_start, link, clip_cmp);
+
+
+/* ------------------------------------------------------------------------
+ * export_contigs main guts
+ */
 
 /*
  * Computes and returns a false name for when the sequence has no read name.
@@ -742,7 +780,7 @@ static uint32_t *sam_depadded_cigar(char *seq, int left, int right, int olen,
 /*
  * Exports a single consensus tag as a fake sam sequence.
  */
-static void sam_export_cons_tag(GapIO *io, scram_fd *bf, fifo_t *fi,
+static void sam_export_cons_tag(GapIO *io, scram_fd *bf, clip_start *fi,
 				contig_t *c, int offset,
 				int depad, char *cons,
 				int *npad, int *pad_to) {
@@ -823,6 +861,7 @@ static void sam_export_cons_tag(GapIO *io, scram_fd *bf, fifo_t *fi,
     scram_put_seq(bf, bam);
 }
 
+
 /*
  * Exports a single sam sequence, marrying up annotations to the appropriate
  * sequences and adding these in auxillary tags.
@@ -835,7 +874,8 @@ static void sam_export_cons_tag(GapIO *io, scram_fd *bf, fifo_t *fi,
  * update these fields as we go (with an assumption data is in sorted order).
  */
 static void sam_export_seq(GapIO *io, scram_fd *bf,
-			   fifo_t *fi, fifo_queue_t *tq,
+			   //fifo_t *fi, fifo_queue_t *tq,
+			   clip_start *fi, fifo_queue_t *tq,
 			   int fixmates, tg_rec crec, contig_t *c, int offset,
 			   int depad, char *cons, int *npad, int *pad_to) {
     seq_t *s = (seq_t *)cache_search(io, GT_Seq, fi->r.rec), *sorig = s;
@@ -1310,11 +1350,14 @@ static int export_contig_sam(GapIO *io, scram_fd *bf,
     int offset, ustart, uend;
     char *cons = NULL;
     /* Seq fragment and tag queues */
-    fifo_queue_t *fq = fifo_queue_create(), *tq = fifo_queue_create();
+    fifo_queue_t *tq = fifo_queue_create();
     fifo_t *fi;
     int last_start = 0;
     int npads = 0, pad_to;
     int expanded_start, expanded_end;
+    clip_start *cs, *cs_next;
+    struct xt ptree = SPLAY_INITIALIZER(&ptree);
+    int count = 0;
 
     c = (contig_t *)cache_search(io, GT_Contig, crec);
     if (!c)
@@ -1350,77 +1393,75 @@ static int export_contig_sam(GapIO *io, scram_fd *bf,
 	/* Add new items to fifo */
 	if ((r->flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISSEQ) {
 	    seq_t *s;
-	    fifo_t *fi, *fl;
 
 	    if (r->end < start || r->start > end)
 		continue;
 
-	    fi = fifo_queue_push(fq, r);
+	    cs = malloc(sizeof(*cs));
+	    cs->r = *r;
+	    cs->count = count++;
 
 	    /* Compute clipped start */
-	    s = cache_search(io, GT_Seq, fi->r.rec);
-	    if ((s->len >= 0) ^ fi->r.comp) {
-		fi->clipped_pos = fi->r.start + s->left-1;
+	    s = cache_search(io, GT_Seq, cs->r.rec);
+	    if ((s->len >= 0) ^ cs->r.comp) {
+		cs->clipped_pos = cs->r.start + s->left-1;
 	    } else {
-		fi->clipped_pos = fi->r.start + (ABS(s->len) - s->right);
+		cs->clipped_pos = cs->r.start + (ABS(s->len) - s->right);
 	    }
 
-	    /* Sort by clipped left-end */
-	    while ((fl = fi->prev) && fi->clipped_pos < fl->clipped_pos) {
-		fifo_queue_swap(fq, fi, fl);
-	    }
+	    SPLAY_INSERT(xt, &ptree, cs);
 
 	    last_start = r->start;
 	} else if ((r->flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISANNO) {
 	    if (r->flags & GRANGE_FLAG_TAG_SEQ) {
 		fifo_queue_push(tq, r);
 	    } else {
-		fifo_t *fi, *fl;
+		cs = malloc(sizeof(*cs));
+		cs->r = *r;
+		cs->count = count++;
+		cs->clipped_pos = r->start;
 
-		fi = fifo_queue_push(fq, r); /* consensus tag */
-		fi->clipped_pos = r->start;
-
-		/* Sort by clipped left-end */
-		while ((fl = fi->prev) && fi->clipped_pos < fl->clipped_pos) {
-		    fifo_queue_swap(fq, fi, fl);
-		}
+		SPLAY_INSERT(xt, &ptree, cs);
 
 		last_start = r->start;
 	    }
 	}
 
 	/* And pop off when they're history */
-	while (NULL != (fi = fifo_queue_head(fq))) {
-	    if (fi->r.end < last_start) {
-		fifo_queue_pop(fq);
-		if ((fi->r.flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISANNO) {
-		    sam_export_cons_tag(io, bf, fi, c, offset,
+	for (cs = SPLAY_MIN(xt, &ptree); cs; cs = cs_next) {
+	    if (cs->r.end < last_start) {
+		if ((cs->r.flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISANNO) {
+		    sam_export_cons_tag(io, bf, cs, c, offset,
 					depad, cons+1, &npads, &pad_to);
 		} else {
-		    sam_export_seq(io, bf, fi, tq, fixmates, crec, c, offset,
+		    sam_export_seq(io, bf, cs, tq, fixmates, crec, c, offset,
 				   depad, cons+1, &npads, &pad_to);
 		}
-		free(fi);
+
+		cs_next = SPLAY_NEXT(xt, &ptree, cs);
+		SPLAY_REMOVE(xt, &ptree, cs);
+		free(cs);
 	    } else {
 		break;
 	    }
 	}
     }
 
-    /* Flush the rest of queues */
-    while (NULL != (fi = fifo_queue_head(fq))) {
-	fifo_queue_pop(fq);
-	if ((fi->r.flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISANNO) {
-	    sam_export_cons_tag(io, bf, fi, c, offset,
-				depad, cons+1, &npads, &pad_to);
+    for (cs = SPLAY_MIN(xt, &ptree); cs; cs = cs_next) {
+	cs_next = SPLAY_NEXT(xt, &ptree, cs);
+
+	if ((cs->r.flags & GRANGE_FLAG_ISMASK) == GRANGE_FLAG_ISANNO) {
+		    sam_export_cons_tag(io, bf, cs, c, offset,
+					depad, cons+1, &npads, &pad_to);
 	} else {
-	    sam_export_seq(io, bf, fi, tq, fixmates, crec, c, offset,
+	    sam_export_seq(io, bf, cs, tq, fixmates, crec, c, offset,
 			   depad, cons+1, &npads, &pad_to);
 	}
-	free(fi);
-    }
 
-    fifo_queue_destroy(fq);
+	SPLAY_REMOVE(xt, &ptree, cs);
+	free(cs);
+    }
+	    
     fifo_queue_destroy(tq);
 
     contig_iter_del(ci);
