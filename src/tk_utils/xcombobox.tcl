@@ -150,7 +150,7 @@ namespace eval ::Widget::Xcombobox {;
     set l [listbox $w.list.l \
 	       -exportselection 0 \
 	       -yscrollcommand "$w.list.ys set" \
-	       -width 10 \
+	       -width [$w cget -width]  \
 	       -height 10]
     scrollbar $w.list.ys -command "$l yview" -orient vertical
     if {[uplevel \#0 [list info exists [set ${w}(-valuesvariable)]]]} {
