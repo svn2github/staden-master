@@ -1847,6 +1847,7 @@ proc editor_sort_by_sequence {w} {
 
 proc editor_show_haplotypes {w} {
     set w2 [selection own]
+    upvar #0 $w opt
     
     if {$w2 == ""} {
     	set w2 $w
@@ -1858,19 +1859,31 @@ proc editor_show_haplotypes {w} {
     }
     
     foreach {otype orec start end} [$w2 select get] break
-    
+   
     if {$start == $end || $otype != 17} {
     	return
     }
 
+    # Find haplotypes
     upvar \#0 contigIO_$orec cio
     set hap [find_haplotypes -io $cio(io) -contigs "{=$orec $start $end}"]
 
+    # Clear old lists
     global NGLists
+    set l $NGLists
+    foreach n $l {
+	if {[string match haplotype_* $n]} {
+	    if {[ListExists2 $n]} {
+		ListDelete $n
+	    }
+	}
+    }
+    set NGLists $n
+    
+    # Create new lists
     set count 1
     set meta_list ""
     foreach hlist $hap {
-	puts "Haplotype $count with [llength $hlist] elements"
 	ListCreate2 haplotype_$count [regsub -all {^| } $hlist &#] SEQID
 	lappend meta_list haplotype_$count
 	incr count
@@ -1883,7 +1896,11 @@ proc editor_show_haplotypes {w} {
     UpdateReadingDisplays haplotypes
     $w configure -haplotype_list haplotypes
 
-    #edit_olist_switch $w haplotypes
+    # Force redraw
+    global $opt(top)
+    set ed [set $opt(top)(curr_editor)]
+    eval $ed set_cursor [$ed get_cursor relative] 1
+    $ed redraw
 }
 
 #-----------------------------------------------------------------------------
