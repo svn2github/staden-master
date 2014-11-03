@@ -921,18 +921,20 @@ proc ::cmd::check_assembly::run {dbname _options} {
 	set opt(contigs) [CreateAllContigList=Numbers $io]
     }
 
-    set id [check_assembly \
-		-io            $io \
-		-contigs       $opt(contigs) \
-		-max_pmismatch $opt(max_pmismatch) \
-		-win_size      $opt(win_size) \
-		-ignore_N      $opt(ignore_N)]
+ #    set id [check_assembly \
+ #		-io            $io \
+ #		-contigs       $opt(contigs) \
+ #		-max_pmismatch $opt(max_pmismatch) \
+ #		-win_size      $opt(win_size) \
+ #		-ignore_N      $opt(ignore_N)]
+ #
+ #    result_notify \
+ #	-io $io \
+ #	-id $id \
+ #	-type GENERIC \
+ #	-args "{task TASK_CS_SAVE data [list $opt(out)]}"
 
-    result_notify \
-	-io $io \
-	-id $id \
-	-type GENERIC \
-	-args "{task TASK_CS_SAVE data [list $opt(out)]}"
+    find_haplotypes -io $io -contigs $opt(contigs)
 
     $io close
 }
@@ -957,7 +959,7 @@ set ::cmd::trim::opts {
 
     extend           0 0    {} {Whether to extend contigs [off]}
     min_extend_depth 1 3   val {Minimum depth for extend}
-    smatch_score     1 1   val {Score for a match when extending}
+    match_score      1 1   val {Score for a match when extending}
     mismatch_score   1 -3  val {Score for a mismatch when extending}
 }
 
@@ -989,6 +991,38 @@ you wish to apply."
 }
 
 
+#-----------------------------------------------------------------------------
+# COMMAND: func (generic function calling)
+namespace eval cmd::func {
+    set name "Execute arbitrary function (experts only!)"
+}
+
+set ::cmd::func::opts {
+    h|help        0 0   {}   {Shows this help.}
+    {} {} {} {} {}
+    
+    contigs       1 {*} list {Output only specific contigs. 'list' is a space separated list of contig names}
+    {} {} {} {} {}    	  
+    
+    func          1 {}  val  {Tcl function to execute}
+    args          0 {}  val  {Arguments to function}
+}
+
+proc ::cmd::func::run {dbname _options} {
+    upvar $_options opt
+    set io [db_open $dbname rw]
+
+    if {$opt(contigs) == "*"} {
+	set opt(contigs) [CreateAllContigList=Numbers $io]
+    }
+
+    eval $opt(func) \
+	-io             $io \
+	-contigs        $opt(contigs) \
+	$opt(args)
+
+    $io close
+}
 
 #-----------------------------------------------------------------------------
 # Main entry
