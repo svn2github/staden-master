@@ -1528,11 +1528,25 @@ static void tk_redisplaySeqSequences(edview *xx, rangec_t *r, int nr) {
 
 			case 3:
 			    if (ubase != xx->displayedConsensus[p2]) {
-				ink[p2].sh |= sh_bg;
-				if (qual >= xx->ed->display_differences_qual)
-				    ink[p2].bg = xx->ed->diff2_bg->pixel;
-				else
-				    ink[p2].bg = xx->ed->diff1_bg->pixel;
+				if (qual >= xx->ed->display_differences_qual) {
+				    if (ink[p2].sh & sh_light) {
+					ink[p2].fg = xx->ed->diff2_bg->pixel;
+					ink[p2].sh &= ~(sh_bg|sh_light);
+					ink[p2].sh |= sh_fg;
+				    } else {
+					ink[p2].sh |= sh_bg;
+					ink[p2].bg = xx->ed->diff2_bg->pixel;
+				    }
+				} else {
+				    if (ink[p2].sh & sh_light) {
+					ink[p2].fg = xx->ed->diff1_bg->pixel;
+					ink[p2].sh &= ~(sh_bg|sh_light);
+					ink[p2].sh |= sh_fg;
+				    } else {
+					ink[p2].sh |= sh_bg;
+					ink[p2].bg = xx->ed->diff1_bg->pixel;
+				    }
+				}
 			    }
 			    break;
 			}
