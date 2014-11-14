@@ -431,9 +431,7 @@ proc contig_register_callback {ed type id args} {
     global $ed
     set w [set ${ed}(top)]
     global $w
-
-    #puts [info level [info level]]
-
+    
     switch $type {
 	QUERY_NAME {
 	    return "Contig Editor"
@@ -607,6 +605,7 @@ proc contig_register_callback {ed type id args} {
 	}
 
 	HIGHLIGHT_READ {
+	    set ${w}(OutputList) [regsub { \([0-9]+\)$} [set ${w}(OutputList)] ""]
 	    set ${w}(ListSize) [ListSize [set ${w}(OutputList)]]
 	    $ed redraw
 	}
@@ -1912,7 +1911,7 @@ proc editor_olist_populate {w} {
     set valid_lists ""
     foreach l $NGLists {
 	if {[lsearch -exact $NGSpecial $l] == -1 || $l == "readings"} {
-	    lappend valid_lists $l
+	    lappend valid_lists "$l ([ListSize $l])"
 	}
     }
     $w configure -values $valid_lists
@@ -1922,6 +1921,7 @@ proc editor_olist_switch {w l} {
     set w [winfo toplevel $w]
     upvar #0 $w opt
 
+    set l [regsub { \([0-9]+\)$} $l ""]
     global NGList
     if {![ListExists2 $l]} {
 	ListCreate2 $l {} SEQID
