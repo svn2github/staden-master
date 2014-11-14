@@ -1012,7 +1012,8 @@ static void tk_contig_register_cmd(GapIO *io, tg_rec contig, void *fdata,
     sprintf(buf, "%d", crt->id);
     if (Tcl_VarEval(crt->interp, crt->command, " ", type, " ", buf, " ",
 		    Tcl_DStringValue(&ds), NULL) != TCL_OK) {
-	fprintf(stderr, "registration_callback: %s", Tcl_GetStringResult(crt->interp));
+	fprintf(stderr, "registration_callback: %s\n", Tcl_GetStringResult(crt->interp));
+	fprintf(stderr, "%s %s %s %s\n", crt->command, type, buf, Tcl_DStringValue(&ds));
 	verror(ERR_WARN, "registration_callback", "%s",
 	       Tcl_GetStringResult(crt->interp));
     }
