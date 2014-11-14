@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <assert.h>
 
 #include "misc.h"
 #include "find_haplotypes.h"
@@ -30,7 +31,6 @@ typedef struct haplotype_str {
     struct haplotype_str *next;
     char *snps;          // string of [ACGT*-]
     int *count;          // depth of snps[]
-    int nsnps;
     int nseq;
     // start by ignoring this and use noddy implementation
     int start;           // number of leading "-"
@@ -47,9 +47,10 @@ typedef struct haplotype_str {
  * Returns 0 on success;
  *        -1 on failure.
  */
-int haplotype_str_add(haplotype_str **hs, char *snps, int nsnp, tg_rec rec) {
+int haplotype_str_add(haplotype_str **hs, char *snps, int start, int end, tg_rec rec) {
     haplotype_str *tmp, *last = NULL, *last_last = NULL;
-    int overlap = 0;
+    haplotype_str *best_hs = NULL, *best_last = NULL, *best_last_last = NULL;
+    int overlap = 0, best_overlap = 0;
     int i;
 
     // FIXME: need something better than linked list. Maybe a way to skip 
@@ -57,43 +58,85 @@ int haplotype_str_add(haplotype_str **hs, char *snps, int nsnp, tg_rec rec) {
     // Also have start/end to avoid making them so long.
 
     for (tmp = *hs; tmp; last_last = last, last = tmp, tmp = tmp->next) {
-	for (i = 0; i < nsnp; i++) {
-	    if (tmp->snps[i] != '-' && snps[i] != '-') {
-		overlap=1;
-		if (tmp->snps[i] != snps[i]) {
-		    overlap = 0;
+	int i, i_end; // idx to snps
+	int j, j_end; // idx to tmp->snps
+
+	// absolute positions
+	i     = MAX(tmp->start, start);
+	i_end = MIN(tmp->end, end);
+
+	// relative positions to start
+	j = MAX(0, i - tmp->start);
+	i = MAX(0, i - start);
+
+	j_end = MIN(tmp->end, i_end) - tmp->start;
+	i_end = MIN(end,      i_end) - start;
+
+	assert(i_end - i == j_end - j);
+
+	overlap = 0;
+	for (; i <= i_end; i++, j++) {
+	    if (tmp->snps[j] != '-' && snps[i] != '-') {
+		if (tmp->snps[j] == snps[i]) {
+		    overlap++;
+		} else {
 		    break;
 		}
-	}
-	}
-	if (i != nsnp)
-	    continue;
-
-	// Otherwise it matches, so update it
-	if (overlap) {
-	    for (i = 0; i < nsnp; i++) {
-		if (snps[i] != '-') {
-		    tmp->snps[i] = snps[i];
-		    tmp->count[i]++;
-		}
 	    }
-	    tmp->nseq++;
-
-	    // Maintain sorted list by nseq
-	    if (last && tmp->nseq > last->nseq) {
-		if (last_last) {
-		    last_last->next = tmp;
-		    last->next = tmp->next;
-		    tmp->next = last;
-		} else {
-		    *hs = tmp;
-		    last->next = tmp->next;
-		    tmp->next = last;
-		}
-	    }
-	    ArrayPush(tmp->recs, tg_rec, rec);
-	    return 0;
 	}
+
+	if (i != i_end+1)
+	    continue; // didn't overlap
+
+	if (best_overlap < overlap) {
+	    best_overlap = overlap;
+	    best_hs = tmp;
+	    best_last = last;
+	    best_last_last = last_last;
+	}
+    }
+
+    if (best_hs) {
+	// Overlaps an existing haplotype, so append.
+	// NB: no attempt to do joinining made here,
+	// but we're processing in left to right order
+	// so it is unlikely to be needed.
+	tmp = best_hs;
+	last = best_last;
+	last_last = best_last_last;
+
+	assert(tmp->start <= start);
+
+	if (tmp->end < end) {
+	    tmp->snps  = realloc(tmp->snps,  end - tmp->start+1);
+	    tmp->count = realloc(tmp->count, (end - tmp->start+1)*sizeof(int));
+	    memset(&tmp->count[tmp->end-tmp->start+1], 0, (end-tmp->end)*sizeof(int));
+	    tmp->end = end;
+	}
+
+	for (i = start; i <= end; i++) {
+	    if (snps[i-start] != '-') {
+		tmp->snps[i-tmp->start] = snps[i-start];
+		tmp->count[i-tmp->start]++;
+	    }
+	}
+	tmp->nseq++;
+
+	// Maintain sorted list by nseq
+	if (last && tmp->nseq > last->nseq) {
+	    if (last_last) {
+		last_last->next = tmp;
+		last->next = tmp->next;
+		tmp->next = last;
+	    } else {
+		*hs = tmp;
+		last->next = tmp->next;
+		tmp->next = last;
+	    }
+	}
+
+	ArrayPush(tmp->recs, tg_rec, rec);
+	return 0;
     }
 
 
@@ -106,13 +149,14 @@ int haplotype_str_add(haplotype_str **hs, char *snps, int nsnp, tg_rec rec) {
     if (!tmp)
 	return -1;
 
-    tmp->snps = (char *)malloc(nsnp);
-    tmp->count = (int *)calloc(nsnp, sizeof(int));
-    tmp->nsnps = nsnp;
+    tmp->snps = (char *)malloc(end-start+1);
+    tmp->count = (int *)calloc(end-start+1, sizeof(int));
+    tmp->start = start;
+    tmp->end = end;
     tmp->nseq = 1;
-    for (i = 0; i < nsnp; i++) {
-	if ((tmp->snps[i] = snps[i]) != '-')
-	    tmp->count[i] = 1;
+    for (i = start; i <= end; i++) {
+	if ((tmp->snps[i-start] = snps[i-start]) != '-')
+	    tmp->count[i-start] = 1;
     }
 
     tmp->recs = ArrayCreate(sizeof(tg_rec), 1);
@@ -121,20 +165,37 @@ int haplotype_str_add(haplotype_str **hs, char *snps, int nsnp, tg_rec rec) {
     return 0;
 }
 
+void haplotype_str_filter(haplotype_str **hs_p, int min_count) {
+    haplotype_str *hs = *hs_p, *last = NULL;
+
+    while (hs) {
+	haplotype_str *next = hs->next;
+	if (hs->nseq < min_count) {
+	    ArrayDestroy(hs->recs);
+	    free(hs);
+	    if (last)
+		last->next = next;
+	    else
+		*hs_p = next;
+	} else {
+	    last = hs;
+	}
+
+	hs = next;
+    }
+}
+
 void haplotype_str_dump(haplotype_str *hs) {
     while (hs) {
-	int i, d;
-	for (i = d = 0; i < hs->nsnps; i++)
-	    d += hs->count[i];
-	printf("%5d %.*s\n", hs->nseq, hs->nsnps, hs->snps);
+	int i;
+	printf("%5d %*s%.*s\n",
+	       hs->nseq, 
+	       hs->start, "",
+	       hs->end - hs->start+1, hs->snps);
 //	printf("%5d ", hs->nseq);
 //	for (i = 0; i < hs->nsnps; i++)
 //	    putchar('!'+MIN(90,hs->count[i]));
 //	putchar('\n');
-
-//	for (i = 0; i < ArrayMax(hs->recs); i++) {
-//	    printf("\t#%"PRIrec"\n", arr(tg_rec, hs->recs, i));
-//	}
 	hs = hs->next;
     }
 }
@@ -184,7 +245,7 @@ void del_haplotype_pos(haplotype_pos **phead, haplotype_pos **ptail,
 
 
 static int find_haplotypes_single(GapIO *io, tg_rec crec, int start, int end,
-				  Array rec_list) {
+				  int min_count, Array rec_list) {
     consensus_t *cons = NULL;
     int ret = -1, i;
     haplotype_pos *phead = NULL, *ptail = NULL;
@@ -204,12 +265,14 @@ static int find_haplotypes_single(GapIO *io, tg_rec crec, int start, int end,
 	goto err;
 
     for (i = start; i <= end; i++) {
-	if (cons[i-start].scores[6]>10) { // FIXME: Or > some specified minimum haplotype score.
-	    printf("Pos %5d: het %c/%c  score %d\n",
+	//if (cons[i-start].scores[6]>10) { // FIXME: Or > some specified minimum haplotype score.
+	if (cons[i-start].scores[6]>10 || cons[i-start].discrep>2) { // FIXME: Or > some specified minimum haplotype score.
+	    printf("Pos %5d: het %c/%c  score %d %f\n",
 		   i,
 		   "ACGT*"[cons[i-start].het_call / 5],
 		   "ACGT*"[cons[i-start].het_call % 5],
-		   (int)cons[i-start].scores[6]);
+		   (int)cons[i-start].scores[6],
+		   cons[i-start].discrep);
 
 	    add_haplotype_pos(&phead, &ptail, i);
 	    nsnps++;
@@ -279,14 +342,15 @@ static int find_haplotypes_single(GapIO *io, tg_rec crec, int start, int end,
 		    b = s->seq[p2->pos - r->start];
 		}
 
-		hstr[snp_no2++] = b;
+		hstr[snp_no2++-snp_no] = b;
 	    }
 
 	    //printf("#%"PRIrec": %.*s\n", r->rec, nsnps, hstr);
-	    haplotype_str_add(&hs, hstr, nsnps, r->rec);
+	    haplotype_str_add(&hs, hstr, snp_no, snp_no2-1, r->rec);
 	}
     }
 
+    haplotype_str_filter(&hs, min_count);
     haplotype_str_dump(hs);
 
     {
@@ -324,7 +388,7 @@ static int find_haplotypes_single(GapIO *io, tg_rec crec, int start, int end,
  * Returns NULL for failure.a
  */
 Array find_haplotypes(GapIO *io, contig_list_t *contigs, int ncontigs) {
-    int i;
+    int i, min_count = 3;
     Array rec_list = ArrayCreate(sizeof(Array), 0);
 
     for (i = 0; i < ncontigs; i++) {
@@ -333,6 +397,7 @@ Array find_haplotypes(GapIO *io, contig_list_t *contigs, int ncontigs) {
 	       contigs[i].contig, contigs[i].start, contigs[i].end);
 	if (-1 == find_haplotypes_single(io, contigs[i].contig,
 					 contigs[i].start, contigs[i].end,
+					 min_count,
 					 rec_list)) {
 	    // FIXME: free
 	    return NULL;
