@@ -917,6 +917,10 @@ void heap_check(dheap_t *h) {
 	type[23] = "SeqBlock";
 	type[24] = "AnnoEleBlock";
 	type[25] = "SeqCons";
+	type[26] = "ContigBlock";
+	type[27] = "Scaffold";
+	type[28] = "ScaffoldBlock";
+	
 
 	comp_mode[0] = "Zlib";
 	comp_mode[1] = "Uncompressed";
