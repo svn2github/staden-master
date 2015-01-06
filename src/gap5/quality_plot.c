@@ -285,7 +285,7 @@ static void qplot_redraw(QualityPlot *qp, Display *display) {
     XSegment *xs = NULL;
     consensus_t *cons;
     int i, len;
-    float yz, xz;
+    double yz, xz;
     int mode = 0;
 
     if (!qp->pm)
@@ -304,20 +304,35 @@ static void qplot_redraw(QualityPlot *qp, Display *display) {
     /* Fetch consensus */
     len = (int)qp->wx1 - (int)qp->wx0 + 1;
     cons = malloc(len * sizeof(*cons));
+    if (NULL == cons) return;
     //calculate_consensus_fast(qp->io, qp->contig, qp->wx0, qp->wx1, cons);
     calculate_consensus_bit_het(qp->io, qp->contig, qp->wx0, qp->wx1, mode,
     				qp->gr->r, qp->gr->nr, cons);
 
     yz = qp->height / (MAX_QUAL+1 + 10.0);
-    xz = len / (double)qp->width;
+    xz = (double)qp->width / len;
     qp->yz = yz;
 
     /* Plot it */
-    xp = malloc(qp->width * sizeof(*xp));
-    xs = malloc(qp->width * sizeof(*xs));
+    if (xz > 1) {
+	xp = malloc(qp->width * sizeof(*xp));
+	if (NULL == xp) {
+	    free(cons);
+	    return;
+	}
+    } else {
+	/* +1 here to deal with possible rounding error
+	   when calculating xz * i below. */
+	xs = malloc((qp->width + 1) * sizeof(*xs));
+	if (NULL == xs) {
+	    free(cons);
+	    return;
+	}
+    }
 
     if (qp->quality) {
-	if (xz <= 1) {
+	if (xz > 1) {
+	    assert(xp != NULL);
 	    for (i = 0; i < qp->width; i++) {
 		int J = i * (qp->wx1 - qp->wx0) / qp->width;
 		int v = cons[J].phred;
@@ -333,13 +348,14 @@ static void qplot_redraw(QualityPlot *qp, Display *display) {
 		       CoordModeOrigin);
 	} else {
 	    int ox = -1;
+	    assert(xs != NULL);
 	    for (i = 0; i < len; i++) {
 		int x, v = cons[i].phred;
 		if (v > MAX_QUAL) v = MAX_QUAL;
 		if (v < 0)        v = 0;
 	    
-		x = i / xz;
-		assert(x >= 0 && x < qp->width);
+		x = i * xz;
+		assert(x >= 0 && x <= qp->width);
 		if (x == ox) {
 		    if (xs[x].y1 < yz * (MAX_QUAL+1-v + 5))
 			xs[x].y1 = yz * (MAX_QUAL+1-v + 5);
@@ -365,7 +381,8 @@ static void qplot_redraw(QualityPlot *qp, Display *display) {
     }
 
     if (qp->hetero) {
-	if (xz <= 1) {
+	if (xz > 1) {
+	    assert(xp != NULL);
 	    for (i = 0; i < qp->width; i++) {
 		int J = i * (qp->wx1 - qp->wx0) / qp->width;
 		int v = cons[J].scores[6];
@@ -382,14 +399,15 @@ static void qplot_redraw(QualityPlot *qp, Display *display) {
 		       CoordModeOrigin);
 	} else {
 	    int ox = -1;
+	    assert(xs != NULL);
 	    for (i = 0; i < len; i++) {
 		int x, v = cons[i].scores[6];
 		//v = cons[i].phred;
 		if (v > MAX_QUAL) v = MAX_QUAL;
 		if (v < 0)        v = 0;
 	    
-		x = i / xz;
-		assert(x >= 0 && x < qp->width);
+		x = i * xz;
+		assert(x >= 0 && x <= qp->width);
 		if (x == ox) {
 		    if (xs[x].y2 > yz * (MAX_QUAL+1-v + 5))
 			xs[x].y2 = yz * (MAX_QUAL+1-v + 5);
@@ -407,7 +425,8 @@ static void qplot_redraw(QualityPlot *qp, Display *display) {
     }
 
     if (qp->discrep) {
-	if (xz <= 1) {
+	if (xz > 1) {
+	    assert(xp != NULL);
 	    for (i = 0; i < qp->width; i++) {
 		int J = i * (qp->wx1 - qp->wx0) / qp->width;
 		int v = cons[J].discrep * 10;
@@ -423,13 +442,14 @@ static void qplot_redraw(QualityPlot *qp, Display *display) {
 		       CoordModeOrigin);
 	} else {
 	    int ox = -1;
+	    assert(xs != NULL);
 	    for (i = 0; i < len; i++) {
 		int x, v = cons[i].discrep * 10;
 		if (v > MAX_QUAL) v = MAX_QUAL;
 		if (v < 0)        v = 0;
 	    
-		x = i / xz;
-		assert(x >= 0 && x < qp->width);
+		x = i * xz;
+		assert(x >= 0 && x <= qp->width);
 		if (x == ox) {
 		    if (xs[x].y2 > yz * (MAX_QUAL+1-v + 5))
 			xs[x].y2 = yz * (MAX_QUAL+1-v + 5);
