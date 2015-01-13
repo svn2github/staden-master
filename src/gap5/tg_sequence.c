@@ -498,13 +498,12 @@ int8_t *seq_conf(GapIO *io, tg_rec rec) {
  * Reverses and complements a piece of DNA
  */
 static int complementary_base[256];
-void complement_seq_conf(char *seq, int8_t *conf, int seq_len, int nconf) {
-    int i, middle, j;
-    unsigned char temp;
-    int8_t t[4];
+static void complementary_base_init(void) {
     static int init = 0;
 
     if (!init) {
+	int i;
+
 	for (i = 0; i < 256; i++)
 	    complementary_base[i] = i;
 
@@ -544,6 +543,15 @@ void complement_seq_conf(char *seq, int8_t *conf, int seq_len, int nconf) {
 	complementary_base['Y'] = 'R';
 	init = 1;
     }
+}
+
+
+void complement_seq_conf(char *seq, int8_t *conf, int seq_len, int nconf) {
+    int i, middle, j;
+    unsigned char temp;
+    int8_t t[4];
+
+    complementary_base_init();
 
     middle = seq_len/2;
     if (nconf == 1) {
@@ -1052,6 +1060,8 @@ int sequence_get_base(GapIO *io, seq_t **s, int pos, char *base, int *conf,
     seq_t *n = *s;
     int comp = 0;
 
+    complementary_base_init();
+
     if (pos < 0 || pos >= ABS(n->len))
 	return -1;
 
@@ -1106,6 +1116,8 @@ int sequence_get_base4(GapIO *io, seq_t **s, int pos, char *base, double *conf,
 		       int *cutoff, int contig_orient) {
     seq_t *n = *s;
     int comp = 0;
+
+    complementary_base_init();
 
     if (!lookup_init) {
 	int i;
@@ -1206,6 +1218,8 @@ int sequence_replace_base(GapIO *io, seq_t **s, int pos, char base, int conf,
     seq_t *n;
     int comp = 0;
 
+    complementary_base_init();
+
     if (!(n = cache_rw(io, *s)))
 	return -1;
     *s = n;
@@ -1278,6 +1292,8 @@ int sequence_insert_base(GapIO *io, seq_t **s, int pos, char base, int8_t conf,
     int comp = 0;
     size_t extra_len = sequence_extra_len(*s) + 1 + sequence_conf_size(*s);
     int8_t *c_old;
+
+    complementary_base_init();
 
     if (!(n = cache_rw(io, *s)))
 	return -1;
@@ -1409,6 +1425,8 @@ int sequence_insert_bases(GapIO *io, seq_t **s, int pos,
     size_t extra_len = sequence_extra_len(*s) + nbases +
 	nbases * sequence_conf_size(*s);
     int8_t *c_old;
+
+    complementary_base_init();
 
     if (!(n = cache_rw(io, *s)))
 	return -1;
