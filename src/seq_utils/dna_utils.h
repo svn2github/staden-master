@@ -88,7 +88,7 @@ SEQ_UTILS_EXPORT int dna_lookup[256];
 SEQ_UTILS_EXPORT int dna_match[256];
 SEQ_UTILS_EXPORT int unknown_char;
 SEQ_UTILS_EXPORT int hash4_lookup[256];
-
+SEQ_UTILS_EXPORT unsigned char complementary_base[256];
 
 /* Useful macros used by alignment routines, they require char_match to be set! */
 #define SEQ_MATCH(a,b)    ( ( (char_match[(int)a] < unknown_char) && (char_match[(int)a]) == (char_match[(int)b])) ? 1 : 0 )

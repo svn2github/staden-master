@@ -5,6 +5,7 @@
 
 #include "tg_gio.h"
 #include "consensus.h"
+#include "dna_utils.h"
 
 #ifndef ABS
 #    define ABS(x) ((x) >= 0 ? (x) : -(x))
@@ -491,67 +492,13 @@ int8_t *seq_conf(GapIO *io, tg_rec rec) {
     return sequence_get_conf(&s);
 }
 
-/* ------------------------------------------------------------------------ */
-/* Sequence manipulation - ripped out of Staden Package's seq_utils.c */
-
 /*
  * Reverses and complements a piece of DNA
  */
-static int complementary_base[256];
-static void complementary_base_init(void) {
-    static int init = 0;
-
-    if (!init) {
-	int i;
-
-	for (i = 0; i < 256; i++)
-	    complementary_base[i] = i;
-
-	complementary_base['a'] = 't';
-	complementary_base['c'] = 'g';
-	complementary_base['g'] = 'c';
-	complementary_base['t'] = 'a';
-	complementary_base['u'] = 'a';
-	complementary_base['A'] = 'T';
-	complementary_base['C'] = 'G';
-	complementary_base['G'] = 'C';
-	complementary_base['T'] = 'A';
-	complementary_base['U'] = 'A';
-
-	complementary_base['n'] = 'n';
-	complementary_base['-'] = '-';
-	complementary_base['b'] = 'v';
-	complementary_base['d'] = 'h';
-	complementary_base['h'] = 'd';
-	complementary_base['k'] = 'm';
-	complementary_base['m'] = 'k';
-	complementary_base['r'] = 'y';
-	complementary_base['s'] = 's';
-	complementary_base['v'] = 'b';
-	complementary_base['w'] = 'w';
-	complementary_base['y'] = 'r';
-
-	complementary_base['B'] = 'V';
-	complementary_base['D'] = 'H';
-	complementary_base['H'] = 'D';
-	complementary_base['K'] = 'M';
-	complementary_base['M'] = 'K';
-	complementary_base['R'] = 'Y';
-	complementary_base['S'] = 'S';
-	complementary_base['V'] = 'B';
-	complementary_base['W'] = 'W';
-	complementary_base['Y'] = 'R';
-	init = 1;
-    }
-}
-
-
 void complement_seq_conf(char *seq, int8_t *conf, int seq_len, int nconf) {
     int i, middle, j;
     unsigned char temp;
     int8_t t[4];
-
-    complementary_base_init();
 
     middle = seq_len/2;
     if (nconf == 1) {
@@ -1060,8 +1007,6 @@ int sequence_get_base(GapIO *io, seq_t **s, int pos, char *base, int *conf,
     seq_t *n = *s;
     int comp = 0;
 
-    complementary_base_init();
-
     if (pos < 0 || pos >= ABS(n->len))
 	return -1;
 
@@ -1116,8 +1061,6 @@ int sequence_get_base4(GapIO *io, seq_t **s, int pos, char *base, double *conf,
 		       int *cutoff, int contig_orient) {
     seq_t *n = *s;
     int comp = 0;
-
-    complementary_base_init();
 
     if (!lookup_init) {
 	int i;
@@ -1218,8 +1161,6 @@ int sequence_replace_base(GapIO *io, seq_t **s, int pos, char base, int conf,
     seq_t *n;
     int comp = 0;
 
-    complementary_base_init();
-
     if (!(n = cache_rw(io, *s)))
 	return -1;
     *s = n;
@@ -1292,8 +1233,6 @@ int sequence_insert_base(GapIO *io, seq_t **s, int pos, char base, int8_t conf,
     int comp = 0;
     size_t extra_len = sequence_extra_len(*s) + 1 + sequence_conf_size(*s);
     int8_t *c_old;
-
-    complementary_base_init();
 
     if (!(n = cache_rw(io, *s)))
 	return -1;
@@ -1426,8 +1365,6 @@ int sequence_insert_bases(GapIO *io, seq_t **s, int pos,
 	nbases * sequence_conf_size(*s);
     int8_t *c_old;
 
-    complementary_base_init();
-
     if (!(n = cache_rw(io, *s)))
 	return -1;
     *s = n;
@@ -1500,6 +1437,7 @@ int sequence_insert_bases(GapIO *io, seq_t **s, int pos,
 	    
     /* Set */
     b = comp ? complementary_base[(unsigned char)base] : base;
+    //printf("comp_base['*']=%c\n", complementary_base['*']);
     for (i = 0; i < nbases; i++)
 	n->seq[pos+i] = b;
     if (n->format == SEQ_FORMAT_CNF4) {

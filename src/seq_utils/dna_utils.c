@@ -15,11 +15,46 @@ int char_set_size = 0, *char_lookup = 0, *char_match = 0;
 
 #define MAX_CHAR_SET_SIZE 24
 #define DNA 1
-static char complementary_base[256];
+unsigned char complementary_base[256] = {
+  0,   1,   2,   3,   4,   5,   6,   7,   8,   9,  10,  11,  12,  13,  14,  15,
+ 16,  17,  18,  19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,
+ 32, '!', '"', '#', '$', '%', '&', '\'','(', ')', '*', '+', ',', '-', '.', '/',
+'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ':', ';', '<', '=', '>', '?',
+'@', 'T', 'V', 'G', 'H', 'E', 'F', 'C', 'D', 'I', 'J', 'M', 'L', 'K', 'N', 'O',
+'P', 'Q', 'Y', 'S', 'A', 'A', 'B', 'W', 'X', 'R', 'Z', '[', '\\',']', '^', '_',
+'`', 't', 'v', 'g', 'h', 'e', 'f', 'c', 'd', 'i', 'j', 'm', 'l', 'k', 'n', 'o',
+'p', 'q', 'y', 's', 'a', 'a', 'b', 'w', 'x', 'r', 'z', '{', '|', '}', '~', 127,
+128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143,
+144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159,
+160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175,
+176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191,
+192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207,
+208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223,
+224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239,
+240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255,
+};
 
-int dna_lookup[256] = {0};
-int dna_match[256] = {0};
+
+int dna_lookup[256] = { // ACGTU->01233 else 4 (NB: no *->5)
+    4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //00
+    4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //10
+    4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //20
+    4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //30
+    4, 0, 4, 1, 4, 4, 4, 2,   4, 4, 4, 4, 4, 4, 4, 4, //40
+    4, 4, 4, 4, 3, 3, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //50
+    4, 0, 4, 1, 4, 4, 4, 2,   4, 4, 4, 4, 4, 4, 4, 4, //60
+    4, 4, 4, 4, 3, 3, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //70
+    4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //80
+    4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //90
+    4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //a0
+    4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //b0
+    4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //c0
+    4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //d0
+    4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4, //e0
+    4, 4, 4, 4, 4, 4, 4, 4,   4, 4, 4, 4, 4, 4, 4, 4  //f0
+};
 int iubc_lookup[256] = {0};
+int dna_match[256] = {0};
 int hash4_lookup[256] = {0}; /* initialised along with iubc_lookup */
 
 /* 7/1/99 johnt - must initialise globals to force export with WINNT */
@@ -38,59 +73,7 @@ void set_dna_lookup() {
 
     int i;
 
-    for (i=0;i<256;i++) dna_lookup[i] = 4;
     for (i=0;i<256;i++) dna_match[i] = i+256;
-    for (i=0;i<256;i++) complementary_base[i] = i;
-
-    dna_lookup['a'] = 0;
-    dna_lookup['c'] = 1;
-    dna_lookup['g'] = 2;
-    dna_lookup['t'] = 3;
-    dna_lookup['A'] = 0;
-    dna_lookup['C'] = 1;
-    dna_lookup['G'] = 2;
-    dna_lookup['T'] = 3;
-    dna_lookup['U'] = 3;
-    dna_lookup['u'] = 3;
-
-    /* the following does not know if rna or dna so we complement
-       u to a, but a to t */
-
-    complementary_base['a'] = 't';
-    complementary_base['c'] = 'g';
-    complementary_base['g'] = 'c';
-    complementary_base['t'] = 'a';
-    complementary_base['u'] = 'a';
-    complementary_base['A'] = 'T';
-    complementary_base['C'] = 'G';
-    complementary_base['G'] = 'C';
-    complementary_base['T'] = 'A';
-    complementary_base['U'] = 'A';
-
-    complementary_base['n'] = 'n';
-    complementary_base['-'] = '-';
-    complementary_base['b'] = 'v';
-    complementary_base['d'] = 'h';
-    complementary_base['h'] = 'd';
-    complementary_base['k'] = 'm';
-    complementary_base['m'] = 'k';
-    complementary_base['r'] = 'y';
-    complementary_base['s'] = 's';
-    complementary_base['v'] = 'b';
-    complementary_base['w'] = 'w';
-    complementary_base['y'] = 'r';
-
-    complementary_base['B'] = 'V';
-    complementary_base['D'] = 'H';
-    complementary_base['H'] = 'D';
-    complementary_base['K'] = 'M';
-    complementary_base['M'] = 'K';
-    complementary_base['R'] = 'Y';
-    complementary_base['S'] = 'S';
-    complementary_base['V'] = 'B';
-    complementary_base['W'] = 'W';
-    complementary_base['Y'] = 'R';
-
 
     /* dna_match matches the valid characters in dna_lookup 
        such as T = t = U = u, otherwise any character only
