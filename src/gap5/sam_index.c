@@ -1943,14 +1943,15 @@ static int sam_add_seq(void *cd, scram_fd *fp, pileup_t *p,
 	bio_new_contig(bio, tid);
 
     /* tg_index -g mode */
+    //printf("%d/%d +%d -%d\n", pos, nth, bio->n_inserts, bio->npads);
     if (bio->a->repad) {
 	pos += bio->c_start-1;
 
 	/* Pad these sequences based on existing pads in the padded contig */
-	if ((np=padtree_pad_at(bio->tree, pos+bio->n_inserts-bio->npads))) {
+	if (!nth && (np=padtree_pad_at(bio->tree, pos+bio->n_inserts-bio->npads))) {
 	    int j;
 
-	    //printf("Pos %d pads %d\n", pos, np);
+	    //printf("Pos %d pads %d, skip = %d\n", pos, np, bio->skip);
 
 	    /* Add pads to match existing consensus gaps */
 	    for (j = nth; j < np; j++) {
